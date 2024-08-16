@@ -7,7 +7,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.progress import Progress
-from rich.prompt import Prompt
+from rich.prompt import Prompt, Confirm
+
 
 
 # Initialize the Anthropic client (API key code remains unchanged)
@@ -101,8 +102,8 @@ class FrenchVocabBuilder:
 
     def query_ai(self, word: str) -> str:
         prompt = f"""
-        Please provide information for the French word or expression "{word}" in the following format, do note, if a user enters an English word or an expression, you are translate it into French to the best of your ability and then do the following:
-        Correctly Spelt Word: []
+        Please provide information for the French word or expression "{word}" in the following format, do note, if a user enters an English word or an expression, you are translate it into French to the best of your ability and then do the following. Furthermore if the user were to enter a verb, YOU ARE TO automatically conjugate it into standard infinitive form:
+        Correctly Spelt Word: WORD 
         Word Type: [noun/verb/adjective/expression/adverb/pronominal verb/ expression / at your discretion word type.]
         Definitions:
         a. [First definition]
@@ -156,8 +157,15 @@ Here is a list of criterion you must apply:
                 - list of examples, each a tuple of (French, English) (List[Tuple[str, str]])
         """
         # Extract word type
-        word_type_match = re.search(r'Word Type:\s*\[(.*?)\]', response)
-        word_type = word_type_match.group(1) if word_type_match else "Unknown"
+        word_type_match = re.search(r'Word Type:\s*(\[(.*?(?:,\s*.*?)*)\])?', response)
+        if word_type_match:
+            word_type_string = word_type_match.group(2)  # Capture the content within brackets, if present
+            if word_type_string:
+                word_type = word_type_string.split(', ')  # Split into a list if multiple types are present
+            else:
+                word_type = ["Unknown"]  # Default if no word type is found
+        else:
+            word_type = ["Unknown"]  # Default if regex doesn't match
 
         # Extract definitions
         definitions_match = re.search(
@@ -351,6 +359,14 @@ Here is a list of criterion you must apply:
                         ai_response
                     )
                     self.display_parsed_info(word, word_type, definitions, examples)
+
+                    corrected_spelling_match = re.search(r'Correctly Spelt Word:\s*(.*)', ai_response)
+                    corrected_spelling = corrected_spelling_match.group(1) if corrected_spelling_match else None
+
+                    # Verification step: User confirmation
+                    if corrected_spelling and corrected_spelling.lower() != word.lower():
+                        if Confirm.ask(f"Did you mean '{corrected_spelling}' instead of '{word}'?"):
+                            word = corrected_spelling  # Update word if user confirms
 
                     latex_entry = self.format_latex_entry(
                         word, word_type, definitions, examples
