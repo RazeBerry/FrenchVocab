@@ -157,15 +157,12 @@ Here is a list of criterion you must apply:
                 - list of examples, each a tuple of (French, English) (List[Tuple[str, str]])
         """
         # Extract word type
-        word_type_match = re.search(r'Word Type:\s*(\[(.*?(?:,\s*.*?)*)\])?', response)
+        word_type_match = re.search(r"Word Type:\s*(.*?)\nDefinitions:", response, re.DOTALL)
         if word_type_match:
-            word_type_string = word_type_match.group(2)  # Capture the content within brackets, if present
-            if word_type_string:
-                word_type = word_type_string.split(', ')  # Split into a list if multiple types are present
-            else:
-                word_type = ["Unknown"]  # Default if no word type is found
+            word_type_string = word_type_match.group(1).strip()
+            word_type = [word_type_string]  # Treat as a single-item list
         else:
-            word_type = ["Unknown"]  # Default if regex doesn't match
+            word_type = ["Unknown"]
 
         # Extract definitions
         definitions_match = re.search(
@@ -396,11 +393,11 @@ Here is a list of criterion you must apply:
             self.console.input("\nPress Enter to continue...")
 
     def display_parsed_info(
-        self,
-        word: str,
-        word_type: str,
-        definitions: List[str],
-        examples: List[Tuple[str, str]],
+            self,
+            word: str,
+            word_type: List[str],  # Explicitly type word_type as a List
+            definitions: List[str],
+            examples: List[Tuple[str, str]],
     ):
         table = Table(
             title=f"Information for [bold green]{word.capitalize()}[/bold green]"
@@ -408,7 +405,9 @@ Here is a list of criterion you must apply:
         table.add_column("Category", style="cyan", no_wrap=True)
         table.add_column("Information", style="magenta")
 
-        table.add_row("Word Type", word_type)
+        # Convert word_type list to a string
+        word_type_str = ", ".join(word_type)
+        table.add_row("Word Type", word_type_str)
 
         def_str = "\n".join([f"• {d}" for d in definitions])
         table.add_row("Definitions", def_str)
