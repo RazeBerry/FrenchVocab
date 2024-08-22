@@ -8,12 +8,6 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
-from rich.live import Live
-from rich.text import Text
-
-
-
-# Initialize the Anthropic client (API key code remains unchanged)
 
 try:
     client = anthropic.Anthropic(
@@ -37,7 +31,19 @@ class FrenchVocabBuilder:
         # Initialize LiveSearch
         self.normalized_entries = {}
         self.load_existing_entries()
+        self.entry_count = self.count_entries()  # Initialize entry count
 
+    def count_entries(self) -> int:
+        try:
+            with open(self.latex_file, "r", encoding="utf-8") as file:
+                content = file.read()
+            return len(re.findall(r"\\entry\{", content))
+        except FileNotFoundError:
+            console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
+            return 0
+        except IOError as e:
+            console.print(f"[bold red]Error reading file: {e}[/bold red]")
+            return 0
     def load_existing_entries(self):
         with open(self.latex_file, "r", encoding="utf-8") as file:
             content = file.read()
@@ -86,18 +92,21 @@ class FrenchVocabBuilder:
     def welcome_screen(self):
         console.print(
             Panel.fit(
-                "[bold blue]Welcome to the French Vocabulary LaTeX Builder![/bold blue]\n\n"
-                "This application helps you build a LaTeX document for French vocabulary.\n"
-                "You can input French words, and the AI will provide definitions and examples.",
+                f"[bold blue]Welcome to the French Vocabulary LaTeX Builder![/bold blue]\n\n"
+                f"This application helps you build a LaTeX document for French vocabulary.\n"
+                f"You can input French words, and the AI will provide definitions and examples.\n\n"
+                f"[bold green]Your current vocabulary library contains {self.entry_count} words.[/bold green]",
                 title="French Vocab Builder",
                 border_style="bold green",
             )
         )
 
+
     def show_menu(self):
         console.print("\n[bold cyan]Menu Options:[/bold cyan]")
         console.print("1. Add a new word")
         console.print("2. Exit")
+        console.print(f"[bold green]Current word count: {self.entry_count}[/bold green]")
         choice = Prompt.ask("Choose an option", choices=["1", "2"])
         return choice
 
@@ -398,6 +407,7 @@ When creating definitions and examples:
     def run(self):
         self.welcome_screen()
         while True:
+            self.entry_count = self.count_entries()  # Update count at the start of each loop
             choice = self.show_menu()
             if choice == "1":
                 word = self.get_word_input()
