@@ -1,6 +1,6 @@
 import re
 from typing import List, Tuple, Optional, Dict
-
+import os
 import unicodedata
 import anthropic
 from rich.console import Console
@@ -8,14 +8,18 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
+from rich.live import Live
+from rich.text import Text
+# Import the LiveSearch class
+from live_search import LiveSearch
 
 
 
 # Initialize the Anthropic client (API key code remains unchanged)
-client = anthropic.Anthropic(
-    api_key="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",
-)
 
+client = anthropic.Anthropic(
+    api_key=os.environ.get("ANTHROPIC_API_KEY")
+)
 # Initialize Rich console
 console = Console()
 
@@ -25,7 +29,12 @@ class FrenchVocabBuilder:
         self.latex_file = latex_file
         self.max_word_length = 30
         self.word_entries: Dict[str, Dict] = {}
+        self.normalized_entries: Dict[str, str] = {}  # Add this line
         self.console = Console()
+        self.load_existing_entries()
+        # Initialize LiveSearch
+        self.live_search = LiveSearch(self.word_entries)
+        self.normalized_entries = {}
         self.load_existing_entries()
 
     def load_existing_entries(self):
@@ -43,6 +52,36 @@ class FrenchVocabBuilder:
                 "examples": examples.strip(),
             }
 
+        # Print all extracted entries
+        console.print("[bold blue]Entries extracted in load_existing_entries:")
+        for word, entry in self.word_entries.items():
+            normalized_word = self.normalize_word(word)
+            self.normalized_entries[normalized_word] = word
+
+    def normalize_word(self, word: str) -> str:
+        word = word.lower().strip()
+        return ''.join(c for c in unicodedata.normalize('NFD', word) if unicodedata.category(c) != 'Mn')
+
+    def check_duplicate(self, word: str) -> Optional[str]:
+        normalized_word = self.normalize_word(word)
+        return self.normalized_entries.get(normalized_word)
+
+    def handle_duplicate(self, word: str, existing_word: str) -> bool:
+        console.print(f"[bold yellow]Warning: '{word}' already exists as '{existing_word}'.[/bold yellow]")
+        choice = Prompt.ask("Choose an action", choices=["s", "v", "f"], default="s")
+        if choice == "s":
+            return False
+        elif choice == "v":
+            self.display_existing_entry(existing_word)
+            return False
+        else:
+            return True
+
+    def display_existing_entry(self, word: str):
+        entry = self.word_entries[word.lower()]
+        self.display_parsed_info(entry['word'], [entry['type']], entry['definitions'].split('; '),
+                                 [tuple(e.split(' (', 1)) for e in entry['examples'].split('; ')])
+
     def welcome_screen(self):
         console.print(
             Panel.fit(
@@ -57,8 +96,9 @@ class FrenchVocabBuilder:
     def show_menu(self):
         console.print("\n[bold cyan]Menu Options:[/bold cyan]")
         console.print("1. Add a new word")
-        console.print("2. Exit")
-        choice = Prompt.ask("Choose an option", choices=["1", "2"])
+        console.print("2. Live search")
+        console.print("3. Exit")
+        choice = Prompt.ask("Choose an option", choices=["1", "2", "3"])
         return choice
 
     from rich.table import Table
@@ -79,6 +119,49 @@ class FrenchVocabBuilder:
                     else entry["definitions"]
                 ),
             )
+
+        return table
+
+    def live_search_mode(self):
+        console.print("[bold cyan]Live Search Mode[/bold cyan]")
+        console.print("Start typing to search. Press Ctrl+C to exit.")
+
+        search_text = Text()
+        results_table = Table(title="Search Results")
+        results_table.add_column("Word", style="cyan")
+        results_table.add_column("Type", style="magenta")
+        results_table.add_column("Definition", style="green")
+
+        def get_results_table():
+            results_table.rows.clear()
+            if len(search_text) > 0:
+                results = self.live_search.search(str(search_text))
+                for word, word_type, definition in results[:10]:  # Limit to 10 results for readability
+                    results_table.add_row(word, word_type, definition[:50] + ("..." if len(definition) > 50 else ""))
+            return Panel(results_table, title=f"Search: {search_text}", border_style="cyan")
+
+        with Live(get_results_table(), refresh_per_second=4) as live:
+            try:
+                while True:
+                    key = live.console.input()
+                    if key == "\x7f":  # Backspace
+                        search_text = search_text[:-1]
+                    elif key == "":  # Enter key
+                        continue
+                    else:
+                        search_text.append(key)
+                    live.update(get_results_table())
+            except KeyboardInterrupt:
+                pass
+
+    def create_search_results_table(self, results):
+        table = Table(title=f"Search Results")
+        table.add_column("Word", style="cyan")
+        table.add_column("Type", style="magenta")
+        table.add_column("Definition", style="green")
+
+        for word, word_type, definition in results:
+            table.add_row(word, word_type, definition[:50] + ("..." if len(definition) > 50 else ""))
 
         return table
 
@@ -104,11 +187,11 @@ class FrenchVocabBuilder:
         prompt = f"""
         Please provide information for the French word or expression "{word}" in the following format, do note, if a user enters an English word or an expression, you are translate it into French to the best of your ability and then do the following. Furthermore if the user were to enter a verb, YOU ARE TO automatically conjugate it into standard infinitive form:
         Correctly Spelt Word: WORD 
-        Word Type: [noun/verb/adjective/expression/adverb/pronominal verb/ expression / at your discretion word type.]
+        Word Type: [Specify the word type without any additional symbols or marks. Choose from: noun, verb, adjective, expression, adverb, pronominal verb, or use your discretion for other types]
         Definitions:
-        a. [First definition]
-        b. [Second definition]
-        c. [Third definition (if applicable)]
+        a. [First English definition]
+        b. [Second English definition]
+        c. [Third English definition (if applicable)]
         Examples:
         1. [French example 1]
         [English translation 1]
@@ -116,8 +199,15 @@ class FrenchVocabBuilder:
         [English translation 2]
         3. [French example 3 (if applicable)]
         [English translation 3 (if applicable)]
-Here is a list of criterion you must apply: 
-1. If the entered word is a French verb no matter how it is conjugated, you rewrite it into the standard infinitive form! Do try to conjugate it in the pronominal verb form if it is more appropriate.
+Apply the following criteria:
+1. Always convert French verbs to their standard infinitive form, regardless of how they're initially conjugated.
+2. For the Word Type, use only natural language without any additional symbols or marks.
+3. Provide detailed and nuanced English definitions for each entry.
+
+When creating definitions and examples:
+- Ensure that the definitions are comprehensive and capture different nuances of the word's meaning.
+- Provide context-rich examples that demonstrate the word's usage in various situations.
+- Make sure the English translations accurately reflect the meaning and tone of the French examples.
         """
 
         with Progress() as progress:
@@ -237,11 +327,16 @@ Here is a list of criterion you must apply:
             with open(self.latex_file, "r", encoding="utf-8") as file:
                 content = file.read()
 
-            if f"\\entry{{{new_word}}}" in content:
+            normalized_new_word = self.normalize_word(new_word)
+            if normalized_new_word in self.normalized_entries:
+                existing_word = self.normalized_entries[normalized_new_word]
                 console.print(
-                    f"[bold yellow]Entry for '{new_word}' already exists. Skipping insertion.[/bold yellow]"
-                )
-                return
+                    f"[bold yellow]Entry for '{new_word}' already exists as '{existing_word}'. Updating entry.[/bold yellow]")
+
+                # Remove existing entry
+                existing_entry_pattern = re.compile(rf"\\entry{{{re.escape(existing_word)}}}.*?(?=\\entry|\Z)",
+                                                    re.DOTALL)
+                content = existing_entry_pattern.sub('', content)
 
             # Find the position to insert the new entry
             insert_position = content.rfind("\\entry")
@@ -258,21 +353,19 @@ Here is a list of criterion you must apply:
             with open(self.latex_file, "w", encoding="utf-8") as file:
                 file.write(updated_content)
 
-            console.print(
-                f"[bold green]Added entry for '{new_word}' to {self.latex_file}[/bold green]"
-            )
+            console.print(f"[bold green]Added/Updated entry for '{new_word}' in {self.latex_file}[/bold green]")
+
+            # Update the normalized entries dictionary
+            self.normalized_entries[normalized_new_word] = new_word.capitalize()
 
             # Alphabetize entries after insertion
             self.alphabetize_entries()
+            self.live_search.update_entries(self.word_entries)
 
         except FileNotFoundError:
-            console.print(
-                f"[bold red]Error: File not found - {self.latex_file}[/bold red]"
-            )
+            console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
         except IOError as e:
-            console.print(
-                f"[bold red]Error reading from or writing to file: {e}[/bold red]"
-            )
+            console.print(f"[bold red]Error reading from or writing to file: {e}[/bold red]")
 
     def alphabetize_entries(self) -> None:
         try:
@@ -340,6 +433,20 @@ Here is a list of criterion you must apply:
             )
         )
 
+    def display_search_results(self, results: List[Tuple[str, str, str]]):
+        if not results:
+            console.print("[yellow]No matching words found.[/yellow]")
+            return
+
+        table = Table(title=f"Search Results")
+        table.add_column("Word", style="cyan")
+        table.add_column("Type", style="magenta")
+        table.add_column("Definition", style="green")
+
+        for word, word_type, definition in results:
+            table.add_row(word, word_type, definition[:50] + ("..." if len(definition) > 50 else ""))
+
+        console.print(table)
     def remove_accents(self, input_str):
         nfkd_form = unicodedata.normalize("NFKD", input_str)
         return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
@@ -350,28 +457,26 @@ Here is a list of criterion you must apply:
             choice = self.show_menu()
             if choice == "1":
                 word = self.get_word_input()
+                existing_word = self.check_duplicate(word)
+                if existing_word:
+                    if not self.handle_duplicate(word, existing_word):
+                        continue
                 ai_response = self.query_ai(word)
                 if ai_response:
-                    word_type, definitions, examples = self.parse_ai_response(
-                        ai_response
-                    )
+                    word_type, definitions, examples = self.parse_ai_response(ai_response)
                     self.display_parsed_info(word, word_type, definitions, examples)
 
                     corrected_spelling_match = re.search(r'Correctly Spelt Word:\s*(.*)', ai_response)
                     corrected_spelling = corrected_spelling_match.group(1) if corrected_spelling_match else None
 
-                    # Verification step: User confirmation
                     if corrected_spelling and corrected_spelling.lower() != word.lower():
                         if Confirm.ask(f"Did you mean '{corrected_spelling}' instead of '{word}'?"):
-                            word = corrected_spelling  # Update word if user confirms
+                            word = corrected_spelling
 
-                    latex_entry = self.format_latex_entry(
-                        word, word_type, definitions, examples
-                    )
+                    latex_entry = self.format_latex_entry(word, word_type, definitions, examples)
                     self.display_latex_entry(latex_entry)
                     self.insert_entry_alphabetically(latex_entry, word.capitalize())
 
-                    # Update the in-memory dictionary
                     self.word_entries[word.lower()] = {
                         "word": word.capitalize(),
                         "type": word_type,
@@ -379,17 +484,15 @@ Here is a list of criterion you must apply:
                         "examples": "; ".join([f"{f} ({e})" for f, e in examples]),
                     }
 
-                    # Alphabetize entries after successful insertion
                     self.alphabetize_entries()
                 else:
                     self.console.print(
-                        f"[bold red]Failed to get information for '{word}'. Skipping this entry.[/bold red]"
-                    )
-
+                        f"[bold red]Failed to get information for '{word}'. Skipping this entry.[/bold red]")
             elif choice == "2":
+                self.live_search_mode()
+            elif choice == "3":
                 self.exit_screen()
                 break
-            # Optional: Add a short pause or prompt before showing the menu again
             self.console.input("\nPress Enter to continue...")
 
     def display_parsed_info(
