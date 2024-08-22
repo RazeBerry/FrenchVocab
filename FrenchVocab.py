@@ -23,7 +23,7 @@ console = Console()
 class FrenchVocabBuilder:
     def __init__(self, latex_file: str):
         self.latex_file = latex_file
-        self.max_word_length = 30
+        self.max_word_length = 50
         self.word_entries: Dict[str, Dict] = {}
         self.normalized_entries: Dict[str, str] = {}  # Add this line
         self.console = Console()
@@ -137,9 +137,9 @@ class FrenchVocabBuilder:
             word = Prompt.ask("\nEnter a French word or short expression")
             word = word.strip()
 
-            if len(word.split()) > 5:
+            if len(word.split()) > 10:
                 console.print(
-                    "[bold red]Error: Please enter a single word or short expression (max 5 words).[/bold red]"
+                    "[bold red]Error: Please enter a single word or short expression (max 10 words).[/bold red]"
                 )
             elif len(word) > self.max_word_length:
                 console.print(
