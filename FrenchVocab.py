@@ -327,7 +327,6 @@ When creating definitions and examples:
 
             # Alphabetize entries after insertion
             self.alphabetize_entries()
-            self.live_search.update_entries(self.word_entries)
 
         except FileNotFoundError:
             console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
