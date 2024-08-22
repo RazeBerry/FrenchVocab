@@ -10,16 +10,18 @@ from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
 from rich.live import Live
 from rich.text import Text
-# Import the LiveSearch class
-from live_search import LiveSearch
 
 
 
 # Initialize the Anthropic client (API key code remains unchanged)
 
-client = anthropic.Anthropic(
-    api_key=os.environ.get("ANTHROPIC_API_KEY")
-)
+try:
+    client = anthropic.Anthropic(
+        api_key=os.environ['ANTHROPIC_API_KEY']
+    )
+except KeyError:
+    print("ANTHROPIC_API_KEY environment variable is not set.")
+    exit(1)
 # Initialize Rich console
 console = Console()
 
@@ -33,7 +35,6 @@ class FrenchVocabBuilder:
         self.console = Console()
         self.load_existing_entries()
         # Initialize LiveSearch
-        self.live_search = LiveSearch(self.word_entries)
         self.normalized_entries = {}
         self.load_existing_entries()
 
@@ -96,9 +97,8 @@ class FrenchVocabBuilder:
     def show_menu(self):
         console.print("\n[bold cyan]Menu Options:[/bold cyan]")
         console.print("1. Add a new word")
-        console.print("2. Live search")
-        console.print("3. Exit")
-        choice = Prompt.ask("Choose an option", choices=["1", "2", "3"])
+        console.print("2. Exit")
+        choice = Prompt.ask("Choose an option", choices=["1", "2"])
         return choice
 
     from rich.table import Table
@@ -122,48 +122,6 @@ class FrenchVocabBuilder:
 
         return table
 
-    def live_search_mode(self):
-        console.print("[bold cyan]Live Search Mode[/bold cyan]")
-        console.print("Start typing to search. Press Ctrl+C to exit.")
-
-        search_text = Text()
-        results_table = Table(title="Search Results")
-        results_table.add_column("Word", style="cyan")
-        results_table.add_column("Type", style="magenta")
-        results_table.add_column("Definition", style="green")
-
-        def get_results_table():
-            results_table.rows.clear()
-            if len(search_text) > 0:
-                results = self.live_search.search(str(search_text))
-                for word, word_type, definition in results[:10]:  # Limit to 10 results for readability
-                    results_table.add_row(word, word_type, definition[:50] + ("..." if len(definition) > 50 else ""))
-            return Panel(results_table, title=f"Search: {search_text}", border_style="cyan")
-
-        with Live(get_results_table(), refresh_per_second=4) as live:
-            try:
-                while True:
-                    key = live.console.input()
-                    if key == "\x7f":  # Backspace
-                        search_text = search_text[:-1]
-                    elif key == "":  # Enter key
-                        continue
-                    else:
-                        search_text.append(key)
-                    live.update(get_results_table())
-            except KeyboardInterrupt:
-                pass
-
-    def create_search_results_table(self, results):
-        table = Table(title=f"Search Results")
-        table.add_column("Word", style="cyan")
-        table.add_column("Type", style="magenta")
-        table.add_column("Definition", style="green")
-
-        for word, word_type, definition in results:
-            table.add_row(word, word_type, definition[:50] + ("..." if len(definition) > 50 else ""))
-
-        return table
 
     def get_word_input(self) -> str:
         while True:
@@ -433,20 +391,6 @@ When creating definitions and examples:
             )
         )
 
-    def display_search_results(self, results: List[Tuple[str, str, str]]):
-        if not results:
-            console.print("[yellow]No matching words found.[/yellow]")
-            return
-
-        table = Table(title=f"Search Results")
-        table.add_column("Word", style="cyan")
-        table.add_column("Type", style="magenta")
-        table.add_column("Definition", style="green")
-
-        for word, word_type, definition in results:
-            table.add_row(word, word_type, definition[:50] + ("..." if len(definition) > 50 else ""))
-
-        console.print(table)
     def remove_accents(self, input_str):
         nfkd_form = unicodedata.normalize("NFKD", input_str)
         return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
@@ -489,8 +433,6 @@ When creating definitions and examples:
                     self.console.print(
                         f"[bold red]Failed to get information for '{word}'. Skipping this entry.[/bold red]")
             elif choice == "2":
-                self.live_search_mode()
-            elif choice == "3":
                 self.exit_screen()
                 break
             self.console.input("\nPress Enter to continue...")
