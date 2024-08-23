@@ -1,26 +1,19 @@
-import re
-from typing import List, Tuple, Optional, Dict
-import os
-import unicodedata
-import anthropic
-from rich.console import Console
-import genanki
-import random
 import json
+import os
+import random
+import re
+import unicodedata
+from typing import List, Tuple, Optional, Dict
+
+import anthropic
+import genanki
+from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
 from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
+from rich.table import Table
 
 
-try:
-    client = anthropic.Anthropic(
-        api_key=os.environ['ANTHROPIC_API_KEY']
-    )
-except KeyError:
-    print("ANTHROPIC_API_KEY environment variable is not set.")
-    exit(1)
-# Initialize Rich console
 console = Console()
 
 
@@ -29,14 +22,45 @@ class FrenchVocabBuilder:
         self.latex_file = latex_file
         self.max_word_length = 50
         self.word_entries: Dict[str, Dict] = {}
-        self.normalized_entries: Dict[str, str] = {}  # Add this line
+        self.normalized_entries: Dict[str, str] = {}
         self.console = Console()
+        self.config_file = "vocab_builder_config.json"
+        self.load_config()
+        self.initialize_anthropic_client()
         self.load_existing_entries()
         self.exported_words_file = "exported_words.json"
         self.exported_words = self.load_exported_words()
-        self.normalized_entries = {}
-        self.load_existing_entries()
-        self.entry_count = self.count_entries()  # Initialize entry count
+        self.entry_count = self.count_entries()
+
+    def load_config(self):
+        if not os.path.exists(self.config_file):
+            self.first_time_setup()
+        else:
+            with open(self.config_file, 'r') as f:
+                config = json.load(f)
+                os.environ['ANTHROPIC_API_KEY'] = config['ANTHROPIC_API_KEY']
+
+    def initialize_anthropic_client(self):
+        try:
+            self.client = anthropic.Anthropic(
+                api_key=os.environ['ANTHROPIC_API_KEY']
+            )
+        except KeyError:
+            self.console.print("[bold red]ANTHROPIC_API_KEY environment variable is not set.[/bold red]")
+            self.first_time_setup()
+            self.initialize_anthropic_client()  # Recursive call to try initializing again
+
+    def first_time_setup(self):
+        self.console.print("[bold blue]Welcome to French Vocabulary Builder![/bold blue]")
+        self.console.print("It looks like this is your first time running the program or the API key is not set.")
+        api_key = Prompt.ask("Please enter your Anthropic API key")
+
+        config = {'ANTHROPIC_API_KEY': api_key}
+        with open(self.config_file, 'w') as f:
+            json.dump(config, f)
+
+        os.environ['ANTHROPIC_API_KEY'] = api_key
+        self.console.print("[bold green]API key saved successfully![/bold green]")
 
     def load_exported_words(self):
         if os.path.exists(self.exported_words_file):
@@ -59,6 +83,7 @@ class FrenchVocabBuilder:
         except IOError as e:
             console.print(f"[bold red]Error reading file: {e}[/bold red]")
             return 0
+
     def load_existing_entries(self):
         with open(self.latex_file, "r", encoding="utf-8") as file:
             content = file.read()
@@ -207,7 +232,6 @@ class FrenchVocabBuilder:
             )
         )
 
-
     def show_menu(self):
         console.print("\n[bold cyan]Menu Options:[/bold cyan]")
         console.print("1. Add a new word")
@@ -237,7 +261,6 @@ class FrenchVocabBuilder:
             )
 
         return table
-
 
     def get_word_input(self) -> str:
         while True:
@@ -306,7 +329,7 @@ When creating definitions and examples:
                 return ""
 
     def parse_ai_response(
-        self, response: str
+            self, response: str
     ) -> Tuple[str, List[str], List[Tuple[str, str]]]:
         """
         Parse the AI's response to extract word type, definitions, and examples.
@@ -357,11 +380,11 @@ When creating definitions and examples:
         return word_type, definitions, examples
 
     def format_latex_entry(
-        self,
-        word: str,
-        word_type: str,
-        definitions: List[str],
-        examples: List[Tuple[str, str]],
+            self,
+            word: str,
+            word_type: str,
+            definitions: List[str],
+            examples: List[Tuple[str, str]],
     ) -> str:
         """
         Format the word information into a LaTeX entry.
@@ -495,7 +518,6 @@ When creating definitions and examples:
         except IOError as e:
             console.print(f"[bold red]Error reading from or writing to file: {e}[/bold red]")
 
-
     def exit_screen(self):
         console.print(
             Panel.fit(
@@ -555,6 +577,7 @@ When creating definitions and examples:
                 self.exit_screen()
                 break
             self.console.input("\nPress Enter to continue...")
+
     def display_parsed_info(
             self,
             word: str,
@@ -585,8 +608,8 @@ When creating definitions and examples:
             Panel(latex_entry, title="Generated LaTeX Entry", border_style="bold blue")
         )
 
-def main() -> None:
 
+def main() -> None:
     latex_file = "/Users/sihao/Documents/LaTeX Files/FrenchVocab.tex"
     app = FrenchVocabBuilder(latex_file)
     app.run()
