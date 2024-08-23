@@ -6,10 +6,12 @@ import anthropic
 from rich.console import Console
 import genanki
 import random
+import json
 from rich.panel import Panel
 from rich.table import Table
 from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
+
 
 try:
     client = anthropic.Anthropic(
@@ -30,10 +32,21 @@ class FrenchVocabBuilder:
         self.normalized_entries: Dict[str, str] = {}  # Add this line
         self.console = Console()
         self.load_existing_entries()
-        # Initialize LiveSearch
+        self.exported_words_file = "exported_words.json"
+        self.exported_words = self.load_exported_words()
         self.normalized_entries = {}
         self.load_existing_entries()
         self.entry_count = self.count_entries()  # Initialize entry count
+
+    def load_exported_words(self):
+        if os.path.exists(self.exported_words_file):
+            with open(self.exported_words_file, 'r') as f:
+                return set(json.load(f))
+        return set()
+
+    def save_exported_words(self):
+        with open(self.exported_words_file, 'w') as f:
+            json.dump(list(self.exported_words), f)
 
     def count_entries(self) -> int:
         try:
@@ -69,14 +82,21 @@ class FrenchVocabBuilder:
             self.normalized_entries[normalized_word] = word
 
     def latex_to_anki_format(self, text):
-        # Remove LaTeX item markers
-        text = re.sub(r'\\item\s*', '• ', text)
+        # Remove LaTeX item markers and ensure each item starts on a new line
+        text = re.sub(r'\\item\s*', '\n• ', text)
 
         # Convert LaTeX newlines to HTML line breaks
         text = text.replace('\\\\ ', '<br>')
 
         # Remove any remaining LaTeX commands
         text = re.sub(r'\\[a-zA-Z]+(\[.*?\])?(\{.*?\})?', '', text)
+
+        # Ensure the text starts with a bullet point
+        if not text.startswith('• '):
+            text = '• ' + text
+
+        # Remove any extra newlines
+        text = re.sub(r'\n+', '\n', text)
 
         # Trim whitespace
         text = text.strip()
@@ -109,22 +129,40 @@ class FrenchVocabBuilder:
         deck_id = random.randrange(1 << 30, 1 << 31)
         deck = genanki.Deck(deck_id, deck_name)
 
-        for word, entry in self.word_entries.items():
-            word = word.strip()
+        newly_added_words = set()
 
-            note = genanki.Note(
-                model=model,
-                fields=[
-                    entry['word'],
-                    entry['type'],
-                    self.latex_to_anki_format(entry['definitions']),
-                    self.latex_to_anki_format(entry['examples'])
-                ])
-            deck.add_note(note)
+        for word, entry in self.word_entries.items():
+            word = word.strip().lower()
+
+            if word not in self.exported_words:
+                note = genanki.Note(
+                    model=model,
+                    fields=[
+                        entry['word'],
+                        entry['type'],
+                        self.latex_to_anki_format(entry['definitions']),
+                        self.latex_to_anki_format(entry['examples'])
+                    ])
+                deck.add_note(note)
+                self.exported_words.add(word)
+                newly_added_words.add(word)
 
         genanki.Package(deck).write_to_file(f'{deck_name}.apkg')
-        console.print(f"[bold green]Anki deck '{deck_name}.apkg' created successfully![/bold green]")
-        console.print(f"[bold blue]Total words exported: {len(deck.notes)}[/bold blue]")
+        self.save_exported_words()
+
+        # Prepare the feedback message
+        feedback = f"""
+        [bold green]Anki deck '{deck_name}.apkg' created successfully![/bold green]
+
+        [bold blue]Total words in deck: {len(self.exported_words)}[/bold blue]
+        [bold cyan]Newly added words in this export: {len(newly_added_words)}[/bold cyan]
+
+        New words added:
+        {', '.join(sorted(newly_added_words)) if newly_added_words else 'No new words added in this export.'}
+        """
+
+        # Display the feedback in a panel
+        self.console.print(Panel(feedback, title="Export Summary", expand=False, border_style="green"))
 
     def check_duplicate(self, word: str) -> Optional[str]:
         normalized_word = self.normalize_word(word)
