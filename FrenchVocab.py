@@ -74,14 +74,25 @@ class FrenchVocabBuilder:
         return self.normalized_entries.get(normalized_word)
 
     def handle_duplicate(self, word: str, existing_word: str) -> bool:
-        console.print(f"[bold yellow]Warning: '{word}' already exists as '{existing_word}'.[/bold yellow]")
-        choice = Prompt.ask("Choose an action", choices=["s", "v", "f"], default="s")
+        self.console.print(
+            f"[bold yellow]Warning: '{word}' already exists in the dictionary as '{existing_word}'.[/bold yellow]")
+        self.console.print("\nPlease choose an action:")
+        self.console.print("[s] Skip: Don't add this word and return to the main menu.")
+        self.console.print("[v] View: Display the existing entry for this word.")
+        self.console.print("[f] Force Add: Add this word as a new entry despite the duplication.")
+
+        choice = Prompt.ask("Your choice", choices=["s", "v", "f"], default="s")
+
         if choice == "s":
+            self.console.print("Skipping this word. Returning to main menu.")
             return False
         elif choice == "v":
+            self.console.print(f"\nDisplaying existing entry for '{existing_word}':")
             self.display_existing_entry(existing_word)
+            self.console.print("\nReturning to main menu without adding a new entry.")
             return False
-        else:
+        else:  # choice == "f"
+            self.console.print(f"Proceeding to add '{word}' as a new entry, even though it may be a duplicate.")
             return True
 
     def display_existing_entry(self, word: str):
