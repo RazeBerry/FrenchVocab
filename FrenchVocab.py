@@ -4,6 +4,8 @@ import os
 import unicodedata
 import anthropic
 from rich.console import Console
+import genanki
+import random
 from rich.panel import Panel
 from rich.table import Table
 from rich.progress import Progress
@@ -49,10 +51,11 @@ class FrenchVocabBuilder:
             content = file.read()
 
         entries = re.findall(
-            r"\\entry\{(\w+)\}\{(.*?)\}\s*\{(.*?)\}\s*\{(.*?)\}", content, re.DOTALL
+            r"\\entry\{(.*?)\}\{(.*?)\}\s*\{(.*?)\}\s*\{(.*?)\}", content, re.DOTALL
         )
         for word, word_type, definitions, examples in entries:
-            self.word_entries[word.lower()] = {
+            word = word.strip().lower()  # Normalize the word
+            self.word_entries[word] = {
                 "word": word,
                 "type": word_type,
                 "definitions": definitions.strip(),
@@ -65,9 +68,63 @@ class FrenchVocabBuilder:
             normalized_word = self.normalize_word(word)
             self.normalized_entries[normalized_word] = word
 
+    def latex_to_anki_format(self, text):
+        # Remove LaTeX item markers
+        text = re.sub(r'\\item\s*', '• ', text)
+
+        # Convert LaTeX newlines to HTML line breaks
+        text = text.replace('\\\\ ', '<br>')
+
+        # Remove any remaining LaTeX commands
+        text = re.sub(r'\\[a-zA-Z]+(\[.*?\])?(\{.*?\})?', '', text)
+
+        # Trim whitespace
+        text = text.strip()
+
+        return text
+
     def normalize_word(self, word: str) -> str:
         word = word.lower().strip()
         return ''.join(c for c in unicodedata.normalize('NFD', word) if unicodedata.category(c) != 'Mn')
+
+    def export_to_anki(self, deck_name: str = "French Vocabulary"):
+        model_id = random.randrange(1 << 30, 1 << 31)
+        model = genanki.Model(
+            model_id,
+            'French Vocab Model',
+            fields=[
+                {'name': 'French'},
+                {'name': 'Type'},
+                {'name': 'English'},
+                {'name': 'Example'},
+            ],
+            templates=[
+                {
+                    'name': 'Card 1',
+                    'qfmt': '{{French}}<br>{{Type}}',
+                    'afmt': '{{FrontSide}}<hr id="answer">{{English}}<br><br>Example:<br>{{Example}}',
+                },
+            ])
+
+        deck_id = random.randrange(1 << 30, 1 << 31)
+        deck = genanki.Deck(deck_id, deck_name)
+
+        for word, entry in self.word_entries.items():
+            word = word.strip()
+
+            note = genanki.Note(
+                model=model,
+                fields=[
+                    entry['word'],
+                    entry['type'],
+                    self.latex_to_anki_format(entry['definitions']),
+                    self.latex_to_anki_format(entry['examples'])
+                ])
+            deck.add_note(note)
+
+        genanki.Package(deck).write_to_file(f'{deck_name}.apkg')
+        console.print(f"[bold green]Anki deck '{deck_name}.apkg' created successfully![/bold green]")
+        console.print(f"[bold blue]Total words exported: {len(deck.notes)}[/bold blue]")
 
     def check_duplicate(self, word: str) -> Optional[str]:
         normalized_word = self.normalize_word(word)
@@ -116,9 +173,10 @@ class FrenchVocabBuilder:
     def show_menu(self):
         console.print("\n[bold cyan]Menu Options:[/bold cyan]")
         console.print("1. Add a new word")
-        console.print("2. Exit")
+        console.print("2. Export to Anki deck")
+        console.print("3. Exit")
         console.print(f"[bold green]Current word count: {self.entry_count}[/bold green]")
-        choice = Prompt.ask("Choose an option", choices=["1", "2"])
+        choice = Prompt.ask("Choose an option", choices=["1", "2", "3"])
         return choice
 
     from rich.table import Table
@@ -453,10 +511,12 @@ When creating definitions and examples:
                     self.console.print(
                         f"[bold red]Failed to get information for '{word}'. Skipping this entry.[/bold red]")
             elif choice == "2":
+                deck_name = Prompt.ask("Enter a name for your Anki deck", default="French Vocabulary")
+                self.export_to_anki(deck_name)
+            elif choice == "3":
                 self.exit_screen()
                 break
             self.console.input("\nPress Enter to continue...")
-
     def display_parsed_info(
             self,
             word: str,
@@ -488,11 +548,7 @@ When creating definitions and examples:
         )
 
 def main() -> None:
-    """
-    Main function to run the French vocabulary builder.
 
-    This function creates an instance of FrenchVocabBuilder and runs it.
-    """
     latex_file = "/Users/sihao/Documents/LaTeX Files/FrenchVocab.tex"
     app = FrenchVocabBuilder(latex_file)
     app.run()
