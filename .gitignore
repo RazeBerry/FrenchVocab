@@ -1,0 +1,12 @@
+# Ignore specific files
+French Vocabulary.apkg
+exported_words.json
+
+# Ignore all .apkg files
+*.apkg
+
+# Ignore all .json files
+*.json
+
+# Ignore all .log files
+*.log
