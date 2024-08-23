@@ -25,6 +25,7 @@ class FrenchVocabBuilder:
         self.normalized_entries: Dict[str, str] = {}
         self.console = Console()
         self.config_file = "vocab_builder_config.json"
+        self.client = None
         self.load_config()
         self.initialize_anthropic_client()
         self.load_existing_entries()
@@ -41,14 +42,28 @@ class FrenchVocabBuilder:
                 os.environ['ANTHROPIC_API_KEY'] = config['ANTHROPIC_API_KEY']
 
     def initialize_anthropic_client(self):
-        try:
-            self.client = anthropic.Anthropic(
-                api_key=os.environ['ANTHROPIC_API_KEY']
-            )
-        except KeyError:
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
             self.console.print("[bold red]ANTHROPIC_API_KEY environment variable is not set.[/bold red]")
             self.first_time_setup()
-            self.initialize_anthropic_client()  # Recursive call to try initializing again
+            api_key = os.environ.get('ANTHROPIC_API_KEY')
+
+        if api_key:
+            try:
+                self.client = anthropic.Anthropic(api_key=api_key)
+                # Test the client with a simple request
+                self.client.messages.create(
+                    model="claude-3-5-sonnet-20240620",
+                    max_tokens=10,
+                    messages=[{"role": "user", "content": "Hello"}]
+                )
+                self.console.print("[bold green]Anthropic client initialized successfully![/bold green]")
+            except Exception as e:
+                self.console.print(f"[bold red]Error initializing Anthropic client: {e}[/bold red]")
+                self.client = None
+        else:
+            self.console.print("[bold red]Failed to set ANTHROPIC_API_KEY. Please check your configuration.[/bold red]")
+            self.client = None
 
     def first_time_setup(self):
         self.console.print("[bold blue]Welcome to French Vocabulary Builder![/bold blue]")
@@ -281,6 +296,11 @@ class FrenchVocabBuilder:
                 return word
 
     def query_ai(self, word: str) -> str:
+        if not self.client:
+            self.console.print("[bold red]Anthropic client is not initialized. Trying to reinitialize...[/bold red]")
+            self.initialize_anthropic_client()
+            if not self.client:
+                return "[bold red]Failed to initialize Anthropic client. Please check your API key and try again.[/bold red]"
         prompt = f"""
         Please provide information for the French word or expression "{word}" in the following format, do note, if a user enters an English word or an expression, you are translate it into French to the best of your ability and then do the following. Furthermore if the user were to enter a verb, YOU ARE TO automatically conjugate it into standard infinitive form:
         Correctly Spelt Word: WORD 
@@ -311,7 +331,7 @@ When creating definitions and examples:
             task = progress.add_task("[cyan]Querying AI...", total=100)
 
             try:
-                message = client.messages.create(
+                message = self.client.messages.create(
                     model="claude-3-5-sonnet-20240620",
                     max_tokens=8192,
                     temperature=0,
