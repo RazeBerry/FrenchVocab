@@ -12,9 +12,11 @@ from rich.panel import Panel
 from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
 from rich.table import Table
+from rich.table import Table
 from enum import Enum, auto
 from latex_templates import INITIAL_TEX_CONTENT, SAMPLE_ENTRY, FINAL_TEX_CONTENT
-
+import time
+import threading
 
 console = Console()
 
@@ -32,6 +34,8 @@ class WordType(Enum):
 class FrenchVocabBuilder:
     DEFAULT_FILENAME = "FrenchVocab.tex"
     def __init__(self, latex_file: str):
+        init_start = time.time()
+        
         self.console = Console()
         if latex_file is None:
             self.latex_file = os.path.join(os.getcwd(), self.DEFAULT_FILENAME)
@@ -44,12 +48,31 @@ class FrenchVocabBuilder:
         self.normalized_entries: Dict[str, str] = {}
         self.config_file = "vocab_builder_config.json"
         self.client = None
+        self.client_lock = threading.Lock()
+        self.client_initialized = threading.Event()
+        
         self.load_config()
-        self.initialize_anthropic_client()
+        if 'ANTHROPIC_API_KEY' not in os.environ:
+            self.console.print("[bold red]ANTHROPIC_API_KEY not set in environment variables after loading config.[/bold red]")
+        # Start the Anthropic client initialization in a separate thread
+        threading.Thread(target=self.initialize_anthropic_client_background, daemon=True).start()
+        
+        load_config_start = time.time()
+        self.load_config()
+        load_config_end = time.time()
+        
+        load_entries_start = time.time()
         self.load_existing_entries()
+        load_entries_end = time.time()
+        
         self.exported_words_file = "exported_words.json"
         self.exported_words = self.load_exported_words()
         self.entry_count = self.count_entries()
+
+        init_end = time.time()
+        print(f"Total init time: {init_end - init_start:.5f} seconds")
+        print(f"  Load config time: {load_config_end - load_config_start:.5f} seconds")
+        print(f"  Load entries time: {load_entries_end - load_entries_start:.5f} seconds")
 
     def create_initial_tex_file(self):
         try:
@@ -71,15 +94,10 @@ class FrenchVocabBuilder:
                 config = json.load(f)
                 os.environ['ANTHROPIC_API_KEY'] = config['ANTHROPIC_API_KEY']
 
-    def initialize_anthropic_client(self):
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
-        if not api_key:
-            self.console.print("[bold red]ANTHROPIC_API_KEY environment variable is not set.[/bold red]")
-            self.first_time_setup()
+    def initialize_anthropic_client_background(self):
+        try:
             api_key = os.environ.get('ANTHROPIC_API_KEY')
-
-        if api_key:
-            try:
+            if api_key:
                 self.client = anthropic.Anthropic(api_key=api_key)
                 # Test the client with a simple request
                 self.client.messages.create(
@@ -88,12 +106,24 @@ class FrenchVocabBuilder:
                     messages=[{"role": "user", "content": "Hello"}]
                 )
                 self.console.print("[bold green]Anthropic client initialized successfully![/bold green]")
-            except Exception as e:
-                self.console.print(f"[bold red]Error initializing Anthropic client: {e}[/bold red]")
-                self.client = None
-        else:
-            self.console.print("[bold red]Failed to set ANTHROPIC_API_KEY. Please check your configuration.[/bold red]")
-            self.client = None
+            else:
+                self.console.print("[bold red]ANTHROPIC_API_KEY not found in environment variables.[/bold red]")
+                self.console.print(f"Config file path: {self.config_file}")
+                if os.path.exists(self.config_file):
+                    with open(self.config_file, 'r') as f:
+                        self.console.print(f"Config file contents: {f.read()}")
+                else:
+                    self.console.print("Config file does not exist.")
+        except Exception as e:
+            self.console.print(f"[bold red]Error initializing Anthropic client: {e}[/bold red]")
+        finally:
+            self.client_initialized.set()
+
+    def get_anthropic_client(self):
+        if not self.client_initialized.is_set():
+            self.console.print("Waiting for Anthropic client to initialize...")
+            self.client_initialized.wait()
+        return self.client
 
     def first_time_setup(self):
         self.console.print("[bold blue]Welcome to French Vocabulary Builder![/bold blue]")
@@ -289,8 +319,6 @@ class FrenchVocabBuilder:
         choice = Prompt.ask("Choose an option", choices=["1", "2", "3"])
         return choice
 
-    from rich.table import Table
-
     def generate_table(self, search_term: str, results: dict) -> Table:
         table = Table(title=f"Search Results for: {search_term}")
         table.add_column("Word", style="cyan")
@@ -329,11 +357,10 @@ class FrenchVocabBuilder:
                 return word
 
     def query_ai(self, word: str) -> str:
-        if not self.client:
-            self.console.print("[bold red]Anthropic client is not initialized. Trying to reinitialize...[/bold red]")
-            self.initialize_anthropic_client()
-            if not self.client:
-                return "[bold red]Failed to initialize Anthropic client. Please check your API key and try again.[/bold red]"
+        client = self.get_anthropic_client()
+        if not client:
+            return "[bold red]Failed to initialize Anthropic client. Please check your API key and try again.[/bold red]"
+        
         prompt = f"""
         Please provide information for the French word or expression "{word}" in the following format, do note, if a user enters an English word or an expression, you are translate it into French to the best of your ability and then do the following. Furthermore if the user were to enter a verb, YOU ARE TO automatically conjugate it into standard infinitive form:
         Correctly Spelt Word: WORD 
@@ -353,7 +380,6 @@ Apply the following criteria:
 1. Always convert French verbs to their standard infinitive form, regardless of how they're initially conjugated.
 2. For the Word Type, use only natural language without any additional symbols or marks.
 3. Provide detailed and nuanced English definitions for each entry.
-
 When creating definitions and examples:
 - Ensure that the definitions are comprehensive and capture different nuances of the word's meaning.
 - Provide context-rich examples that demonstrate the word's usage in various situations.
@@ -364,7 +390,7 @@ When creating definitions and examples:
             task = progress.add_task("[cyan]Querying AI...", total=100)
 
             try:
-                message = self.client.messages.create(
+                message = client.messages.create(
                     model="claude-3-5-sonnet-20240620",
                     max_tokens=8192,
                     temperature=0,
@@ -608,6 +634,21 @@ When creating definitions and examples:
             self.console.input("\nPress Enter to continue...")
 
     def handle_new_word_entry(self):
+        """
+        Handles the process of adding a new word entry to the vocabulary.
+
+        This method performs the following steps:
+        1. Gets and validates a new word input from the user.
+        2. Queries the AI for information about the word.
+        3. Processes the AI response and adds the word to the entries.
+        4. Alphabetizes the entries after adding the new word.
+
+        If at any point the process fails (e.g., invalid word, AI query fails),
+        the method will return early without adding the word.
+
+        Returns:
+            None
+        """
         word = self.get_and_validate_word()
         if not word:
             return
@@ -694,14 +735,24 @@ When creating definitions and examples:
 
 
 def main() -> None:
+    start_time = time.time()
+    
     if len(sys.argv) > 1:
         latex_file = sys.argv[1]
     else:
         latex_file = None
 
+    init_start = time.time()
     app = FrenchVocabBuilder("/Users/sihao/Documents/LaTeX Files/FrenchVocab.tex")
+    init_end = time.time()
+    
+    run_start = time.time()
     app.run()
+    run_end = time.time()
 
+    print(f"Total startup time: {init_end - start_time:.2f} seconds")
+    print(f"Initialization time: {init_end - init_start:.2f} seconds")
+    print(f"Run time: {run_end - run_start:.2f} seconds")
 
 if __name__ == "__main__":
     main()
