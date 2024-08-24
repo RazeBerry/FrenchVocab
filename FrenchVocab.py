@@ -175,11 +175,14 @@ class FrenchVocabBuilder:
             word = word.strip().lower()
 
             if word not in self.exported_words:
+                # Convert word_type to string if it's a list
+                word_type = entry['type'] if isinstance(entry['type'], str) else ', '.join(entry['type'])
+
                 note = genanki.Note(
                     model=model,
                     fields=[
                         entry['word'],
-                        entry['type'],
+                        word_type,  # Use the potentially converted word_type
                         self.latex_to_anki_format(entry['definitions']),
                         self.latex_to_anki_format(entry['examples'])
                     ])
@@ -369,7 +372,7 @@ When creating definitions and examples:
             word_type_string = word_type_match.group(1).strip()
             word_type = [word_type_string]  # Treat as a single-item list
         else:
-            word_type = ["Unknown"]
+            word_type: str = "Unknown"
 
         # Extract definitions
         definitions_match = re.search(
@@ -404,7 +407,7 @@ When creating definitions and examples:
             word: str,
             word_type: str,
             definitions: List[str],
-            examples: List[Tuple[str, str]],
+            examples: List[Tuple[str, str]]
     ) -> str:
         """
         Format the word information into a LaTeX entry.
