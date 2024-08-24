@@ -4,7 +4,7 @@ import random
 import re
 import unicodedata
 from typing import List, Tuple, Optional, Dict
-
+import sys
 import anthropic
 import genanki
 from rich.console import Console
@@ -12,18 +12,36 @@ from rich.panel import Panel
 from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
 from rich.table import Table
+from enum import Enum, auto
+from latex_templates import INITIAL_TEX_CONTENT, SAMPLE_ENTRY, FINAL_TEX_CONTENT
 
 
 console = Console()
 
 
+class WordType(Enum):
+    NOUN = auto()
+    VERB = auto()
+    ADJECTIVE = auto()
+    ADVERB = auto()
+    EXPRESSION = auto()
+    PRONOMINAL_VERB = auto()
+    OTHER = auto()
+
+
 class FrenchVocabBuilder:
+    DEFAULT_FILENAME = "FrenchVocab.tex"
     def __init__(self, latex_file: str):
-        self.latex_file = latex_file
+        self.console = Console()
+        if latex_file is None:
+            self.latex_file = os.path.join(os.getcwd(), self.DEFAULT_FILENAME)
+        else:
+            self.latex_file = latex_file
+        if not os.path.exists(self.latex_file):
+            self.create_initial_tex_file()
         self.max_word_length = 50
         self.word_entries: Dict[str, Dict] = {}
         self.normalized_entries: Dict[str, str] = {}
-        self.console = Console()
         self.config_file = "vocab_builder_config.json"
         self.client = None
         self.load_config()
@@ -32,6 +50,18 @@ class FrenchVocabBuilder:
         self.exported_words_file = "exported_words.json"
         self.exported_words = self.load_exported_words()
         self.entry_count = self.count_entries()
+
+    def create_initial_tex_file(self):
+        try:
+            os.makedirs(os.path.dirname(self.latex_file), exist_ok=True)
+            with open(self.latex_file, 'w', encoding='utf-8') as file:
+                file.write(INITIAL_TEX_CONTENT)
+                file.write(SAMPLE_ENTRY)
+                file.write(FINAL_TEX_CONTENT)
+            self.console.print(f"[bold green]Created initial LaTeX file: {self.latex_file}[/bold green]")
+        except IOError as e:
+            self.console.print(f"[bold red]Error creating initial LaTeX file: {e}[/bold red]")
+            raise
 
     def load_config(self):
         if not os.path.exists(self.config_file):
@@ -633,8 +663,12 @@ When creating definitions and examples:
 
 
 def main() -> None:
-    latex_file = "/Users/sihao/Documents/LaTeX Files/FrenchVocab.tex"
-    app = FrenchVocabBuilder(latex_file)
+    if len(sys.argv) > 1:
+        latex_file = sys.argv[1]
+    else:
+        latex_file = None
+
+    app = FrenchVocabBuilder("/Users/sihao/Documents/LaTeX Files/FrenchVocab.tex")
     app.run()
 
 

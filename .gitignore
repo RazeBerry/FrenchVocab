@@ -10,3 +10,7 @@ exported_words.json
 
 # Ignore all .log files
 *.log
+
+*.tex
+
+*.pdf
