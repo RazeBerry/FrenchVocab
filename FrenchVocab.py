@@ -105,7 +105,7 @@ class FrenchVocabBuilder:
             json.dump(config, f)
 
         os.environ['ANTHROPIC_API_KEY'] = api_key
-        self.console.print("[bold green]API key saved successfully![/bold green]")
+        self.console.print(f"[bold green]API key saved successfully:{api_key}![/bold green]")
 
     def load_exported_words(self):
         if os.path.exists(self.exported_words_file):
@@ -588,49 +588,80 @@ When creating definitions and examples:
     def run(self):
         self.welcome_screen()
         while True:
-            self.entry_count = self.count_entries()  # Update count at the start of each loop
+            self.entry_count = self.count_entries()
             choice = self.show_menu()
             if choice == "1":
-                word = self.get_word_input()
-                existing_word = self.check_duplicate(word)
-                if existing_word:
-                    if not self.handle_duplicate(word, existing_word):
-                        continue
-                ai_response = self.query_ai(word)
-                if ai_response:
-                    word_type, definitions, examples = self.parse_ai_response(ai_response)
-                    self.display_parsed_info(word, word_type, definitions, examples)
-
-                    corrected_spelling_match = re.search(r'Correctly Spelt Word:\s*(.*)', ai_response)
-                    corrected_spelling = corrected_spelling_match.group(1) if corrected_spelling_match else None
-
-                    if corrected_spelling and corrected_spelling.lower() != word.lower():
-                        if Confirm.ask(f"Did you mean '{corrected_spelling}' instead of '{word}'?"):
-                            word = corrected_spelling
-
-                    latex_entry = self.format_latex_entry(word, word_type, definitions, examples)
-                    self.display_latex_entry(latex_entry)
-                    self.insert_entry_alphabetically(latex_entry, word.capitalize())
-
-                    self.word_entries[word.lower()] = {
-                        "word": word.capitalize(),
-                        "type": word_type,
-                        "definitions": "; ".join(definitions),
-                        "examples": "; ".join([f"{f} ({e})" for f, e in examples]),
-                    }
-
-                    self.alphabetize_entries()
-                else:
-                    self.console.print(
-                        f"[bold red]Failed to get information for '{word}'. Skipping this entry.[/bold red]")
+                word = self.get_and_validate_word()
+                if word:
+                    ai_response = self.query_ai(word)
+                    if ai_response:
+                        self.process_ai_response(word, ai_response)
+                        self.add_word_to_entries(word, ai_response)
+                        self.alphabetize_entries()
+                    else:
+                        self.console.print(f"[bold red]Failed to get information for '{word}'. Skipping this entry.[/bold red]")
             elif choice == "2":
-                deck_name = Prompt.ask("Enter a name for your Anki deck", default="French Vocabulary")
-                self.export_to_anki(deck_name)
+                self.handle_anki_export()
             elif choice == "3":
                 self.exit_screen()
                 break
             self.console.input("\nPress Enter to continue...")
 
+    def handle_new_word_entry(self):
+        word = self.get_and_validate_word()
+        if not word:
+            return
+        
+        ai_response = self.query_ai(word)
+        if not ai_response:
+            self.console.print(f"[bold red]Failed to get information for '{word}'. Skipping this entry.[/bold red]")
+            return
+
+        word = self.process_ai_response(word, ai_response)
+        self.add_word_to_entries(word)
+        self.alphabetize_entries()
+
+    def get_and_validate_word(self):
+        word = self.get_word_input()
+        existing_word = self.check_duplicate(word)
+        if existing_word and not self.handle_duplicate(word, existing_word):
+            return None
+        return word
+
+    def process_ai_response(self, word, ai_response):
+        word_type, definitions, examples = self.parse_ai_response(ai_response)
+        self.display_parsed_info(word, word_type, definitions, examples)
+
+        word = self.check_spelling(word, ai_response)
+
+        latex_entry = self.format_latex_entry(word, word_type, definitions, examples)
+        self.display_latex_entry(latex_entry)
+        self.insert_entry_alphabetically(latex_entry, word.capitalize())
+        self.add_word_to_entries(word, ai_response)
+
+        return word
+
+    def check_spelling(self, word, ai_response):
+        corrected_spelling_match = re.search(r'Correctly Spelt Word:\s*(.*)', ai_response)
+        corrected_spelling = corrected_spelling_match.group(1) if corrected_spelling_match else None
+        
+        if corrected_spelling and corrected_spelling.lower() != word.lower():
+            if Confirm.ask(f"Did you mean '{corrected_spelling}' instead of '{word}'?"):
+                return corrected_spelling
+        return word
+
+    def add_word_to_entries(self, word, ai_response):
+        word_type, definitions, examples = self.parse_ai_response(ai_response)
+        self.word_entries[word.lower()] = {
+            "word": word.capitalize(),
+            "type": word_type,
+            "definitions": "; ".join(definitions),
+            "examples": "; ".join([f"{f} ({e})" for f, e in examples]),
+        }
+
+    def handle_anki_export(self):
+        deck_name = Prompt.ask("Enter a name for your Anki deck", default="French Vocabulary")
+        self.export_to_anki(deck_name)
     def display_parsed_info(
             self,
             word: str,
