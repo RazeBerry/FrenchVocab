@@ -8,8 +8,6 @@
 5. [Usage](#usage)
 6. [Features](#features)
 7. [Troubleshooting](#troubleshooting)
-8. [Contributing](#contributing)
-9. [License](#license)
 
 ## Introduction
 
@@ -33,7 +31,7 @@ Before you begin, ensure you have the following installed:
 
 2. Install the required Python packages:
    ```
-   pip install anthropic rich
+   pip install requirements.txt -r
    ```
 
 ## Configuration
@@ -51,7 +49,7 @@ The French Vocabulary LaTeX Builder now includes automatic setup and configurati
 3. Custom LaTeX File Path (Optional):
    - If you want to use a custom path for your LaTeX file, you can specify it when running the script:
      ```
-     python french_vocab_builder.py /path/to/your/custom_file.tex
+     python frenchvocab.py /path/to/your/custom_file.tex
      ```
 
 No manual configuration is required for basic usage. The program will guide you through the setup process on its first run.
