@@ -54,6 +54,7 @@ class FrenchVocabBuilder:
         self.load_config()
         if 'ANTHROPIC_API_KEY' not in os.environ:
             self.console.print("[bold red]ANTHROPIC_API_KEY not set in environment variables after loading config.[/bold red]")
+        
         # Start the Anthropic client initialization in a separate thread
         threading.Thread(target=self.initialize_anthropic_client_background, daemon=True).start()
         

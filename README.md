@@ -38,19 +38,23 @@ Before you begin, ensure you have the following installed:
 
 ## Configuration
 
-1. Set up your Anthropic API key:
-   - Create an environment variable named `ANTHROPIC_API_KEY` with your API key:
-     ```
-     export ANTHROPIC_API_KEY='your-api-key-here'
-     ```
-   - Alternatively, you can modify the script to use a configuration file or input the API key manually.
+The French Vocabulary LaTeX Builder now includes automatic setup and configuration:
 
-2. Specify the path to your LaTeX file:
-   - Open the `main()` function in the script.
-   - Update the `latex_file` variable with the path to your LaTeX file:
-     ```python
-     latex_file = "/path/to/your/FrenchVocab.tex"
+1. First-time Setup:
+   - When you run the program for the first time, it will prompt you to enter your Anthropic API key.
+   - The API key will be saved in a configuration file for future use.
+
+2. Automatic LaTeX File Generation:
+   - If the LaTeX file doesn't exist, the program will automatically create it with the necessary structure.
+   - The default filename is "FrenchVocab.tex" in the current working directory.
+
+3. Custom LaTeX File Path (Optional):
+   - If you want to use a custom path for your LaTeX file, you can specify it when running the script:
      ```
+     python french_vocab_builder.py /path/to/your/custom_file.tex
+     ```
+
+No manual configuration is required for basic usage. The program will guide you through the setup process on its first run.
 
 ## Usage
 
@@ -59,7 +63,7 @@ To run the French Vocabulary LaTeX Builder:
 1. Open a terminal and navigate to the project directory.
 2. Run the script:
    ```
-   python french_vocab_builder.py
+   python FrenchVocab.py
    ```
 3. Follow the on-screen prompts to add new words, search existing entries, or exit the program.
 
@@ -92,16 +96,3 @@ To run the French Vocabulary LaTeX Builder:
 - **File Not Found Error**: Double-check the path to your LaTeX file in the `main()` function.
 - **Unicode Errors**: Make sure your terminal supports UTF-8 encoding for proper display of French characters.
 
-## Contributing
-
-Contributions to the French Vocabulary LaTeX Builder are welcome! Please follow these steps:
-
-1. Fork the repository.
-2. Create a new branch for your feature.
-3. Commit your changes.
-4. Push to your branch.
-5. Create a pull request.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
