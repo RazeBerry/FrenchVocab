@@ -88,12 +88,11 @@ class FrenchVocabBuilder:
             raise
 
     def load_config(self):
-        if not os.path.exists(self.config_file):
+        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
             self.first_time_setup()
         else:
-            with open(self.config_file, 'r') as f:
-                config = json.load(f)
-                os.environ['ANTHROPIC_API_KEY'] = config['ANTHROPIC_API_KEY']
+            self.console.print("[bold green]ANTHROPIC_API_KEY found in environment variables.[/bold green]")
 
     def initialize_anthropic_client_background(self):
         try:
@@ -129,14 +128,10 @@ class FrenchVocabBuilder:
     def first_time_setup(self):
         self.console.print("[bold blue]Welcome to French Vocabulary Builder![/bold blue]")
         self.console.print("It looks like this is your first time running the program or the API key is not set.")
-        api_key = Prompt.ask("Please enter your Anthropic API key")
-
-        config = {'ANTHROPIC_API_KEY': api_key}
-        with open(self.config_file, 'w') as f:
-            json.dump(config, f)
-
-        os.environ['ANTHROPIC_API_KEY'] = api_key
-        self.console.print(f"[bold green]API key saved successfully:{api_key}![/bold green]")
+        self.console.print("Please set your Anthropic API key as an environment variable named ANTHROPIC_API_KEY.")
+        self.console.print("You can do this by running:")
+        self.console.print("export ANTHROPIC_API_KEY='your-api-key-here'")
+        sys.exit(1)
 
     def load_exported_words(self):
         if os.path.exists(self.exported_words_file):
@@ -622,6 +617,9 @@ When creating definitions and examples:
                 if word:
                     ai_response = self.query_ai(word)
                     if ai_response:
+                        word = self.check_spelling(word, ai_response)
+                        if word is None:  # User chose to abandon the edit
+                            continue
                         self.process_ai_response(word, ai_response)
                         self.add_word_to_entries(word, ai_response)
                         self.alphabetize_entries()
@@ -665,6 +663,9 @@ When creating definitions and examples:
 
     def get_and_validate_word(self):
         word = self.get_word_input()
+        if not word.isalpha():
+            self.console.print("[bold red]Error: Input must contain only alphabetic characters.[/bold red]")
+            return None
         existing_word = self.check_duplicate(word)
         if existing_word and not self.handle_duplicate(word, existing_word):
             return None
@@ -688,8 +689,16 @@ When creating definitions and examples:
         corrected_spelling = corrected_spelling_match.group(1) if corrected_spelling_match else None
         
         if corrected_spelling and corrected_spelling.lower() != word.lower():
-            if Confirm.ask(f"Did you mean '{corrected_spelling}' instead of '{word}'?"):
+            choice = Prompt.ask(
+                f"Did you mean '{corrected_spelling}' instead of '{word}'?",
+                choices=["y", "n", "q"],
+                default="y"
+            )
+            if choice == "y":
                 return corrected_spelling
+            elif choice == "q":
+                self.console.print("[yellow]Abandoning edit. Returning to main menu.[/yellow]")
+                return None
         return word
 
     def add_word_to_entries(self, word, ai_response):

@@ -14,3 +14,12 @@ exported_words.json
 *.tex
 
 *.pdf
+
+# Ignore JetBrains IDE settings
+.idea/
+
+# Ignore compiled Python bytecode
+__pycache__/
+
+# Ignore macOS custom attributes
+.DS_Store

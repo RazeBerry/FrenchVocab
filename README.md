@@ -31,7 +31,7 @@ Before you begin, ensure you have the following installed:
 
 2. Install the required Python packages:
    ```
-   pip install requirements.txt -r
+   pip install -r requirements.txt 
    ```
 
 ## Configuration
@@ -75,17 +75,13 @@ To run the French Vocabulary LaTeX Builder:
   - Example sentences in French with English translations
 - The information is formatted into a LaTeX entry and inserted into your file.
 
-### 2. Live Search
-- Search through existing entries in real-time.
-- View word types and definitions for quick reference.
-
-### 3. Automatic Alphabetization
+### 2. Automatic Alphabetization
 - Entries are automatically sorted alphabetically in the LaTeX file.
 
-### 4. Duplicate Handling
+### 3. Duplicate Handling
 - The system checks for duplicates and offers options to skip, view, or force add the entry.
 
-### 5. AI-Powered Assistance
+### 4. AI-Powered Assistance
 - Utilizes Claude AI to generate accurate definitions and contextual examples.
 
 ## Troubleshooting
