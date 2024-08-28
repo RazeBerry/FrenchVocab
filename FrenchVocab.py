@@ -14,7 +14,7 @@ from rich.prompt import Prompt, Confirm
 from rich.table import Table
 from rich.table import Table
 from enum import Enum, auto
-from latex_templates import INITIAL_TEX_CONTENT, SAMPLE_ENTRY, FINAL_TEX_CONTENT
+from latex_templates import INITIAL_TEX_CONTENT, SAMPLE_ENTRY, FINAL_TEX_CONTENT, AI_PROMPT_TEMPLATE
 import time
 import threading
 
@@ -349,6 +349,8 @@ class FrenchVocabBuilder:
                 )
             elif not word:
                 console.print("[bold red]Error: Input cannot be empty.[/bold red]")
+            elif not all(char.isalpha() or char.isspace() for char in word):
+                console.print("[bold red]Error: Input must contain only alphabetic characters and spaces.[/bold red]")
             else:
                 return word
 
@@ -357,31 +359,7 @@ class FrenchVocabBuilder:
         if not client:
             return "[bold red]Failed to initialize Anthropic client. Please check your API key and try again.[/bold red]"
         
-        prompt = f"""
-        Please provide information for the French word or expression "{word}" in the following format, do note, if a user enters an English word or an expression, you are translate it into French to the best of your ability and then do the following. Furthermore if the user were to enter a verb, YOU ARE TO automatically conjugate it into standard infinitive form:
-        Correctly Spelt Word: WORD 
-        Word Type: [Specify the word type without any additional symbols or marks. Choose from: noun, verb, adjective, expression, adverb, pronominal verb, or use your discretion for other types]
-        Definitions:
-        a. [First English definition]
-        b. [Second English definition]
-        c. [Third English definition (if applicable)]
-        Examples:
-        1. [French example 1]
-        [English translation 1]
-        2. [French example 2]
-        [English translation 2]
-        3. [French example 3 (if applicable)]
-        [English translation 3 (if applicable)]
-Apply the following criteria:
-1. Always convert French verbs to their standard infinitive form, regardless of how they're initially conjugated.
-2. For the Word Type, use only natural language without any additional symbols or marks.
-3. Provide detailed and nuanced English definitions for each entry.
-When creating definitions and examples:
-- Ensure that the definitions are comprehensive and capture different nuances of the word's meaning.
-- Provide context-rich examples that demonstrate the word's usage in various situations.
-- Make sure the English translations accurately reflect the meaning and tone of the French examples.
-        """
-
+        prompt = AI_PROMPT_TEMPLATE.format(word=word)
         with Progress() as progress:
             task = progress.add_task("[cyan]Querying AI...", total=100)
 
@@ -613,7 +591,7 @@ When creating definitions and examples:
             self.entry_count = self.count_entries()
             choice = self.show_menu()
             if choice == "1":
-                word = self.get_and_validate_word()
+                word = self.get_word_input()  # This already allows for spaces
                 if word:
                     ai_response = self.query_ai(word)
                     if ai_response:
@@ -663,9 +641,6 @@ When creating definitions and examples:
 
     def get_and_validate_word(self):
         word = self.get_word_input()
-        if not word.isalpha():
-            self.console.print("[bold red]Error: Input must contain only alphabetic characters.[/bold red]")
-            return None
         existing_word = self.check_duplicate(word)
         if existing_word and not self.handle_duplicate(word, existing_word):
             return None
