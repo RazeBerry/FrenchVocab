@@ -26,7 +26,7 @@ Before you begin, ensure you have the following installed:
 1. Clone the repository or download the source code:
    ```
    git clone https://github.com/Razeberry/frenchvocab.git
-   cd french-vocab
+   cd frenchvocab
    ```
 
 2. Install the required Python packages:
