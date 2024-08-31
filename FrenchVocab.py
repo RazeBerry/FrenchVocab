@@ -367,7 +367,7 @@ class FrenchVocabBuilder:
                 message = client.messages.create(
                     model="claude-3-5-sonnet-20240620",
                     max_tokens=8192,
-                    temperature=0,
+                    temperature=0.1,
                     messages=[
                         {"role": "user", "content": [{"type": "text", "text": prompt}]}
                     ],
@@ -660,15 +660,21 @@ class FrenchVocabBuilder:
         return word
 
     def check_spelling(self, word, ai_response):
+
+        spelling_check_match = re.search(r'Spelling Check:\s*(.*)', ai_response)
+        spelling_check = spelling_check_match.group(1) if spelling_check_match else None
+
         corrected_spelling_match = re.search(r'Correctly Spelt Word:\s*(.*)', ai_response)
         corrected_spelling = corrected_spelling_match.group(1) if corrected_spelling_match else None
-        
-        if corrected_spelling and corrected_spelling.lower() != word.lower():
-            choice = Prompt.ask(
-                f"Did you mean '{corrected_spelling}' instead of '{word}'?",
-                choices=["y", "n", "q"],
-                default="y"
-            )
+
+
+        if corrected_spelling and corrected_spelling.lower().strip() != word.lower().strip():
+            self.console.print(f"Did you mean '{corrected_spelling}' instead of '{word}'?")
+            self.console.print("y: Yes, use the corrected spelling")
+            self.console.print("n: No, keep the original spelling")
+            self.console.print("q: Quit and abandon this edit")
+            choice = Prompt.ask("Your choice", choices=["y", "n", "q"], default="y")
+            
             if choice == "y":
                 return corrected_spelling
             elif choice == "q":

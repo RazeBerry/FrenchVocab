@@ -1,0 +1,79 @@
+import time
+import subprocess
+import statistics
+import os
+import google.generativeai as genai
+
+def measure_python_startup():
+    start_time = time.perf_counter()
+    subprocess.run(["python", "-c", ""], capture_output=True)
+    end_time = time.perf_counter()
+    return end_time - start_time
+
+def run_gemini_api():
+    genai.configure(api_key="AIzaSyAPRFGq4h3evKuD_g2ocpC7vweH7zVa8VU")
+    
+    generation_config = {
+        "temperature": 1,
+        "top_p": 0.95,
+        "top_k": 64,
+        "max_output_tokens": 8192,
+        "response_mime_type": "text/plain",
+    }
+    
+    model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash-8b-exp-0827",
+        generation_config=generation_config,
+    )
+    
+    chat_session = model.start_chat(history=[])
+    
+    input_message = """Extract the TICKER from this MESSAGE: "NEW FROM US: 
+
+Super Micro—Fresh Evidence Of Accounting Manipulation, Sibling Self-Dealing And Sanctions Evasion At This AI High Flyer
+
+https://hindenburgresearch.com/smci/ $SMCI
+" YOU OUTPUT NOTHING OTHER THAN THE TICKER"""
+
+    response = chat_session.send_message(input_message)
+    return response.text
+
+def measure_code_execution():
+    start_time = time.perf_counter()
+    result = run_gemini_api()
+    end_time = time.perf_counter()
+    return end_time - start_time, result
+
+# Measure Python interpreter startup time
+startup_times = []
+print("Measuring Python interpreter startup time...")
+for i in range(10):
+    startup_time = measure_python_startup()
+    startup_times.append(startup_time)
+    print(f"Startup Run {i+1}: {startup_time:.6f} seconds")
+
+print(f"\nAverage startup time: {statistics.mean(startup_times):.6f} seconds")
+print(f"Minimum startup time: {min(startup_times):.6f} seconds")
+print(f"Maximum startup time: {max(startup_times):.6f} seconds")
+print(f"Standard deviation of startup time: {statistics.stdev(startup_times):.6f} seconds")
+
+# Measure code execution time
+execution_times = []
+print("\nMeasuring code execution time...")
+for i in range(10):
+    execution_time, result = measure_code_execution()
+    execution_times.append(execution_time)
+    print(f"Execution Run {i+1}: {execution_time:.6f} seconds")
+    print(f"Extracted ticker: {result}")
+
+print(f"\nAverage execution time: {statistics.mean(execution_times):.6f} seconds")
+print(f"Minimum execution time: {min(execution_times):.6f} seconds")
+print(f"Maximum execution time: {max(execution_times):.6f} seconds")
+print(f"Standard deviation of execution time: {statistics.stdev(execution_times):.6f} seconds")
+
+# Calculate total time (startup + execution)
+total_times = [s + e for s, e in zip(startup_times, execution_times)]
+print(f"\nAverage total time (startup + execution): {statistics.mean(total_times):.6f} seconds")
+print(f"Minimum total time: {min(total_times):.6f} seconds")
+print(f"Maximum total time: {max(total_times):.6f} seconds")
+print(f"Standard deviation of total time: {statistics.stdev(total_times):.6f} seconds")
