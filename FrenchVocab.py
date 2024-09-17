@@ -17,6 +17,9 @@ from enum import Enum, auto
 from latex_templates import INITIAL_TEX_CONTENT, SAMPLE_ENTRY, FINAL_TEX_CONTENT, AI_PROMPT_TEMPLATE
 import time
 import threading
+from rich.table import Table
+from rich.panel import Panel
+from rich.text import Text
 
 console = Console()
 
@@ -311,25 +314,31 @@ class FrenchVocabBuilder:
         return self.normalized_entries.get(normalized_word)
 
     def handle_duplicate(self, word: str, existing_word: str) -> bool:
-        self.console.print(
-            f"[bold yellow]Warning: '{word}' already exists in the dictionary as '{existing_word}'.[/bold yellow]")
-        self.console.print("\nPlease choose an action:")
-        self.console.print("[s] Skip: Don't add this word and return to the main menu.")
-        self.console.print("[v] View: Display the existing entry for this word.")
-        self.console.print("[f] Force Add: Add this word as a new entry despite the duplication.")
+        warning_text = Text(f"Warning: '{word}' already exists in the dictionary as '{existing_word}'.", style="bold yellow")
+        self.console.print(Panel(warning_text, border_style="yellow"))
+
+        # Create a table for options
+        table = Table(show_header=False, box=None, padding=(0, 1))
+        table.add_column(style="cyan", no_wrap=True)
+        table.add_column(style="white")
+        table.add_row("[s]", "Skip: Don't add this word and return to the main menu.")
+        table.add_row("[v]", "View: Display the existing entry for this word.")
+        table.add_row("[f]", "Force Add: Add this word as a new entry despite the duplication.")
+
+        self.console.print(Panel(table, title="Please choose an action", border_style="blue"))
 
         choice = Prompt.ask("Your choice", choices=["s", "v", "f"], default="s")
 
         if choice == "s":
-            self.console.print("Skipping this word. Returning to main menu.")
+            self.console.print(Panel("Skipping this word. Returning to main menu.", border_style="green"))
             return False
         elif choice == "v":
-            self.console.print(f"\nDisplaying existing entry for '{existing_word}':")
+            self.console.print(Panel(f"Displaying existing entry for '{existing_word}':", border_style="cyan"))
             self.display_existing_entry(existing_word)
-            self.console.print("\nReturning to main menu without adding a new entry.")
+            self.console.print(Panel("Returning to main menu without adding a new entry.", border_style="green"))
             return False
         else:  # choice == "f"
-            self.console.print(f"Proceeding to add '{word}' as a new entry, even though it may be a duplicate.")
+            self.console.print(Panel(f"Proceeding to add '{word}' as a new entry, even though it may be a duplicate.", border_style="magenta"))
             return True
 
     def display_existing_entry(self, word: str):
@@ -524,17 +533,6 @@ class FrenchVocabBuilder:
             with open(self.latex_file, "r", encoding="utf-8") as file:
                 content = file.read()
 
-            normalized_new_word = self.normalize_word(new_word)
-            if normalized_new_word in self.normalized_entries:
-                existing_word = self.normalized_entries[normalized_new_word]
-                console.print(
-                    f"[bold yellow]Entry for '{new_word}' already exists as '{existing_word}'. Updating entry.[/bold yellow]")
-
-                # Remove existing entry
-                existing_entry_pattern = re.compile(rf"\\entry{{{re.escape(existing_word)}}}.*?(?=\\entry|\Z)",
-                                                    re.DOTALL)
-                content = existing_entry_pattern.sub('', content)
-
             # Find the position to insert the new entry
             insert_position = content.rfind("\\entry")
             insert_position = content.find("\\end{itemize}", insert_position)
@@ -553,10 +551,8 @@ class FrenchVocabBuilder:
             console.print(f"[bold green]Added/Updated entry for '{new_word}' in {self.latex_file}[/bold green]")
 
             # Update the normalized entries dictionary
+            normalized_new_word = self.normalize_word(new_word)
             self.normalized_entries[normalized_new_word] = new_word.capitalize()
-
-            # Alphabetize entries after insertion
-            self.alphabetize_entries()
 
         except FileNotFoundError:
             console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
@@ -638,18 +634,7 @@ class FrenchVocabBuilder:
             self.entry_count = self.count_entries()
             choice = self.show_menu()
             if choice == "1":
-                word = self.get_word_input()  # This already allows for spaces
-                if word:
-                    ai_response = self.query_ai(word)
-                    if ai_response:
-                        word = self.check_spelling(word, ai_response)
-                        if word is None:  # User chose to abandon the edit
-                            continue
-                        self.process_ai_response(word, ai_response)
-                        self.add_word_to_entries(word, ai_response)
-                        self.alphabetize_entries()
-                    else:
-                        self.console.print(f"[bold red]Failed to get information for '{word}'. Skipping this entry.[/bold red]")
+                self.handle_new_word_entry()
             elif choice == "2":
                 self.handle_anki_export()
             elif choice == "3":
@@ -658,39 +643,23 @@ class FrenchVocabBuilder:
             self.console.input("\nPress Enter to continue...")
 
     def handle_new_word_entry(self):
-        """
-        Handles the process of adding a new word entry to the vocabulary.
-
-        This method performs the following steps:
-        1. Gets and validates a new word input from the user.
-        2. Queries the AI for information about the word.
-        3. Processes the AI response and adds the word to the entries.
-        4. Alphabetizes the entries after adding the new word.
-
-        If at any point the process fails (e.g., invalid word, AI query fails),
-        the method will return early without adding the word.
-
-        Returns:
-            None
-        """
-        word = self.get_and_validate_word()
-        if not word:
-            return
-        
-        ai_response = self.query_ai(word)
-        if not ai_response:
-            self.console.print(f"[bold red]Failed to get information for '{word}'. Skipping this entry.[/bold red]")
-            return
-
-        word = self.process_ai_response(word, ai_response)
-        self.add_word_to_entries(word)
-
-    def get_and_validate_word(self):
         word = self.get_word_input()
-        existing_word = self.check_duplicate(word)
-        if existing_word and not self.handle_duplicate(word, existing_word):
-            return None
-        return word
+        if word:
+            existing_word = self.check_duplicate(word)
+            if existing_word:
+                if not self.handle_duplicate(word, existing_word):
+                    return  # User chose to skip or view existing entry
+            
+            ai_response = self.query_ai(word)
+            if ai_response:
+                word = self.check_spelling(word, ai_response)
+                if word is None:  # User chose to abandon the edit
+                    return
+                self.process_ai_response(word, ai_response)
+                self.add_word_to_entries(word, ai_response)
+                self.alphabetize_entries()
+            else:
+                self.console.print(f"[bold red]Failed to get information for '{word}'. Skipping this entry.[/bold red]")
 
     def process_ai_response(self, word, ai_response):
         word_type, definitions, examples = self.parse_ai_response(ai_response)
