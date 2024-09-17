@@ -52,12 +52,12 @@ a. [First English definition]
 b. [Second English definition]
 c. [Third English definition (if applicable)]
 Examples:
-1. [French example 1]
+1. [French example 1 - If the word is a verb, use PRESENT tense]
 [English translation 1]
-2. [French example 2]
+2. [French example 2 - If the word is a verb, use PAST tense]
 [English translation 2]
-3. [French example 3 (if applicable)]
-[English translation 3 (if applicable)]
+3. [French example 3 - If the word is a verb, use FUTURE tense]
+[English translation 3]
 
 Apply the following criteria:
 1. Always check the spelling first and provide the correct spelling if necessary.
@@ -68,4 +68,5 @@ Apply the following criteria:
 6. Ensure that the definitions are comprehensive and capture different nuances of the word's meaning.
 7. Provide context-rich examples that demonstrate the word's usage in various situations.
 8. Make sure the English translations accurately reflect the meaning and tone of the French examples.
+9. For verbs, structure the example sentences to show present tense in the first example, past tense in the second example, and future tense in the third example.
 """

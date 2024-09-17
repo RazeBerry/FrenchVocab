@@ -97,27 +97,32 @@ class FrenchVocabBuilder:
     def initialize_anthropic_client_background(self):
         try:
             api_key = os.environ.get('ANTHROPIC_API_KEY')
-            if api_key:
+            if api_key and api_key.startswith("sk-ant") and len(api_key) >= 32:
                 self.client = anthropic.Anthropic(api_key=api_key)
-                # Test the client with a simple request
-                self.client.messages.create(
-                    model="claude-3-5-sonnet-20240620",
-                    max_tokens=10,
-                    messages=[{"role": "user", "content": "Hello"}]
-                )
                 self.console.print("[bold green]Anthropic client initialized successfully![/bold green]")
             else:
-                self.console.print("[bold red]ANTHROPIC_API_KEY not found in environment variables.[/bold red]")
-                self.console.print(f"Config file path: {self.config_file}")
-                if os.path.exists(self.config_file):
-                    with open(self.config_file, 'r') as f:
-                        self.console.print(f"Config file contents: {f.read()}")
-                else:
-                    self.console.print("Config file does not exist.")
+                self.console.print("[bold red]Invalid or missing ANTHROPIC_API_KEY in environment variables.[/bold red]")
+                self.provide_api_key_instructions()
         except Exception as e:
             self.console.print(f"[bold red]Error initializing Anthropic client: {e}[/bold red]")
+            self.provide_api_key_instructions()
         finally:
             self.client_initialized.set()
+
+    def provide_api_key_instructions(self):
+        instructions = """
+        [bold yellow]To obtain an Anthropic API key:[/bold yellow]
+        1. Go to https://www.anthropic.com or https://console.anthropic.com
+        2. Sign up for an account or log in if you already have one
+        3. Navigate to the API section in your account dashboard
+        4. Generate a new API key
+        5. Copy the key and set it as an environment variable:
+           [bold cyan]export ANTHROPIC_API_KEY='your-api-key-here'[/bold cyan]
+        6. Restart the application
+        
+        [bold]Note:[/bold] Keep your API key secure and never share it publicly.
+        """
+        self.console.print(Panel(instructions, title="Anthropic API Key Instructions", expand=False))
 
     def get_anthropic_client(self):
         if not self.client_initialized.is_set():
@@ -178,33 +183,59 @@ class FrenchVocabBuilder:
             self.normalized_entries[normalized_word] = word
 
     def latex_to_anki_format(self, text):
-        # Remove LaTeX item markers and ensure each item starts on a new line
-        text = re.sub(r'\\item\s*', '\n• ', text)
-
+        # Remove LaTeX item markers
+        text = re.sub(r'\\item\s*', '', text)
+        
         # Convert LaTeX newlines to HTML line breaks
         text = text.replace('\\\\ ', '<br>')
-
+        
         # Remove any remaining LaTeX commands
         text = re.sub(r'\\[a-zA-Z]+(\[.*?\])?(\{.*?\})?', '', text)
-
-        # Ensure the text starts with a bullet point
-        if not text.startswith('• '):
-            text = '• ' + text
-
-        # Remove any extra newlines
-        text = re.sub(r'\n+', '\n', text)
-
-        # Trim whitespace
-        text = text.strip()
-
-        return text
+        
+        # Split the text into individual items
+        items = [item.strip() for item in text.split('\n') if item.strip()]
+        
+        # Add bullet points to each item
+        formatted_items = [f'• {item}' for item in items]
+        
+        # Join the items with HTML line breaks
+        formatted_text = '<br>'.join(formatted_items)
+        
+        return formatted_text.strip()
 
     def normalize_word(self, word: str) -> str:
+        """Normalize a given word by converting it to lowercase and removing accents.
+
+        This method takes a word, converts it to lowercase, strips any leading and trailing 
+        whitespace, and removes diacritical marks (accents) to produce a normalized version 
+        of the word.
+
+        Args:
+            word (str): The word to normalize.
+
+        Returns:
+            str: The normalized word without accents.
+        """
         word = word.lower().strip()
         return ''.join(c for c in unicodedata.normalize('NFD', word) if unicodedata.category(c) != 'Mn')
 
     def export_to_anki(self, deck_name: str = "French Vocabulary"):
+        """Exports the French vocabulary entries to an Anki deck.
+
+        This method creates an Anki deck using the genanki library by iterating over
+        the current vocabulary entries, formatting each entry into an Anki note, and
+        adding it to the deck. Only words that have not been exported before are
+        included to avoid duplicates.
+
+        Args:
+            deck_name (str, optional): The name of the Anki deck to be created.
+                Defaults to "French Vocabulary".
+
+        Raises:
+            IOError: If there's an error writing the Anki package file.
+        """
         model_id = random.randrange(1 << 30, 1 << 31)
+        # Define the model for Anki notes
         model = genanki.Model(
             model_id,
             'French Vocab Model',
@@ -222,34 +253,46 @@ class FrenchVocabBuilder:
                 },
             ])
 
+        # Generate a unique deck ID
         deck_id = random.randrange(1 << 30, 1 << 31)
+        # Create a new Anki deck with the specified name and ID
         deck = genanki.Deck(deck_id, deck_name)
 
+        # Set to keep track of newly added words in this export
         newly_added_words = set()
 
+        # Iterate over all word entries
         for word, entry in self.word_entries.items():
+            # Normalize the word by stripping whitespace and converting to lowercase
             word = word.strip().lower()
 
+            # Check if the word has already been exported to Anki
             if word not in self.exported_words:
-                # Convert word_type to string if it's a list
-                word_type = entry['type'] if isinstance(entry['type'], str) else ', '.join(entry['type'])
+                # Ensure word_type is always a string
+                word_type = ', '.join(entry['type']) if isinstance(entry['type'], list) else entry['type']
 
+                # Create a new Anki note with the formatted fields
                 note = genanki.Note(
                     model=model,
                     fields=[
                         entry['word'],
-                        word_type,  # Use the potentially converted word_type
+                        word_type,
                         self.latex_to_anki_format(entry['definitions']),
-                        self.latex_to_anki_format(entry['examples'])
+                        self.latex_to_anki_format(entry['examples']),
                     ])
+                # Add the note to the deck
                 deck.add_note(note)
+                # Mark the word as exported
                 self.exported_words.add(word)
+                # Add the word to the set of newly added words
                 newly_added_words.add(word)
 
+        # Write the deck to a .apkg file
         genanki.Package(deck).write_to_file(f'{deck_name}.apkg')
+        # Save the state of exported words to persist across sessions
         self.save_exported_words()
 
-        # Prepare the feedback message
+        # Prepare the feedback message for the user
         feedback = f"""
         [bold green]Anki deck '{deck_name}.apkg' created successfully![/bold green]
 
@@ -260,7 +303,7 @@ class FrenchVocabBuilder:
         {', '.join(sorted(newly_added_words)) if newly_added_words else 'No new words added in this export.'}
         """
 
-        # Display the feedback in a panel
+        # Display the feedback in a styled panel using Rich
         self.console.print(Panel(feedback, title="Export Summary", expand=False, border_style="green"))
 
     def check_duplicate(self, word: str) -> Optional[str]:
