@@ -43,7 +43,7 @@ class FrenchVocabBuilder:
             self.latex_file = latex_file
         if not os.path.exists(self.latex_file):
             self.create_initial_tex_file()
-        self.max_word_length = 50
+        self.max_word_length = 100
         self.word_entries: Dict[str, Dict] = {}
         self.normalized_entries: Dict[str, str] = {}
         self.config_file = "vocab_builder_config.json"
@@ -349,10 +349,14 @@ class FrenchVocabBuilder:
                 )
             elif not word:
                 console.print("[bold red]Error: Input cannot be empty.[/bold red]")
-            elif not all(char.isalpha() or char.isspace() for char in word):
-                console.print("[bold red]Error: Input must contain only alphabetic characters and spaces.[/bold red]")
+            elif not self.is_valid_french_input(word):
+                console.print("[bold red]Error: Input contains invalid characters for French words.[/bold red]")
             else:
                 return word
+
+    def is_valid_french_input(self, word: str) -> bool:
+        # Allow letters (including accented), spaces, hyphens, and apostrophes
+        return all(char.isalpha() or char.isspace() or char in "'-àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ" for char in word)
 
     def query_ai(self, word: str) -> str:
         client = self.get_anthropic_client()
@@ -637,7 +641,6 @@ class FrenchVocabBuilder:
 
         word = self.process_ai_response(word, ai_response)
         self.add_word_to_entries(word)
-        self.alphabetize_entries()
 
     def get_and_validate_word(self):
         word = self.get_word_input()

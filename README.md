@@ -11,46 +11,74 @@
 
 ## Introduction
 
-The French Vocabulary LaTeX Builder is a Python application designed to help users create and maintain a LaTeX document for French vocabulary. It uses AI-powered assistance to generate definitions and examples for French words, which are then formatted into LaTeX entries and inserted into a specified file.
+The **French Vocabulary LaTeX Builder** is a Python application designed to help users create and maintain a LaTeX document for French vocabulary. It leverages AI-powered assistance to generate definitions and examples for French words, formatting them into LaTeX entries and inserting them into a specified file. Additionally, the tool offers seamless export to Anki decks for efficient learning.
 
 ## Prerequisites
 
 Before you begin, ensure you have the following installed:
 
-- Python 3.7 or higher
-- pip (Python package installer)
-- An Anthropic API key for Claude AI integration
+- **Python 3.7** or higher
+- **pip** (Python package installer)
+- An **Anthropic API key** for Claude AI integration
+
+### Setting Up the Anthropic API Key
+
+You need to set your Anthropic API key as an environment variable. Follow the instructions for your operating system:
+
+#### macOS
+
+1. Open the Terminal.
+2. Run the following command, replacing `your-api-key-here` with your actual API key:
+
+    ```bash
+    export ANTHROPIC_API_KEY='your-api-key-here'
+    ```
+
+3. To make this change permanent, add the above line to your shell configuration file (e.g., `.bash_profile`, `.zshrc`):
+
+    ```bash
+    echo "export ANTHROPIC_API_KEY='your-api-key-here'" >> ~/.zshrc
+    source ~/.zshrc
+    ```
+
+#### Windows
+
+1. Open **Command Prompt** or **PowerShell**.
+2. Run the following command, replacing `your-api-key-here` with your actual API key:
+
+    ```powershell
+    setx ANTHROPIC_API_KEY "your-api-key-here"
+    ```
+
+3. Restart your Command Prompt or PowerShell to apply the changes.
 
 ## Installation
 
-1. Clone the repository or download the source code:
-   ```
-   git clone https://github.com/Razeberry/frenchvocab.git
-   cd french-vocab
-   ```
+1. **Clone the repository** or download the source code:
 
-2. Install the required Python packages:
-   ```
-   pip install -r requirements.txt 
-   ```
+    ```bash
+    git clone https://github.com/Razeberry/frenchvocab.git
+    cd frenchvocab
+    ```
+
+2. **Install the required Python packages**:
+
+    ```bash
+    pip install -r requirements.txt
+    ```
 
 ## Configuration
 
-The French Vocabulary LaTeX Builder now includes automatic setup and configuration:
+The French Vocabulary LaTeX Builder includes automatic setup and configuration:
 
-1. First-time Setup:
-   - When you run the program for the first time, it will prompt you to enter your Anthropic API key.
-   - The API key will be saved in a configuration file for future use.
+1. **First-time Setup**:
+    - On the first run, the program will prompt you to enter your Anthropic API key if it's not already set as an environment variable.
+    - The API key will be saved in a configuration file for future use.
 
-2. Automatic LaTeX File Generation:
-   - If the LaTeX file doesn't exist, the program will automatically create it with the necessary structure.
-   - The default filename is "FrenchVocab.tex" in the current working directory.
+2. **Automatic LaTeX File Generation**:
+    - If the LaTeX file doesn't exist, the program will automatically create it with the necessary structure.
+    - The default filename is `FrenchVocab.tex` in the current working directory.
 
-3. Custom LaTeX File Path (Optional):
-   - If you want to use a custom path for your LaTeX file, you can specify it when running the script:
-     ```
-     python frenchvocab.py /path/to/your/custom_file.tex
-     ```
 
 No manual configuration is required for basic usage. The program will guide you through the setup process on its first run.
 
@@ -60,10 +88,12 @@ To run the French Vocabulary LaTeX Builder:
 
 1. Open a terminal and navigate to the project directory.
 2. Run the script:
-   ```
-   python FrenchVocab.py
-   ```
-3. Follow the on-screen prompts to add new words, search existing entries, or exit the program.
+
+    ```bash
+    python FrenchVocab.py
+    ```
+
+3. Follow the on-screen prompts to add new words, search existing entries, export to Anki decks, or exit the program.
 
 ## Features
 
@@ -84,9 +114,21 @@ To run the French Vocabulary LaTeX Builder:
 ### 4. AI-Powered Assistance
 - Utilizes Claude AI to generate accurate definitions and contextual examples.
 
+### 5. **Export to Anki Decks**
+- Export your vocabulary list to Anki decks for efficient learning and review.
+- **Steps to Export:**
+  1. Select the option to export to Anki from the main menu.
+  2. Enter a name for your Anki deck when prompted.
+  3. The program will generate an `.apkg` file with your vocabulary entries.
+  4. The `.apkg` file can be imported directly into Anki.
+
 ## Troubleshooting
 
 - **API Key Issues**: Ensure your Anthropic API key is correctly set as an environment variable.
 - **File Not Found Error**: Double-check the path to your LaTeX file in the `main()` function.
 - **Unicode Errors**: Make sure your terminal supports UTF-8 encoding for proper display of French characters.
+- **Anki Export Errors**: Ensure that the LaTeX file exists and contains valid entries before attempting to export.
 
+For additional help, refer to the [GitHub Issues](https://github.com/Razeberry/frenchvocab/issues) page.
+
+---
