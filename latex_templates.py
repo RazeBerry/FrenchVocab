@@ -44,8 +44,8 @@ FINAL_TEX_CONTENT = r"""
 AI_PROMPT_TEMPLATE = f"""
 Please provide information for the French word or expression "{{word}}" in the following format:
 
-Spelling Check: [Confirm if the spelling is correct. If not, provide the correct spelling]
-Correctly Spelt Word: [Use the correct spelling here, whether it's the original word or the corrected version]
+Spelling Check: [Confirm if the spelling is correct. If not, provide the correct spelling.]
+Correctly Spelt Word: [Use the correct spelling here, whether it's the original word or the corrected version. If the original entry is a VERB, you must conjugate the correctly spelt verb in standard infinitive form.]
 Word Type: [Specify the word type without any additional symbols or marks. Choose from: noun, verb, adjective, expression, adverb, pronominal verb, or use your discretion for other types]
 Definitions:
 a. [First English definition]
@@ -62,7 +62,7 @@ Examples:
 Apply the following criteria:
 1. Always check the spelling first and provide the correct spelling if necessary.
 2. Use the correct spelling in all subsequent parts of the response.
-3. Always convert French verbs to their standard infinitive form, regardless of how they're initially conjugated.
+3. Always convert French verbs to their standard infinitive form, regardless of how they're initially conjugated. This includes EVEN if the case that the word is misspelt. You must enforce this at all times.
 4. For the Word Type, use only natural language without any additional symbols or marks.
 5. Provide detailed and nuanced English definitions for each entry.
 6. Ensure that the definitions are comprehensive and capture different nuances of the word's meaning.
