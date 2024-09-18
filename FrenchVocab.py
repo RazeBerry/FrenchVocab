@@ -8,11 +8,8 @@ import sys
 import anthropic
 import genanki
 from rich.console import Console
-from rich.panel import Panel
 from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
-from rich.table import Table
-from rich.table import Table
 from enum import Enum, auto
 from latex_templates import INITIAL_TEX_CONTENT, SAMPLE_ENTRY, FINAL_TEX_CONTENT, AI_PROMPT_TEMPLATE
 import time
@@ -186,6 +183,19 @@ class FrenchVocabBuilder:
             self.normalized_entries[normalized_word] = word
 
     def latex_to_anki_format(self, text):
+        """Converts LaTeX-formatted text to Anki-compatible HTML format.
+
+        This method processes a given LaTeX string by removing LaTeX-specific
+        commands, converting newlines to HTML line breaks, and formatting
+        list items with bullet points suitable for Anki flashcards.
+
+        Args:
+            text (str): The LaTeX-formatted string to be converted.
+
+        Returns:
+            str: The converted string formatted with HTML line breaks and
+                 bullet points, ready for Anki import.
+        """
         # Remove LaTeX item markers
         text = re.sub(r'\\item\s*', '', text)
         
