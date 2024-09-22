@@ -398,27 +398,26 @@ class FrenchVocabBuilder:
 
     def get_word_input(self) -> str:
         while True:
-            word = Prompt.ask("\nEnter a French word or short expression")
-            word = word.strip()
-
+            word = input("\nEnter a French word or short expression (or 'q' to cancel): ").strip()
+            
+            if word.lower() == 'q':
+                self.console.print("[yellow]Input cancelled. Returning to main menu.[/yellow]")
+                return ""
+            
             if len(word.split()) > 10:
-                console.print(
-                    "[bold red]Error: Please enter a single word or short expression (max 10 words).[/bold red]"
-                )
+                self.console.print("[bold red]Error: Please enter a single word or short expression (max 10 words).[/bold red]")
             elif len(word) > self.max_word_length:
-                console.print(
-                    f"[bold red]Error: Input is too long. Please limit to {self.max_word_length} characters.[/bold red]"
-                )
+                self.console.print(f"[bold red]Error: Input is too long. Please limit to {self.max_word_length} characters.[/bold red]")
             elif not word:
-                console.print("[bold red]Error: Input cannot be empty.[/bold red]")
+                self.console.print("[bold red]Error: Input cannot be empty.[/bold red]")
             elif not self.is_valid_french_input(word):
-                console.print("[bold red]Error: Input contains invalid characters for French words.[/bold red]")
+                self.console.print("[bold red]Error: Input contains invalid characters for French words.[/bold red]")
             else:
                 return word
 
     def is_valid_french_input(self, word: str) -> bool:
         # Allow letters (including accented), spaces, hyphens, and apostrophes
-        return all(char.isalpha() or char.isspace() or char in "'-àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ" for char in word)
+        return all(char.isalpha() or char.isspace() or char in "'-àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ" for char in word.strip())
 
     def query_ai(self, word: str) -> str:
         client = self.get_anthropic_client()
