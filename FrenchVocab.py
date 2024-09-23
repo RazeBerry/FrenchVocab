@@ -313,7 +313,7 @@ class FrenchVocabBuilder:
         [bold cyan]Newly added words in this export: {len(newly_added_words)}[/bold cyan]
 
         New words added:
-        {', '.join(sorted(newly_added_words)) if newly_added_words else 'No new words added in this export.'}
+        {', '.join(sorted(newly_added_words, key=self.normalize_word)) if newly_added_words else 'No new words added in this export.'}
         """
 
         # Display the feedback in a styled panel using Rich
