@@ -569,6 +569,17 @@ class FrenchVocabBuilder:
             console.print(f"[bold red]Error reading from or writing to file: {e}[/bold red]")
 
     def alphabetize_entries(self) -> None:
+        """Alphabetizes the entries in the LaTeX file.
+
+        This method reads the LaTeX file, identifies the section containing 
+        vocabulary entries, and sorts them alphabetically based on the 
+        normalized form of the words. The sorted entries are then written 
+        back to the LaTeX file.
+
+        Raises:
+            FileNotFoundError: If the LaTeX file does not exist.
+            IOError: If there is an error reading from or writing to the file.
+        """
         try:
             with open(self.latex_file, "r", encoding="utf-8") as file:
                 content = file.read()
@@ -594,10 +605,10 @@ class FrenchVocabBuilder:
                 console.print("[bold yellow]No entries found to alphabetize.[/bold yellow]")
                 return
 
-            # Sort entries based on the word (first argument of \entry)
+            # Sort entries based on the normalized word (first argument of \entry)
             sorted_entries = sorted(
                 entries,
-                key=lambda x: re.search(r"\\entry\{(.*?)\}", x).group(1).lower()
+                key=lambda x: self.normalize_word(re.search(r"\\entry\{(.*?)\}", x).group(1))
             )
 
             # Reconstruct the entries section
