@@ -711,13 +711,25 @@ class FrenchVocabBuilder:
         self.display_parsed_info(word, word_type, definitions, examples)
 
         word = self.check_spelling(word, ai_response)
+        if word is None:  # User chose to abandon the edit
+            return None
 
         latex_entry = self.format_latex_entry(word, word_type, definitions, examples)
+        
+        # Check if the latex_entry is empty or invalid
+        if not self.is_valid_latex_entry(latex_entry):
+            self.console.print("[bold red]Error: Generated LaTeX entry is empty or invalid. Aborting process.[/bold red]")
+            return None
+
         self.display_latex_entry(latex_entry)
         self.insert_entry_alphabetically(latex_entry, word.capitalize())
         self.add_word_to_entries(word, ai_response)
 
         return word
+
+    def is_valid_latex_entry(self, latex_entry: str) -> bool:
+        # Check if the entry is not empty and contains the expected LaTeX structure
+        return bool(latex_entry.strip()) and "\\entry{" in latex_entry and "}{" in latex_entry
 
     def check_spelling(self, word, ai_response):
 
