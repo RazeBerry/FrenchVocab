@@ -87,12 +87,13 @@ class FrenchVocabBuilder:
             self.console.print(f"[bold red]Error creating initial LaTeX file: {e}[/bold red]")
             raise
 
+
     def load_config(self):
         api_key = os.environ.get('ANTHROPIC_API_KEY')
-        if not api_key:
+        if not api_key or not api_key.startswith("sk-ant") or len(api_key) < 32:
             self.first_time_setup()
         else:
-            self.console.print("[bold green]ANTHROPIC_API_KEY found in environment variables.[/bold green]")
+            self.console.print("[bold green]Valid ANTHROPIC_API_KEY found in environment variables.[/bold green]")
 
     def initialize_anthropic_client_background(self):
         try:
@@ -160,7 +161,18 @@ class FrenchVocabBuilder:
             console.print(f"[bold red]Error reading file: {e}[/bold red]")
             return 0
 
+
     def load_existing_entries(self):
+        """Loads existing vocabulary entries from the LaTeX file.
+
+        This method reads the LaTeX file, extracts vocabulary entries, and populates
+        the word_entries and normalized_entries dictionaries. It ensures that only valid
+        entries with non-empty fields are added.
+
+        Raises:
+            FileNotFoundError: If the LaTeX file does not exist.
+            IOError: If there is an error reading the file.
+        """
         with open(self.latex_file, "r", encoding="utf-8") as file:
             content = file.read()
 
@@ -169,6 +181,12 @@ class FrenchVocabBuilder:
         )
         for word, word_type, definitions, examples in entries:
             word = word.strip().lower()  # Normalize the word
+            
+            # Check for empty entries
+            if not word or not word_type or not definitions.strip() or not examples.strip():
+                console.print(f"[bold yellow]Skipping incomplete entry for word: '{word}'[/bold yellow]")
+                continue
+            
             self.word_entries[word] = {
                 "word": word,
                 "type": word_type,
