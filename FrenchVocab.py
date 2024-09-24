@@ -104,6 +104,7 @@ class FrenchVocabBuilder:
             else:
                 self.console.print("[bold red]Invalid or missing ANTHROPIC_API_KEY in environment variables.[/bold red]")
                 self.provide_api_key_instructions()
+                sys.exit(1)
         except Exception as e:
             self.console.print(f"[bold red]Error initializing Anthropic client: {e}[/bold red]")
             self.provide_api_key_instructions()
@@ -117,10 +118,16 @@ class FrenchVocabBuilder:
         2. Sign up for an account or log in if you already have one
         3. Navigate to the API section in your account dashboard
         4. Generate a new API key
-        5. Copy the key and set it as an environment variable:
-           [bold cyan]export ANTHROPIC_API_KEY='your-api-key-here'[/bold cyan]
-        6. Restart the application
+        5. Copy the key and set it as an environment variable by typing the following command in your console:
+           [bold cyan]For MacOS:[/bold cyan]
+           export ANTHROPIC_API_KEY='your-api-key-here'
+           [bold cyan]For Windows (Command Prompt):[/bold cyan]
+           set ANTHROPIC_API_KEY='your-api-key-here'
+           [bold cyan]For Windows (PowerShell):[/bold cyan]
+           $env:ANTHROPIC_API_KEY='your-api-key-here'
+        6. After setting the environment variable, restart the application.
         
+        The program will now abort due to the need of an API key.
         [bold]Note:[/bold] Keep your API key secure and never share it publicly.
         """
         self.console.print(Panel(instructions, title="Anthropic API Key Instructions", expand=False))
@@ -135,7 +142,7 @@ class FrenchVocabBuilder:
         self.console.print("[bold blue]Welcome to French Vocabulary Builder![/bold blue]")
         self.console.print("It looks like this is your first time running the program or the API key is not set.")
         self.console.print("Please set your Anthropic API key as an environment variable named ANTHROPIC_API_KEY.")
-        self.console.print("You can do this by running:")
+        self.console.print("You can do this by running in your terminal if you are running MacOS:")
         self.console.print("export ANTHROPIC_API_KEY='your-api-key-here'")
         sys.exit(1)
 
