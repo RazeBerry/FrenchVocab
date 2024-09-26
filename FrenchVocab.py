@@ -387,7 +387,9 @@ class FrenchVocabBuilder:
                 f"[bold blue]Welcome to the French Vocabulary LaTeX Builder![/bold blue]\n\n"
                 f"This application helps you build a LaTeX document for French vocabulary.\n"
                 f"You can input French words, and the AI will provide definitions and examples.\n\n"
-                f"[bold green]Your current vocabulary library contains {self.entry_count} words.[/bold green]",
+                f"[bold green]Your current vocabulary library contains {self.entry_count} words.[/bold green]\n\n"
+                f"[italic cyan]Version 1.0[/italic cyan]\n"
+                f"[dim]GitHub: https://github.com/RazeBerry/FrenchVocab/tree/main[/dim]",
                 title="French Vocab Builder",
                 border_style="bold green",
             )
@@ -430,7 +432,7 @@ class FrenchVocabBuilder:
                 return ""
             
             if len(word.split()) > 10:
-                self.console.print("[bold red]Error: Please enter a single word or short expression (max 10 words).[/bold red]")
+                self.console.print("[bold red]Error: Please enter a single word or short expression (max {self.max3_word_length} words).[/bold red]")
             elif len(word) > self.max_word_length:
                 self.console.print(f"[bold red]Error: Input is too long. Please limit to {self.max_word_length} characters.[/bold red]")
             elif not word:
@@ -441,8 +443,8 @@ class FrenchVocabBuilder:
                 return word
 
     def is_valid_french_input(self, word: str) -> bool:
-        # Allow letters (including accented), spaces, hyphens, and apostrophes
-        return all(char.isalpha() or char.isspace() or char in "'-àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ" for char in word.strip())
+        # Allow letters (including accented), spaces, hyphens, and various types of apostrophes
+        return all(char.isalpha() or char.isspace() or char in "'''-àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ" for char in word.strip())
 
     def query_ai(self, word: str) -> str:
         client = self.get_anthropic_client()

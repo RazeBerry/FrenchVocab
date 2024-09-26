@@ -34,12 +34,36 @@ You need to set your Anthropic API key as an environment variable. Follow the in
     export ANTHROPIC_API_KEY='your-api-key-here'
     ```
 
-3. To make this change permanent, add the above line to your shell configuration file (e.g., `.bash_profile`, `.zshrc`):
+3. To make this change permanent, follow these steps:
 
-    ```bash
-    echo "export ANTHROPIC_API_KEY='your-api-key-here'" >> ~/.zshrc
-    source ~/.zshrc
-    ```
+   a. Open your shell configuration file using nano. Depending on your shell, run one of these commands:
+      - For Bash: `nano ~/.bash_profile` or `nano ~/.bashrc`
+      - For Zsh: `nano ~/.zshrc`
+   
+   b. Add the following line to the end of the file:
+
+      ```bash
+      export ANTHROPIC_API_KEY='your-api-key-here'
+      ```
+      
+      Replace 'your-api-key-here' with your actual Anthropic API key.
+
+   c. Save the file and exit nano:
+      - Press `Ctrl + X`
+      - Press `Y` to confirm saving
+      - Press `Enter` to keep the same filename
+
+   d. To apply the changes immediately, run the following command in your terminal:
+
+      ```bash
+      source ~/.zshrc  # If using Zsh
+      ```
+      or
+      ```bash
+      source ~/.bash_profile  # If using Bash
+      ```
+
+   This will make the API key available in all new terminal sessions.
 
 #### Windows
 
