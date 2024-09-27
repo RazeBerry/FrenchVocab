@@ -3,7 +3,7 @@ import os
 import random
 import re
 import unicodedata
-from typing import List, Tuple, Optional, Dict
+from typing import List, Tuple, Optional, Dict, Set
 import sys
 import anthropic
 import genanki
@@ -336,6 +336,10 @@ class FrenchVocabBuilder:
         # Create a new Anki deck with the specified name and ID
         deck = genanki.Deck(deck_id, deck_name)
 
+        # Create sets for all words in LaTeX and all words ever exported to Anki
+        latex_words = set(self.word_entries.keys())
+        all_exported_words = set(self.exported_words)  # This should contain all previously exported words
+
         # Set to keep track of newly added words in this export
         newly_added_words = set()
 
@@ -345,7 +349,7 @@ class FrenchVocabBuilder:
             word = word.strip().lower()
 
             # Check if the word has already been exported to Anki
-            if word not in self.exported_words:
+            if word not in all_exported_words:
                 # Ensure word_type is always a string
                 word_type = ', '.join(entry['type']) if isinstance(entry['type'], list) else entry['type']
 
@@ -361,25 +365,39 @@ class FrenchVocabBuilder:
                 # Add the note to the deck
                 deck.add_note(note)
                 # Mark the word as exported
-                self.exported_words.add(word)
+                all_exported_words.add(word)
                 # Add the word to the set of newly added words
                 newly_added_words.add(word)
 
         # Write the deck to a .apkg file
         genanki.Package(deck).write_to_file(f'{deck_name}.apkg')
-        # Save the state of exported words to persist across sessions
+
+        # Update the exported_words set and save it
+        self.exported_words = all_exported_words
         self.save_exported_words()
 
         # Prepare the feedback message for the user
         feedback = f"""
         [bold green]Anki deck '{deck_name}.apkg' created successfully![/bold green]
 
-        [bold blue]Total words in deck: {len(self.exported_words)}[/bold blue]
+        [bold blue]Total words in deck: {len(all_exported_words)}[/bold blue]
         [bold cyan]Newly added words in this export: {len(newly_added_words)}[/bold cyan]
 
         New words added:
-        {', '.join(sorted(newly_added_words, key=self.normalize_word)) if newly_added_words else 'No new words added in this export.'}
+        {', '.join(sorted(newly_added_words)) if newly_added_words else 'No new words added in this export.'}
         """
+
+        # Compare LaTeX words with all exported words
+        missing_from_anki = latex_words - all_exported_words
+        extra_in_anki = all_exported_words - latex_words
+
+        feedback += f"\n\nWords in LaTeX but not in Anki: {len(missing_from_anki)}"
+        if missing_from_anki:
+            feedback += f"\n{', '.join(sorted(missing_from_anki))}"
+        
+        feedback += f"\n\nWords in Anki but not in LaTeX: {len(extra_in_anki)}"
+        if extra_in_anki:
+            feedback += f"\n{', '.join(sorted(extra_in_anki))}"
 
         # Display the feedback in a styled panel using Rich
         self.console.print(Panel(feedback, title="Export Summary", expand=False, border_style="green"))
@@ -421,6 +439,7 @@ class FrenchVocabBuilder:
         self.display_parsed_info(entry['word'], [entry['type']], entry['definitions'].split('; '),
                                  [tuple(e.split(' (', 1)) for e in entry['examples'].split('; ')])
 
+    
     def welcome_screen(self):
         console.print(
             Panel.fit(
@@ -439,9 +458,10 @@ class FrenchVocabBuilder:
         console.print("\n[bold cyan]Menu Options:[/bold cyan]")
         console.print("1. Add a new word")
         console.print("2. Export to Anki deck")
-        console.print("3. Exit")
+        console.print("3. Reconcile LaTeX and Anki exports")
+        console.print("4. Exit")
         console.print(f"[bold green]Current word count: {self.entry_count}[/bold green]")
-        choice = Prompt.ask("Choose an option", choices=["1", "2", "3"])
+        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4"])
         return choice
 
     def generate_table(self, search_term: str, results: dict) -> Table:
@@ -471,6 +491,9 @@ class FrenchVocabBuilder:
                 self.console.print("[yellow]Input cancelled. Returning to main menu.[/yellow]")
                 return ""
             
+            # Normalize apostrophes
+            word = word.replace("’", "'")
+            
             if len(word.split()) > 10:
                 self.console.print("[bold red]Error: Please enter a single word or short expression (max {self.max3_word_length} words).[/bold red]")
             elif len(word) > self.max_word_length:
@@ -483,8 +506,8 @@ class FrenchVocabBuilder:
                 return word
 
     def is_valid_french_input(self, word: str) -> bool:
-        # Allow letters (including accented), spaces, hyphens, and various types of apostrophes
-        return all(char.isalpha() or char.isspace() or char in "'''-àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ" for char in word.strip())
+        # Allow letters (including accented), spaces, hyphens, and apostrophes
+        return all(char.isalpha() or char.isspace() or char in "'-àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ" for char in word.strip())
 
     def query_ai(self, word: str) -> str:
         client = self.get_anthropic_client()
@@ -725,6 +748,8 @@ class FrenchVocabBuilder:
             elif choice == "2":
                 self.handle_anki_export()
             elif choice == "3":
+                self.reconcile_menu_option()  # New option
+            elif choice == "4":
                 self.exit_screen()
                 break
             self.console.input("\nPress Enter to continue...")
@@ -808,6 +833,14 @@ class FrenchVocabBuilder:
     def handle_anki_export(self):
         deck_name = Prompt.ask("Enter a name for your Anki deck", default="French Vocabulary")
         self.export_to_anki(deck_name)
+    
+    def display_parsed_info(
+            self,
+            word: str,
+            word_type: List[str],  # Explicitly type word_type as a List
+            definitions: List[str],
+            examples: List[Tuple[str, str]],
+    ):
         table = Table(
             title=f"Information for [bold green]{word.capitalize()}[/bold green]"
         )
@@ -830,6 +863,51 @@ class FrenchVocabBuilder:
         console.print(
             Panel(latex_entry, title="Generated LaTeX Entry", border_style="bold blue")
         )
+
+    def get_all_latex_entries(self) -> Set[str]:
+        # Return a set of all words in the LaTeX file, including incomplete entries
+        all_entries = set()
+        with open(self.latex_file, "r", encoding="utf-8") as file:
+            content = file.read()
+        entries = re.findall(r"\\entry\{(.*?)\}", content)
+        return set(entry.lower() for entry in entries)
+
+    def get_all_exported_words(self) -> Set[str]:
+        return set(self.exported_words)
+
+    def compare_entries_and_exports(self) -> Tuple[Set[str], Set[str]]:
+        latex_entries = self.get_all_latex_entries()
+        exported_words = self.get_all_exported_words()
+        in_latex_not_exported = latex_entries - exported_words
+        in_exports_not_latex = exported_words - latex_entries
+        return in_latex_not_exported, in_exports_not_latex
+
+    def generate_discrepancy_report(self):
+        in_latex_not_exported, in_exports_not_latex = self.compare_entries_and_exports()
+        
+        table = Table(title="Discrepancy Report")
+        table.add_column("Category", style="cyan")
+        table.add_column("Words", style="magenta")
+        
+        table.add_row(
+            "In LaTeX but not exported",
+            ", ".join(sorted(in_latex_not_exported)) or "None"
+        )
+        table.add_row(
+            "In exports but not in LaTeX",
+            ", ".join(sorted(in_exports_not_latex)) or "None"
+        )
+        
+        self.console.print(table)
+        
+        if not in_latex_not_exported and not in_exports_not_latex:
+            self.console.print("[green]No discrepancies found![/green]")
+        else:
+            self.console.print("[yellow]Discrepancies found. Please review the report above.[/yellow]")
+
+    def reconcile_menu_option(self):
+        self.generate_discrepancy_report()
+        # Optionally, add interactive options to resolve discrepancies
 
 
 def main() -> None:
