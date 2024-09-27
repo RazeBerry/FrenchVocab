@@ -17,6 +17,9 @@ import threading
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
+import keyring
+import getpass
+from keyring.errors import KeyringError
 
 console = Console()
 
@@ -90,10 +93,55 @@ class FrenchVocabBuilder:
 
     def load_config(self):
         api_key = os.environ.get('ANTHROPIC_API_KEY')
+        if not api_key:
+            try:
+                api_key = keyring.get_password("french_vocab_builder", "anthropic_api_key")
+            except KeyringError as e:
+                self.console.print(f"[bold red]Error accessing keyring: {e}[/bold red]")
+                api_key = None
+        
+        if not api_key or not self.is_valid_api_key(api_key):
+            api_key = self.first_time_setup()
+        
+        os.environ['ANTHROPIC_API_KEY'] = api_key
+        self.console.print("[bold green]Valid ANTHROPIC_API_KEY found and set.[/bold green]")
+
+    def is_valid_api_key(self, api_key):
+        # Basic check
         if not api_key or not api_key.startswith("sk-ant") or len(api_key) < 32:
-            self.first_time_setup()
-        else:
-            self.console.print("[bold green]Valid ANTHROPIC_API_KEY found in environment variables.[/bold green]")
+            return False
+        
+        # Optional: Perform a test API call here to verify the key works
+        # Return True if the call succeeds, False otherwise
+        return True
+
+    def first_time_setup(self):
+        self.console.print(Panel(
+            "[bold yellow]No valid ANTHROPIC_API_KEY found. Let's set it up.[/bold yellow]\n\n"
+            "To obtain an API key:\n"
+            "1. Go to https://www.anthropic.com or https://console.anthropic.com\n"
+            "2. Sign up or log in to your account\n"
+            "3. Navigate to the API section in your account dashboard\n"
+            "4. Generate a new API key\n"
+            "The key should start with 'sk-ant' and be at least 32 characters long.",
+            title="API Key Setup",
+            expand=False
+        ))
+        
+        while True:
+            api_key = getpass.getpass("Enter your Anthropic API key: ")
+            if self.is_valid_api_key(api_key):
+                try:
+                    keyring.set_password("french_vocab_builder", "anthropic_api_key", api_key)
+                    self.console.print("[bold green]API key saved securely.[/bold green]")
+                    return api_key
+                except KeyringError as e:
+                    self.console.print(f"[bold red]Error saving to keyring: {e}[/bold red]")
+                    if Confirm.ask("Do you want to continue without saving to keyring?"):
+                        return api_key
+            else:
+                self.console.print("[bold red]Invalid API key. Please try again.[/bold red]")
+        
 
     def initialize_anthropic_client_background(self):
         try:
@@ -137,14 +185,6 @@ class FrenchVocabBuilder:
             self.console.print("Waiting for Anthropic client to initialize...")
             self.client_initialized.wait()
         return self.client
-
-    def first_time_setup(self):
-        self.console.print("[bold blue]Welcome to French Vocabulary Builder![/bold blue]")
-        self.console.print("It looks like this is your first time running the program or the API key is not set.")
-        self.console.print("Please set your Anthropic API key as an environment variable named ANTHROPIC_API_KEY.")
-        self.console.print("You can do this by running in your terminal if you are running MacOS:")
-        self.console.print("export ANTHROPIC_API_KEY='your-api-key-here'")
-        sys.exit(1)
 
     def load_exported_words(self):
         if os.path.exists(self.exported_words_file):
@@ -768,13 +808,6 @@ class FrenchVocabBuilder:
     def handle_anki_export(self):
         deck_name = Prompt.ask("Enter a name for your Anki deck", default="French Vocabulary")
         self.export_to_anki(deck_name)
-    def display_parsed_info(
-            self,
-            word: str,
-            word_type: List[str],  # Explicitly type word_type as a List
-            definitions: List[str],
-            examples: List[Tuple[str, str]],
-    ):
         table = Table(
             title=f"Information for [bold green]{word.capitalize()}[/bold green]"
         )
