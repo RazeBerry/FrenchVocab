@@ -96,8 +96,10 @@ You need to set your Anthropic API key as an environment variable. Follow the in
 The French Vocabulary LaTeX Builder includes automatic setup and configuration:
 
 1. **First-time Setup**:
-    - On the first run, the program will prompt you to enter your Anthropic API key if it's not already set as an environment variable.
-    - The API key will be saved in a configuration file for future use.
+    - On the first run, if the ANTHROPIC_API_KEY is not set in the environment variables, the program will attempt to retrieve it from the system's secure keyring.
+    - If the API key is not found in the keyring, the program will guide you through the process of obtaining and entering a valid Anthropic API key.
+    - The API key will be securely stored in the system's keyring for future use.
+    - The program will validate the API key before proceeding.
 
 2. **Automatic LaTeX File Generation**:
     - If the LaTeX file doesn't exist, the program will automatically create it with the necessary structure.
