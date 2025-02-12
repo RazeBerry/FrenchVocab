@@ -1,4 +1,4 @@
-# French Vocabulary LaTeX Builder
+# French Vocabulary LaTeX and Anki Builder
 
 ## Table of Contents
 1. [Introduction](#introduction)
