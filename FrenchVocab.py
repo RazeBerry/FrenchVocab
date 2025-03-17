@@ -20,6 +20,7 @@ from rich.text import Text
 import keyring
 import getpass
 from keyring.errors import KeyringError
+from pathlib import Path
 
 console = Console()
 
@@ -36,17 +37,19 @@ class WordType(Enum):
 
 class FrenchVocabBuilder:
     DEFAULT_FILENAME = "FrenchVocab.tex"
-    def __init__(self, latex_file: str):
+    def __init__(self, latex_file: Optional[str]):
         init_start = time.time()
         
         self.console = Console()
+        # Use pathlib for cross-platform file handling
         if latex_file is None:
-            self.latex_file = os.path.join(os.getcwd(), self.DEFAULT_FILENAME)
+            self.latex_file = Path.cwd() / self.DEFAULT_FILENAME
         else:
-            self.latex_file = latex_file
-        if not os.path.exists(self.latex_file):
+            self.latex_file = Path(latex_file)
+        if not self.latex_file.exists():
             self.create_initial_tex_file()
-        self.max_word_length = 100
+        
+        self.max_word_length = 500
         self.word_entries: Dict[str, Dict] = {}
         self.normalized_entries: Dict[str, str] = {}
         self.config_file = "vocab_builder_config.json"
@@ -69,7 +72,7 @@ class FrenchVocabBuilder:
         self.load_existing_entries()
         load_entries_end = time.time()
         
-        self.exported_words_file = "exported_words.json"
+        self.exported_words_file = Path("exported_words.json")
         self.exported_words = self.load_exported_words()
         self.entry_count = self.count_entries()
 
@@ -80,8 +83,10 @@ class FrenchVocabBuilder:
 
     def create_initial_tex_file(self):
         try:
-            os.makedirs(os.path.dirname(self.latex_file), exist_ok=True)
-            with open(self.latex_file, 'w', encoding='utf-8') as file:
+            # Create the parent directory if needed (only if not in the current directory)
+            if self.latex_file.parent != Path('.'):
+                self.latex_file.parent.mkdir(parents=True, exist_ok=True)
+            with self.latex_file.open('w', encoding='utf-8') as file:
                 file.write(INITIAL_TEX_CONTENT)
                 file.write(SAMPLE_ENTRY)
                 file.write(FINAL_TEX_CONTENT)
@@ -187,21 +192,25 @@ class FrenchVocabBuilder:
         return self.client
 
     def load_exported_words(self):
-        if os.path.exists(self.exported_words_file):
-            with open(self.exported_words_file, 'r') as f:
+        if self.exported_words_file.exists():
+            with self.exported_words_file.open('r') as f:
                 return set(json.load(f))
         return set()
-
     def save_exported_words(self):
-        with open(self.exported_words_file, 'w') as f:
+        with self.exported_words_file.open('w') as f:
             json.dump(list(self.exported_words), f)
 
     def count_entries(self) -> int:
         try:
-            with open(self.latex_file, "r", encoding="utf-8") as file:
+            with self.latex_file.open("r", encoding="utf-8") as file:
                 content = file.read()
             return len(re.findall(r"\\entry\{", content))
         except FileNotFoundError:
+            console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
+            return 0
+        except IOError as e:
+            console.print(f"[bold red]Error reading file: {e}[/bold red]")
+            return 0
             console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
             return 0
         except IOError as e:
@@ -220,7 +229,7 @@ class FrenchVocabBuilder:
             FileNotFoundError: If the LaTeX file does not exist.
             IOError: If there is an error reading the file.
         """
-        with open(self.latex_file, "r", encoding="utf-8") as file:
+        with self.latex_file.open("r", encoding="utf-8") as file:
             content = file.read()
 
         entries = re.findall(
@@ -447,7 +456,7 @@ class FrenchVocabBuilder:
                 f"This application helps you build a LaTeX document for French vocabulary.\n"
                 f"You can input French words, and the AI will provide definitions and examples.\n\n"
                 f"[bold green]Your current vocabulary library contains {self.entry_count} words.[/bold green]\n\n"
-                f"[italic cyan]Version 1.0[/italic cyan]\n"
+                f"[italic cyan]Version 1.1[/italic cyan]\n"
                 f"[dim]GitHub: https://github.com/RazeBerry/FrenchVocab/tree/main[/dim]",
                 title="French Vocab Builder",
                 border_style="bold green",
@@ -492,10 +501,10 @@ class FrenchVocabBuilder:
                 return ""
             
             # Normalize apostrophes
-            word = word.replace("’", "'")
+            word = word.replace("'", "'")
             
             if len(word.split()) > 10:
-                self.console.print("[bold red]Error: Please enter a single word or short expression (max {self.max3_word_length} words).[/bold red]")
+                self.console.print("[bold red]Error: Please enter a single word or short expression (max 10 words).[/bold red]")
             elif len(word) > self.max_word_length:
                 self.console.print(f"[bold red]Error: Input is too long. Please limit to {self.max_word_length} characters.[/bold red]")
             elif not word:
@@ -507,7 +516,8 @@ class FrenchVocabBuilder:
 
     def is_valid_french_input(self, word: str) -> bool:
         # Allow letters (including accented), spaces, hyphens, and apostrophes
-        return all(char.isalpha() or char.isspace() or char in "'-àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ" for char in word.strip())
+        # Accept all common apostrophe types: ' (straight), ' (right single quote), ' (left single quote)
+        return all(char.isalpha() or char.isspace() or char in "'-''àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ" for char in word.strip())
 
     def query_ai(self, word: str) -> str:
         client = self.get_anthropic_client()
@@ -629,25 +639,24 @@ class FrenchVocabBuilder:
 
     def insert_entry_alphabetically(self, new_entry: str, new_word: str) -> None:
         try:
-            with open(self.latex_file, "r", encoding="utf-8") as file:
+            with self.latex_file.open("r", encoding="utf-8") as file:
                 content = file.read()
 
-            # Find the position to insert the new entry
             insert_position = content.rfind("\\entry")
             insert_position = content.find("\\end{itemize}", insert_position)
 
-            # Insert the new entry
-            updated_content = (
-                    content[:insert_position]
-                    + new_entry
-                    + "\n\n"
-                    + content[insert_position:]
-            )
+            updated_content = content[:insert_position] + new_entry + "\n\n" + content[insert_position:]
 
-            with open(self.latex_file, "w", encoding="utf-8") as file:
+            with self.latex_file.open("w", encoding="utf-8") as file:
                 file.write(updated_content)
 
             console.print(f"[bold green]Added/Updated entry for '{new_word}' in {self.latex_file}[/bold green]")
+            normalized_new_word = self.normalize_word(new_word)
+            self.normalized_entries[normalized_new_word] = new_word.capitalize()
+        except FileNotFoundError:
+            console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
+        except IOError as e:
+            console.print(f"[bold red]Error reading from or writing to file: {e}[/bold red]")
 
             # Update the normalized entries dictionary
             normalized_new_word = self.normalize_word(new_word)
@@ -671,10 +680,9 @@ class FrenchVocabBuilder:
             IOError: If there is an error reading from or writing to the file.
         """
         try:
-            with open(self.latex_file, "r", encoding="utf-8") as file:
+            with self.latex_file.open("r", encoding="utf-8") as file:
                 content = file.read()
 
-            # Find the start and end of the entries section
             entries_start = content.find("\\begin{itemize}[leftmargin=*]")
             entries_end = content.rfind("\\end{itemize}")
 
@@ -682,12 +690,10 @@ class FrenchVocabBuilder:
                 console.print("[bold red]Error: Could not find the entries section.[/bold red]")
                 return
 
-            # Split the content into header, entries, and footer
             header = content[:entries_start]
             entries_section = content[entries_start:entries_end]
             footer = content[entries_end:]
 
-            # Extract all \entry blocks
             entry_pattern = r"(\\entry\{.*?\}.*?(?=\\entry|\Z))"
             entries = re.findall(entry_pattern, entries_section, re.DOTALL)
 
@@ -695,27 +701,27 @@ class FrenchVocabBuilder:
                 console.print("[bold yellow]No entries found to alphabetize.[/bold yellow]")
                 return
 
-            # Sort entries based on the normalized word (first argument of \entry)
             sorted_entries = sorted(
                 entries,
                 key=lambda x: self.normalize_word(re.search(r"\\entry\{(.*?)\}", x).group(1))
             )
 
-            # Reconstruct the entries section
             sorted_entries_section = "\\begin{itemize}[leftmargin=*]\n" + "".join(sorted_entries)
 
-            # Reconstruct the file content
             sorted_content = header + sorted_entries_section + footer
-
-            # Safeguard: Check if we're not accidentally removing a large portion of the content
-            if len(sorted_content) < len(content) * 0.9:  # If we've lost more than 10% of content
-                console.print(
-                    "[bold red]Warning: Significant content loss detected. Aborting alphabetization.[/bold red]")
+            if len(sorted_content) < len(content) * 0.9:
+                console.print("[bold red]Warning: Significant content loss detected. Aborting alphabetization.[/bold red]")
                 return
 
-            # Write the sorted content back to the file
-            with open(self.latex_file, "w", encoding="utf-8") as file:
+            with self.latex_file.open("w", encoding="utf-8") as file:
                 file.write(sorted_content)
+
+            console.print("[bold green]Entries alphabetized successfully.[/bold green]")
+        except FileNotFoundError:
+            console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
+        except IOError as e:
+            console.print(f"[bold red]Error reading from or writing to file: {e}[/bold red]")
+            file.write(sorted_content)
 
             console.print("[bold green]Entries alphabetized successfully.[/bold green]")
 
@@ -867,7 +873,7 @@ class FrenchVocabBuilder:
     def get_all_latex_entries(self) -> Set[str]:
         # Return a set of all words in the LaTeX file, including incomplete entries
         all_entries = set()
-        with open(self.latex_file, "r", encoding="utf-8") as file:
+        with self.latex_file.open("r", encoding="utf-8") as file:
             content = file.read()
         entries = re.findall(r"\\entry\{(.*?)\}", content)
         return set(entry.lower() for entry in entries)
