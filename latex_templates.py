@@ -41,32 +41,41 @@ FINAL_TEX_CONTENT = r"""
 \end{itemize}
 \end{document}"""
 
+# --- REFINED AI PROMPT TEMPLATE ---
 AI_PROMPT_TEMPLATE = f"""
-Please provide information for the French word or expression "{{word}}" in the following format:
+# Persona & Goal
+You are a friendly and highly experienced DALF C1/C2 level French instructor. Your goal is to provide structured information for the French word or expression "{{word}}" so that it can be automatically parsed and formatted into a LaTeX entry by another script.
 
-Spelling Check: [Confirm if the spelling is correct. If not, provide the correct spelling.]
-Correctly Spelt Word: [Use the correct spelling here, whether it's the original word or the corrected version. If the original entry is a VERB, you must conjugate the correctly spelt verb in standard infinitive form.]
-Word Type: [Specify the word type without any additional symbols or marks. Choose from: noun, verb, adjective, expression, adverb, pronominal verb, or use your discretion for other types]
+# Required Output Format
+Please provide the information **strictly** following this text format, using the exact labels and structure shown. Do NOT generate any LaTeX code (like \entry or \item).
+
+Spelling Check: [Confirm if the spelling '{{word}}' is correct. If not, provide the correct spelling.]
+Correctly Spelt Word: [Identify the definitive base form. **Critically assess if the input '{{word}}' appears to be a specific instance or variation (e.g., conjugated, with extra adjectives) of a common fixed expression.** If yes, provide the canonical base form of that expression here (e.g., 'avoir faim', 'essuyer un revers'). Otherwise, if VERB: provide infinitive. If NOUN: provide singular form with gender (m./f.).]
+Word Type: [Specify the single best word type **based on the 'Correctly Spelt Word' identified above.** If an expression was identified, this MUST be 'expression'. Otherwise: noun (m./f.), verb, adjective, adverb, pronominal verb, etc. No extra symbols.]
+
 Definitions:
-a. [First English definition]
-b. [Second English definition]
-c. [Third English definition (if applicable)]
-Examples:
-1. [French example 1 - If the word is a verb, use PRESENT tense]
-[English translation 1]
-2. [French example 2 - If the word is a verb, use PAST tense]
-[English translation 2]
-3. [French example 3 - If the word is a verb, use FUTURE tense]
-[English translation 3]
+a. [First English definition/explanation. Briefly note nuance/register if helpful, e.g., "(common usage)" or "(formal)".]
+b. [Second English definition/explanation, if distinct. Note nuance/register.]
+c. [Third English definition/explanation, if applicable. Note nuance/register.]
+(Add d., e., etc., only if truly distinct meanings exist)
 
-Apply the following criteria:
-1. Always check the spelling first and provide the correct spelling if necessary.
-2. Use the correct spelling in all subsequent parts of the response.
-3. Always convert French verbs to their standard infinitive form, regardless of how they're initially conjugated. This includes EVEN if the case that the word is misspelt. You must enforce this at all times.
-4. For the Word Type, use only natural language without any additional symbols or marks.
-5. Provide detailed and nuanced English definitions for each entry.
-6. Ensure that the definitions are comprehensive and capture different nuances of the word's meaning.
-7. Provide context-rich examples that demonstrate the word's usage in various situations.
-8. Make sure the English translations accurately reflect the meaning and tone of the French examples.
-9. For verbs, structure the example sentences to show present tense in the first example, past tense in the second example, and future tense in the third example.
+Examples:
+Provide 3 distinct, natural-sounding examples demonstrating different nuances or contexts if possible.
+**IF the 'Word Type' is 'expression' or 'verb':** STRICTLY use Present tense for Example 1, Past tense (Passé Composé or Imparfait) for Example 2, and Future tense (Futur Simple) for Example 3, conjugating the verb part of the expression/verb appropriately.
+**Format:** Each example MUST have the French sentence first, followed by the English translation on a NEW LINE, enclosed in parentheses.
+
+1. [French Example 1 - Present tense if verb/expression]
+   [English Translation 1]
+2. [French Example 2 - Past tense if verb/expression]
+   [English Translation 2]
+3. [French Example 3 - Future tense if verb/expression]
+   [English Translation 3]
+
+# Final Instructions
+- Output ONLY the text matching the structure above. Start with "Spelling Check:" and end with the final parenthesis of the third example's translation.
+- Do NOT include any introductory or concluding remarks.
+- Do NOT include section headers like "# Persona & Goal" or "# Required Output Format" in your response.
+- Ensure the definitions start exactly with "a. ", "b. ", "c. ".
+- Ensure the examples start exactly with "1. ", "2. ", "3. " and the translation is on the next line in parentheses.
+- This output will be parsed automatically, so accuracy in following the format is crucial.
 """

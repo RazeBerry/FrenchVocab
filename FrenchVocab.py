@@ -219,42 +219,130 @@ class FrenchVocabBuilder:
 
 
     def load_existing_entries(self):
-        """Loads existing vocabulary entries from the LaTeX file.
+        """Loads existing vocabulary entries from the LaTeX file."""
+        try: # Add try...finally to ensure file is closed
+            with self.latex_file.open("r", encoding="utf-8") as file:
+                content = file.read()
+        except FileNotFoundError:
+            self.console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
+            return
+        except IOError as e:
+            self.console.print(f"[bold red]Error reading file: {e}[/bold red]")
+            return
 
-        This method reads the LaTeX file, extracts vocabulary entries, and populates
-        the word_entries and normalized_entries dictionaries. It ensures that only valid
-        entries with non-empty fields are added.
+        # Find ALL potential entry starts
+        raw_entry_starts = [match.start() for match in re.finditer(r"\\entry\{", content)]
+        raw_entry_count_debug = len(raw_entry_starts)
 
-        Raises:
-            FileNotFoundError: If the LaTeX file does not exist.
-            IOError: If there is an error reading the file.
-        """
-        with self.latex_file.open("r", encoding="utf-8") as file:
-            content = file.read()
-
-        entries = re.findall(
+        # Use the stricter regex to find successfully parsed entries
+        parsed_entries = re.findall(
             r"\\entry\{(.*?)\}\{(.*?)\}\s*\{(.*?)\}\s*\{(.*?)\}", content, re.DOTALL
         )
-        for word, word_type, definitions, examples in entries:
-            word = word.strip().lower()  # Normalize the word
-            
-            # Check for empty entries
-            if not word or not word_type or not definitions.strip() or not examples.strip():
-                console.print(f"[bold yellow]Skipping incomplete entry for word: '{word}'[/bold yellow]")
+
+        # Keep track of successfully parsed words (lowercase, normalized)
+        parsed_words_set = set()
+
+        self.word_entries.clear() # Clear existing entries before loading
+        self.normalized_entries.clear()
+        key_collisions = {} # Dictionary to track collisions: {key: [list_of_original_words_producing_this_key]}
+
+        skipped_entry_details = [] # Store details of skipped entries
+
+        for i, (word, word_type, definitions, examples) in enumerate(parsed_entries):
+            original_word_for_log = word.strip() # Keep original case for logging
+            word_lower = word.strip().lower()  # Normalize the word
+
+            # Check for empty content (the original check)
+            if not word_lower or not word_type or not definitions.strip() or not examples.strip():
+                reason = []
+                if not word_lower: reason.append("empty word")
+                if not word_type: reason.append("empty type")
+                if not definitions.strip(): reason.append("empty definitions")
+                if not examples.strip(): reason.append("empty examples")
+                # Store info about skipped entry due to content validation
+                skipped_entry_details.append({
+                    "word": original_word_for_log or '[EMPTY WORD]',
+                    "reason": f"Content Validation Failed: {', '.join(reason)}",
+                    "index_in_parsed": i
+                })
+                self.console.print(f"[bold yellow]Skipping entry due to content: '{original_word_for_log or '[EMPTY WORD]'}' - Reason: {', '.join(reason)}[/bold yellow]")
                 continue
-            
-            self.word_entries[word] = {
-                "word": word,
-                "type": word_type,
+
+            # --- Check for key collision BEFORE assigning ---
+            if word_lower in self.word_entries:
+                # Collision detected for self.word_entries!
+                if word_lower not in key_collisions:
+                    key_collisions[word_lower] = [self.word_entries[word_lower]['word']] # Add the word already there
+                key_collisions[word_lower].append(original_word_for_log) # Add the new word causing collision
+
+                self.console.print(f"[bold orange3]WARNING: Key collision detected for key '{word_lower}'. Overwriting entry for '{self.word_entries[word_lower]['word']}' with entry for '{original_word_for_log}'.[/bold orange3]")
+
+            # Add to successful entries
+            self.word_entries[word_lower] = {
+                "word": original_word_for_log.capitalize(), # Store capitalized original
+                "type": word_type.strip(),
                 "definitions": definitions.strip(),
                 "examples": examples.strip(),
             }
 
-        # Print all extracted entries
-        console.print("[bold blue]Entries extracted in load_existing_entries:")
-        for word, entry in self.word_entries.items():
-            normalized_word = self.normalize_word(word)
-            self.normalized_entries[normalized_word] = word
+            # Also check collision for normalized_entries (less likely to be the primary issue based on counts, but good practice)
+            normalized_word = self.normalize_word(word_lower)
+            if normalized_word in self.normalized_entries and self.normalized_entries[normalized_word] != word_lower:
+                 self.console.print(f"[bold yellow]NOTE: Normalized key collision for '{normalized_word}'. Mapping from '{self.normalized_entries[normalized_word]}' overwritten by '{word_lower}'.[/bold yellow]")
+            self.normalized_entries[normalized_word] = word_lower
+
+            parsed_words_set.add(original_word_for_log.strip()) # Add original word as parsed
+
+        loaded_entries_count_debug = len(self.word_entries)
+
+        # --- Find entries missed by the REGEX ---
+        missed_by_regex = []
+        # Extract the word part from ALL raw \entry{ lines for comparison
+        all_raw_words = re.findall(r"\\entry\{(.*?)\}", content, re.DOTALL)
+        all_raw_words_stripped = {w.strip() for w in all_raw_words}
+
+        missed_words = all_raw_words_stripped - parsed_words_set
+
+        if missed_words:
+             self.console.print(f"[bold red]DEBUG: Found {len(missed_words)} words present in raw \\entry{{...}} but NOT successfully parsed by the 4-group regex:[/bold red]")
+             # Try to find the context of these missed words in the original file
+             for word in sorted(list(missed_words)):
+                 # Find the line number (approximate)
+                 try:
+                     escaped_word = re.escape(word)
+                     match = re.search(fr"\\entry{{{escaped_word}}}", content)
+                     if match:
+                         start_index = match.start()
+                         line_number = content.count('\n', 0, start_index) + 1
+                         # Extract a snippet around the match
+                         context_start = max(0, start_index - 30)
+                         context_end = min(len(content), start_index + 150) # Look further ahead
+                         snippet = content[context_start:context_end].replace('\n', '\\n')
+                         missed_by_regex.append(f"Word: '{word}' (approx line {line_number}) - Snippet: ...{snippet}...")
+                     else:
+                         missed_by_regex.append(f"Word: '{word}' (Could not find exact context)")
+                 except Exception as e:
+                      missed_by_regex.append(f"Word: '{word}' (Error finding context: {e})")
+
+        # --- Final Debug Summary ---
+        self.console.print(f"[bold magenta]DEBUG: Initial raw \\entry{{ count: {raw_entry_count_debug}[/bold magenta]")
+        self.console.print(f"[bold magenta]DEBUG: Entries matched by 4-group regex: {len(parsed_entries)}[/bold magenta]")
+        self.console.print(f"[bold magenta]DEBUG: Entries skipped by content validation: {len(skipped_entry_details)}[/bold magenta]")
+        self.console.print(f"[bold magenta]DEBUG: Final loaded entries (self.word_entries): {loaded_entries_count_debug}[/bold magenta]")
+
+        # --- Permanent Warning for Duplicates (Always Show) ---
+        if key_collisions:
+            self.console.print(Panel(
+                f"[bold yellow]WARNING:[/bold yellow] {len(key_collisions)} duplicate word key(s) detected during loading, resulting in {sum(len(v)-1 for v in key_collisions.values())} overwritten entries.\n"
+                "The application uses the *last* encountered entry for each duplicate word.\n"
+                "Please review your `.tex` file and remove redundant entries for:\n" +
+                "\n".join([f" - Key: '{key}' (from words: {', '.join(words)})" for key, words in key_collisions.items()]),
+                title="Duplicate Entries Found",
+                border_style="yellow"
+            ))
+
+        # Update the main count AFTER all checks
+        self.entry_count = len(self.word_entries)
 
     def latex_to_anki_format(self, text):
         """Converts LaTeX-formatted text to Anki-compatible HTML format.
@@ -416,8 +504,13 @@ class FrenchVocabBuilder:
         return self.normalized_entries.get(normalized_word)
 
     def handle_duplicate(self, word: str, existing_word: str) -> bool:
-        warning_text = Text(f"Warning: '{word}' already exists in the dictionary as '{existing_word}'.", style="bold yellow")
-        self.console.print(Panel(warning_text, border_style="yellow"))
+        # Use the actual key from normalized_entries for consistency
+        normalized_word = self.normalize_word(word)
+        actual_existing_word = self.normalized_entries.get(normalized_word, existing_word) # Get the stored version
+
+        warning_text = Text(f"Duplicate Warning:\nWord '{word}' (normalized: '{normalized_word}') already exists in the dictionary as '{actual_existing_word}'.", style="bold yellow")
+        # Use a red border for higher visibility
+        self.console.print(Panel(warning_text, border_style="bold red", title="Duplicate Found!"))
 
         # Create a table for options
         table = Table(show_header=False, box=None, padding=(0, 1))
@@ -435,13 +528,20 @@ class FrenchVocabBuilder:
             self.console.print(Panel("Skipping this word. Returning to main menu.", border_style="green"))
             return False
         elif choice == "v":
-            self.console.print(Panel(f"Displaying existing entry for '{existing_word}':", border_style="cyan"))
-            self.display_existing_entry(existing_word)
-            self.console.print(Panel("Returning to main menu without adding a new entry.", border_style="green"))
-            return False
+            self.console.print(Panel(f"Displaying existing entry for '{actual_existing_word}':", border_style="cyan"))
+            # Ensure you use the correct key to retrieve the entry
+            self.display_existing_entry(actual_existing_word.lower()) # Use the lowercase version which should be the key
+            # Ask again after viewing
+            self.console.print(Panel("Returning to duplicate handling options...", border_style="blue"))
+            # Recursive call to handle_duplicate to ask again after viewing
+            return self.handle_duplicate(word, existing_word)
         else:  # choice == "f"
-            self.console.print(Panel(f"Proceeding to add '{word}' as a new entry, even though it may be a duplicate.", border_style="magenta"))
-            return True
+            if Confirm.ask(f"[bold red]Are you absolutely sure you want to add '{word}'? This will create a duplicate entry based on the normalized word '{normalized_word}'. Existing entry is '{actual_existing_word}'.", default=False):
+                self.console.print(Panel(f"Proceeding to add '{word}' as a new entry, despite the duplication.", border_style="magenta"))
+                return True
+            else:
+                self.console.print(Panel("Force Add cancelled. Skipping this word.", border_style="yellow"))
+                return False
 
     def display_existing_entry(self, word: str):
         entry = self.word_entries[word.lower()]
@@ -468,9 +568,10 @@ class FrenchVocabBuilder:
         console.print("1. Add a new word")
         console.print("2. Export to Anki deck")
         console.print("3. Reconcile LaTeX and Anki exports")
-        console.print("4. Exit")
+        console.print("4. Display all vocabulary")
+        console.print("5. Exit")
         console.print(f"[bold green]Current word count: {self.entry_count}[/bold green]")
-        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4"])
+        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4", "5"])
         return choice
 
     def generate_table(self, search_term: str, results: dict) -> Table:
@@ -754,8 +855,10 @@ class FrenchVocabBuilder:
             elif choice == "2":
                 self.handle_anki_export()
             elif choice == "3":
-                self.reconcile_menu_option()  # New option
+                self.reconcile_menu_option()
             elif choice == "4":
+                self.display_all_vocabulary()
+            elif choice == "5":
                 self.exit_screen()
                 break
             self.console.input("\nPress Enter to continue...")
@@ -914,6 +1017,97 @@ class FrenchVocabBuilder:
     def reconcile_menu_option(self):
         self.generate_discrepancy_report()
         # Optionally, add interactive options to resolve discrepancies
+
+    def display_all_vocabulary(self):
+        """Displays all vocabulary entries present in the LaTeX file in a paginated table format.
+        
+        This function retrieves all vocabulary entries from the LaTeX file, formats them
+        into a Rich table, and displays them with pagination for better readability.
+        """
+        if not self.word_entries:
+            self.console.print("[bold yellow]No vocabulary entries found in the LaTeX file.[/bold yellow]")
+            return
+        
+        # Create a table to display the vocabulary entries
+        table = Table(title=f"[bold blue]All Vocabulary Entries ({len(self.word_entries)} words)[/bold blue]")
+        table.add_column("No.", style="cyan", justify="right")
+        table.add_column("Word", style="green")
+        table.add_column("Type", style="magenta")
+        table.add_column("Definitions", style="yellow")
+        
+        # Sort entries alphabetically
+        sorted_entries = sorted(self.word_entries.items(), key=lambda x: self.normalize_word(x[0]))
+        
+        # Add rows to the table
+        for index, (word, entry) in enumerate(sorted_entries, 1):
+            # Truncate definitions if too long
+            definitions = entry["definitions"]
+            if len(definitions) > 60:
+                definitions = definitions[:57] + "..."
+            
+            table.add_row(
+                str(index),
+                entry["word"],
+                entry["type"] if isinstance(entry["type"], str) else ", ".join(entry["type"]),
+                definitions
+            )
+        
+        # Display the table with pagination
+        self.console.print(table)
+        
+        # Add filter/search option
+        if Confirm.ask("Would you like to search for a specific word?", default=False):
+            self.search_vocabulary()
+
+    def search_vocabulary(self):
+        """Allows searching for specific vocabulary entries by keyword."""
+        search_term = Prompt.ask("Enter search term").lower()
+        
+        results = {}
+        for word, entry in self.word_entries.items():
+            if (search_term in word.lower() or 
+                search_term in entry["definitions"].lower() or 
+                (isinstance(entry["type"], str) and search_term in entry["type"].lower()) or
+                (isinstance(entry["type"], list) and any(search_term in t.lower() for t in entry["type"]))):
+                results[word] = entry
+        
+        if not results:
+            self.console.print(f"[bold yellow]No results found for '{search_term}'.[/bold yellow]")
+            return
+        
+        # Display search results
+        table = Table(title=f"[bold blue]Search Results for '{search_term}' ({len(results)} matches)[/bold blue]")
+        table.add_column("Word", style="green")
+        table.add_column("Type", style="magenta")
+        table.add_column("Definitions", style="yellow")
+        
+        for word, entry in sorted(results.items(), key=lambda x: self.normalize_word(x[0])):
+            # Truncate definitions if too long
+            definitions = entry["definitions"]
+            if len(definitions) > 60:
+                definitions = definitions[:57] + "..."
+            
+            table.add_row(
+                entry["word"],
+                entry["type"] if isinstance(entry["type"], str) else ", ".join(entry["type"]),
+                definitions
+            )
+        
+        self.console.print(table)
+        
+        # Offer to display full entry for a selected word
+        if Confirm.ask("Would you like to see the full entry for any of these words?", default=False):
+            word_to_view = Prompt.ask("Enter the word to view")
+            word_to_view_lower = word_to_view.lower()
+            if word_to_view_lower in self.word_entries:
+                self.display_existing_entry(word_to_view_lower)
+            else:
+                matching_words = [w for w in self.word_entries.keys() 
+                                 if self.normalize_word(w) == self.normalize_word(word_to_view)]
+                if matching_words:
+                    self.display_existing_entry(matching_words[0])
+                else:
+                    self.console.print(f"[bold red]Word '{word_to_view}' not found.[/bold red]")
 
 
 def main() -> None:
