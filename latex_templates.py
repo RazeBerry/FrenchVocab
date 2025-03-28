@@ -72,6 +72,7 @@ Provide 3 distinct, natural-sounding examples demonstrating different nuances or
    [English Translation 3]
 
 # Final Instructions
+- Please do not use excessive parenthesis inside the examples.
 - Output ONLY the text matching the structure above. Start with "Spelling Check:" and end with the final parenthesis of the third example's translation.
 - Do NOT include any introductory or concluding remarks.
 - Do NOT include section headers like "# Persona & Goal" or "# Required Output Format" in your response.

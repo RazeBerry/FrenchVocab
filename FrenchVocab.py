@@ -721,8 +721,10 @@ class FrenchVocabBuilder:
         capitalized_word = word.capitalize()
 
         def_items = "".join([f"    \\item {d}\n" for d in definitions])
+        
+        # Check if the English translation already has parentheses before adding them
         example_items = "".join(
-            [f"    \\item {e[0]} \\\\ ({e[1]})\n" for e in examples]
+            [f"    \\item {e[0]} \\\\ {e[1] if e[1].startswith('(') and e[1].endswith(')') else f'({e[1]})'}\n" for e in examples]
         )
 
         latex_entry = f"""\\entry{{{capitalized_word}}}{{{word_type}}}
@@ -946,7 +948,7 @@ class FrenchVocabBuilder:
     def display_parsed_info(
             self,
             word: str,
-            word_type: List[str],  # Explicitly type word_type as a List
+            word_type: List[str],
             definitions: List[str],
             examples: List[Tuple[str, str]],
     ):
@@ -956,14 +958,14 @@ class FrenchVocabBuilder:
         table.add_column("Category", style="cyan", no_wrap=True)
         table.add_column("Information", style="magenta")
 
-        # Convert word_type list to a string
         word_type_str = ", ".join(word_type)
         table.add_row("Word Type", word_type_str)
 
         def_str = "\n".join([f"• {d}" for d in definitions])
         table.add_row("Definitions", def_str)
 
-        ex_str = "\n".join([f"• {f}\n  ({e})" for f, e in examples])
+        # Check if the English translation already has parentheses
+        ex_str = "\n".join([f"• {f}\n  {e if e.startswith('(') and e.endswith(')') else f'({e})'}" for f, e in examples])
         table.add_row("Examples", ex_str)
 
         console.print(table)
