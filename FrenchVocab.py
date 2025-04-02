@@ -517,7 +517,7 @@ class FrenchVocabBuilder:
         table.add_column(style="cyan", no_wrap=True)
         table.add_column(style="white")
         table.add_row("[s]", "Skip: Don't add this word and return to the main menu.")
-        table.add_row("[v]", "View: Display the existing entry for this word.")
+        table.add_row("[v]", "View: Display the existing entry and return to the main menu.")
         table.add_row("[f]", "Force Add: Add this word as a new entry despite the duplication.")
 
         self.console.print(Panel(table, title="Please choose an action", border_style="blue"))
@@ -531,10 +531,10 @@ class FrenchVocabBuilder:
             self.console.print(Panel(f"Displaying existing entry for '{actual_existing_word}':", border_style="cyan"))
             # Ensure you use the correct key to retrieve the entry
             self.display_existing_entry(actual_existing_word.lower()) # Use the lowercase version which should be the key
-            # Ask again after viewing
-            self.console.print(Panel("Returning to duplicate handling options...", border_style="blue"))
-            # Recursive call to handle_duplicate to ask again after viewing
-            return self.handle_duplicate(word, existing_word)
+            
+            # Changed: Don't make a recursive call, just return to main menu
+            self.console.print(Panel("Displayed existing entry. Returning to main menu.", border_style="blue"))
+            return False # Return False, indicating not to add the word
         else:  # choice == "f"
             if Confirm.ask(f"[bold red]Are you absolutely sure you want to add '{word}'? This will create a duplicate entry based on the normalized word '{normalized_word}'. Existing entry is '{actual_existing_word}'.", default=False):
                 self.console.print(Panel(f"Proceeding to add '{word}' as a new entry, despite the duplication.", border_style="magenta"))
@@ -866,57 +866,79 @@ class FrenchVocabBuilder:
             self.console.input("\nPress Enter to continue...")
 
     def handle_new_word_entry(self):
-        word = self.get_word_input()
-        if word:
-            existing_word = self.check_duplicate(word)
-            if existing_word:
-                if not self.handle_duplicate(word, existing_word):
-                    return  # User chose to skip or view existing entry
-            
-            ai_response = self.query_ai(word)
-            if ai_response:
-                word = self.check_spelling(word, ai_response)
-                if word is None:  # User chose to abandon the edit
-                    return
-                self.process_ai_response(word, ai_response)
-                self.add_word_to_entries(word, ai_response)
-                self.alphabetize_entries()
-            else:
-                self.console.print(f"[bold red]Failed to get information for '{word}'. Skipping this entry.[/bold red]")
+        original_word = self.get_word_input()
+        if not original_word:
+            return # User cancelled input
 
-    def process_ai_response(self, word, ai_response):
-        word_type, definitions, examples = self.parse_ai_response(ai_response)
-        self.display_parsed_info(word, word_type, definitions, examples)
+        # --- Stage 1 Duplicate Check (User Input) ---
+        existing_word_check1 = self.check_duplicate(original_word)
+        if existing_word_check1:
+            if not self.handle_duplicate(original_word, existing_word_check1):
+                self.console.print(f"[yellow]Skipping '{original_word}' due to duplicate check (Stage 1).[/yellow]")
+                return # User chose to skip or view existing entry
 
-        word = self.check_spelling(word, ai_response)
-        if word is None:  # User chose to abandon the edit
-            return None
+        # --- Query AI ---
+        ai_response = self.query_ai(original_word)
+        if not ai_response:
+            self.console.print(f"[bold red]Failed to get information for '{original_word}'. Skipping this entry.[/bold red]")
+            return
 
-        latex_entry = self.format_latex_entry(word, word_type, definitions, examples)
+        # --- Spelling Check and Final Word Determination ---
+        final_word = self.check_spelling(original_word, ai_response)
+        if final_word is None: # User chose to abandon the edit during spelling check
+            self.console.print(f"[yellow]Abandoning entry for '{original_word}'.[/yellow]")
+            return
         
-        # Check if the latex_entry is empty or invalid
+        # --- Stage 2 Duplicate Check (Final/Corrected Word) ---
+        # Check again only if the final word is different from the original input (case-insensitive)
+        # and it wasn't the word found in the first check (if any)
+        if final_word.lower() != original_word.lower():
+            existing_word_check2 = self.check_duplicate(final_word)
+            if existing_word_check2 and existing_word_check2 != existing_word_check1:
+                self.console.print(f"[cyan]Performing second duplicate check for corrected word '{final_word}'...[/cyan]")
+                if not self.handle_duplicate(final_word, existing_word_check2):
+                    self.console.print(f"[yellow]Skipping '{final_word}' due to duplicate check (Stage 2).[/yellow]")
+                    return # User chose to skip or view existing entry
+
+        # --- Parse AI Response ---
+        word_type, definitions, examples = self.parse_ai_response(ai_response)
+        if not word_type or not definitions or not examples:
+             self.console.print("[bold red]Error: Failed to parse essential information from AI response. Aborting.[/bold red]")
+             return
+
+        # --- Display Parsed Info ---
+        self.display_parsed_info(final_word, word_type, definitions, examples)
+
+        # --- Format LaTeX Entry ---
+        latex_entry = self.format_latex_entry(final_word, word_type[0], definitions, examples) # Use first element of word_type list
+
+        # --- Validate LaTeX Entry ---
         if not self.is_valid_latex_entry(latex_entry):
             self.console.print("[bold red]Error: Generated LaTeX entry is empty or invalid. Aborting process.[/bold red]")
-            return None
+            return
 
+        # --- Display LaTeX Entry & Insert ---
         self.display_latex_entry(latex_entry)
-        self.insert_entry_alphabetically(latex_entry, word.capitalize())
-        self.add_word_to_entries(word, ai_response)
+        self.insert_entry_alphabetically(latex_entry, final_word) # Insert using the final word
 
-        return word
+        # --- Update In-Memory Dictionaries ---
+        self.add_word_to_entries(final_word, word_type[0], definitions, examples) # Use first element of word_type list
+
+        # --- Alphabetize ---
+        self.alphabetize_entries()
+
+        self.console.print(f"[bold green]Successfully processed and added entry for '{final_word}'.[/bold green]")
 
     def is_valid_latex_entry(self, latex_entry: str) -> bool:
         # Check if the entry is not empty and contains the expected LaTeX structure
         return bool(latex_entry.strip()) and "\\entry{" in latex_entry and "}{" in latex_entry
 
     def check_spelling(self, word, ai_response):
-
         spelling_check_match = re.search(r'Spelling Check:\s*(.*)', ai_response)
         spelling_check = spelling_check_match.group(1) if spelling_check_match else None
 
         corrected_spelling_match = re.search(r'Correctly Spelt Word:\s*(.*)', ai_response)
         corrected_spelling = corrected_spelling_match.group(1) if corrected_spelling_match else None
-
 
         if corrected_spelling and corrected_spelling.lower().strip() != word.lower().strip():
             self.console.print(f"Did you mean '{corrected_spelling}' instead of '{word}'?")
@@ -932,14 +954,19 @@ class FrenchVocabBuilder:
                 return None
         return word
 
-    def add_word_to_entries(self, word, ai_response):
-        word_type, definitions, examples = self.parse_ai_response(ai_response)
-        self.word_entries[word.lower()] = {
+    def add_word_to_entries(self, word: str, word_type: str, definitions: List[str], examples: List[Tuple[str, str]]):
+        """Updates the in-memory dictionaries with the new word entry."""
+        word_lower = word.lower()
+        self.word_entries[word_lower] = {
             "word": word.capitalize(),
             "type": word_type,
             "definitions": "; ".join(definitions),
             "examples": "; ".join([f"{f} ({e})" for f, e in examples]),
         }
+        # Update normalized entries as well
+        normalized_word = self.normalize_word(word_lower)
+        self.normalized_entries[normalized_word] = word_lower
+        self.entry_count = len(self.word_entries) # Keep count accurate
 
     def handle_anki_export(self):
         deck_name = Prompt.ask("Enter a name for your Anki deck", default="French Vocabulary")
