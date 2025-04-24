@@ -5,7 +5,6 @@ import re
 import unicodedata
 from typing import List, Tuple, Optional, Dict, Set
 import sys
-import anthropic
 import genanki
 from rich.console import Console
 from rich.progress import Progress
@@ -21,6 +20,13 @@ import keyring
 import getpass
 from keyring.errors import KeyringError
 from pathlib import Path
+from llm_client import GeminiClient, ProviderFactory
+import uuid
+import struct
+import hashlib
+
+# Import the new translator class
+from eng_to_fr_translator import EnglishToFrenchTranslator
 
 console = Console()
 
@@ -37,15 +43,21 @@ class WordType(Enum):
 
 class FrenchVocabBuilder:
     DEFAULT_FILENAME = "FrenchVocab.tex"
-    def __init__(self, latex_file: Optional[str]):
+    def __init__(self, latex_file: Optional[str], provider: str = None):
         init_start = time.time()
         
         self.console = Console()
         # Use pathlib for cross-platform file handling
+        script_dir = Path(__file__).parent # Get the directory where the script is located
+
         if latex_file is None:
-            self.latex_file = Path.cwd() / self.DEFAULT_FILENAME
+            self.latex_file = script_dir / self.DEFAULT_FILENAME # Base path on script directory
+            self.eng_to_fr_latex_file = script_dir / EnglishToFrenchTranslator.DEFAULT_FILENAME # Base path on script directory
         else:
             self.latex_file = Path(latex_file)
+            # Assume the Eng->Fr file lives alongside the main one if a path is given
+            self.eng_to_fr_latex_file = self.latex_file.parent / EnglishToFrenchTranslator.DEFAULT_FILENAME
+
         if not self.latex_file.exists():
             self.create_initial_tex_file()
         
@@ -53,16 +65,26 @@ class FrenchVocabBuilder:
         self.word_entries: Dict[str, Dict] = {}
         self.normalized_entries: Dict[str, str] = {}
         self.config_file = "vocab_builder_config.json"
+        
+        # Initialize the LLM client directly instead of using a background thread
         self.client = None
-        self.client_lock = threading.Lock()
-        self.client_initialized = threading.Event()
         
+        # Initialize translator attribute
+        self.eng_to_fr_translator: Optional[EnglishToFrenchTranslator] = None
+
         self.load_config()
-        if 'ANTHROPIC_API_KEY' not in os.environ:
-            self.console.print("[bold red]ANTHROPIC_API_KEY not set in environment variables after loading config.[/bold red]")
         
-        # Start the Anthropic client initialization in a separate thread
-        threading.Thread(target=self.initialize_anthropic_client_background, daemon=True).start()
+        # Get the provider name if not specified
+        if provider is None:
+            provider = ProviderFactory.default_provider()
+            
+        # Initialize LLM client using the factory
+        try:
+            self.client = ProviderFactory.create(provider)
+            self.console.print(f"[bold green]{provider.capitalize()} client initialized successfully![/bold green]")
+        except Exception as e:
+            self.console.print(f"[bold red]Error initializing {provider} client: {e}[/bold red]")
+            sys.exit(1)
         
         load_config_start = time.time()
         self.load_config()
@@ -75,6 +97,16 @@ class FrenchVocabBuilder:
         self.exported_words_file = Path("exported_words.json")
         self.exported_words = self.load_exported_words()
         self.entry_count = self.count_entries()
+        
+        # Initialize the Eng->Fr translator 
+        if self.client:
+             self.eng_to_fr_translator = EnglishToFrenchTranslator(
+                 console=self.console,
+                 client=self.client,
+                 latex_file_path=self.eng_to_fr_latex_file
+             )
+        else:
+             self.console.print("[bold red]Could not initialize EnglishToFrenchTranslator due to missing LLM client.[/bold red]")
 
         init_end = time.time()
         print(f"Total init time: {init_end - init_start:.5f} seconds")
@@ -97,10 +129,10 @@ class FrenchVocabBuilder:
 
 
     def load_config(self):
-        api_key = os.environ.get('ANTHROPIC_API_KEY')
+        api_key = os.environ.get('GEMINI_API_KEY')
         if not api_key:
             try:
-                api_key = keyring.get_password("french_vocab_builder", "anthropic_api_key")
+                api_key = keyring.get_password("french_vocab_builder", "gemini_api_key")
             except KeyringError as e:
                 self.console.print(f"[bold red]Error accessing keyring: {e}[/bold red]")
                 api_key = None
@@ -108,12 +140,12 @@ class FrenchVocabBuilder:
         if not api_key or not self.is_valid_api_key(api_key):
             api_key = self.first_time_setup()
         
-        os.environ['ANTHROPIC_API_KEY'] = api_key
-        self.console.print("[bold green]Valid ANTHROPIC_API_KEY found and set.[/bold green]")
+        os.environ['GEMINI_API_KEY'] = api_key
+        self.console.print("[bold green]Valid GEMINI_API_KEY found and set.[/bold green]")
 
     def is_valid_api_key(self, api_key):
-        # Basic check
-        if not api_key or not api_key.startswith("sk-ant") or len(api_key) < 32:
+        # Basic check for Gemini API key format
+        if not api_key or len(api_key) < 32:
             return False
         
         # Optional: Perform a test API call here to verify the key works
@@ -122,22 +154,21 @@ class FrenchVocabBuilder:
 
     def first_time_setup(self):
         self.console.print(Panel(
-            "[bold yellow]No valid ANTHROPIC_API_KEY found. Let's set it up.[/bold yellow]\n\n"
+            "[bold yellow]No valid GEMINI_API_KEY found. Let's set it up.[/bold yellow]\n\n"
             "To obtain an API key:\n"
-            "1. Go to https://www.anthropic.com or https://console.anthropic.com\n"
+            "1. Go to https://ai.google.dev/ or https://makersuite.google.com/\n"
             "2. Sign up or log in to your account\n"
             "3. Navigate to the API section in your account dashboard\n"
-            "4. Generate a new API key\n"
-            "The key should start with 'sk-ant' and be at least 32 characters long.",
+            "4. Generate a new API key\n",
             title="API Key Setup",
             expand=False
         ))
         
         while True:
-            api_key = getpass.getpass("Enter your Anthropic API key: ")
+            api_key = getpass.getpass("Enter your Gemini API key: ")
             if self.is_valid_api_key(api_key):
                 try:
-                    keyring.set_password("french_vocab_builder", "anthropic_api_key", api_key)
+                    keyring.set_password("french_vocab_builder", "gemini_api_key", api_key)
                     self.console.print("[bold green]API key saved securely.[/bold green]")
                     return api_key
                 except KeyringError as e:
@@ -148,47 +179,7 @@ class FrenchVocabBuilder:
                 self.console.print("[bold red]Invalid API key. Please try again.[/bold red]")
         
 
-    def initialize_anthropic_client_background(self):
-        try:
-            api_key = os.environ.get('ANTHROPIC_API_KEY')
-            if api_key and api_key.startswith("sk-ant") and len(api_key) >= 32:
-                self.client = anthropic.Anthropic(api_key=api_key)
-                self.console.print("[bold green]Anthropic client initialized successfully![/bold green]")
-            else:
-                self.console.print("[bold red]Invalid or missing ANTHROPIC_API_KEY in environment variables.[/bold red]")
-                self.provide_api_key_instructions()
-                sys.exit(1)
-        except Exception as e:
-            self.console.print(f"[bold red]Error initializing Anthropic client: {e}[/bold red]")
-            self.provide_api_key_instructions()
-        finally:
-            self.client_initialized.set()
-
-    def provide_api_key_instructions(self):
-        instructions = """
-        [bold yellow]To obtain an Anthropic API key:[/bold yellow]
-        1. Go to https://www.anthropic.com or https://console.anthropic.com
-        2. Sign up for an account or log in if you already have one
-        3. Navigate to the API section in your account dashboard
-        4. Generate a new API key
-        5. Copy the key and set it as an environment variable by typing the following command in your console:
-           [bold cyan]For MacOS:[/bold cyan]
-           export ANTHROPIC_API_KEY='your-api-key-here'
-           [bold cyan]For Windows (Command Prompt):[/bold cyan]
-           set ANTHROPIC_API_KEY='your-api-key-here'
-           [bold cyan]For Windows (PowerShell):[/bold cyan]
-           $env:ANTHROPIC_API_KEY='your-api-key-here'
-        6. After setting the environment variable, restart the application.
-        
-        The program will now abort due to the need of an API key.
-        [bold]Note:[/bold] Keep your API key secure and never share it publicly.
-        """
-        self.console.print(Panel(instructions, title="Anthropic API Key Instructions", expand=False))
-
-    def get_anthropic_client(self):
-        if not self.client_initialized.is_set():
-            self.console.print("Waiting for Anthropic client to initialize...")
-            self.client_initialized.wait()
+    def get_llm_client(self):
         return self.client
 
     def load_exported_words(self):
@@ -211,11 +202,7 @@ class FrenchVocabBuilder:
         except IOError as e:
             console.print(f"[bold red]Error reading file: {e}[/bold red]")
             return 0
-            console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
-            return 0
-        except IOError as e:
-            console.print(f"[bold red]Error reading file: {e}[/bold red]")
-            return 0
+
 
 
     def load_existing_entries(self):
@@ -409,11 +396,20 @@ class FrenchVocabBuilder:
         Raises:
             IOError: If there's an error writing the Anki package file.
         """
-        model_id = random.randrange(1 << 30, 1 << 31)
-        # Define the model for Anki notes
+        def stable_32(seed: str) -> int:
+            """Return a deterministic 32-bit *signed* int for deck/model IDs."""
+            h = hashlib.sha1(seed.encode()).digest()
+            return struct.unpack(">I", h[:4])[0] & 0x7FFFFFFF  # keep positive
+
+        def note_guid(word: str) -> str:
+            """Return the exact same 128-bit GUID for this word every time."""
+            return uuid.uuid5(uuid.NAMESPACE_URL, f"fr_vocab::{word.lower()}").hex
+        
+        # Define the model with a stable ID
+        MODEL_ID = stable_32("FrenchVocabModel/v1")
         model = genanki.Model(
-            model_id,
-            'French Vocab Model',
+            MODEL_ID,
+            'French Vocab Model v1',
             fields=[
                 {'name': 'French'},
                 {'name': 'Type'},
@@ -428,10 +424,9 @@ class FrenchVocabBuilder:
                 },
             ])
 
-        # Generate a unique deck ID
-        deck_id = random.randrange(1 << 30, 1 << 31)
-        # Create a new Anki deck with the specified name and ID
-        deck = genanki.Deck(deck_id, deck_name)
+        # Create a new Anki deck with a stable ID
+        DECK_ID = stable_32(f"FrenchDeck::{deck_name}")
+        deck = genanki.Deck(DECK_ID, deck_name)
 
         # Create sets for all words in LaTeX and all words ever exported to Anki
         latex_words = set(self.word_entries.keys())
@@ -450,9 +445,11 @@ class FrenchVocabBuilder:
                 # Ensure word_type is always a string
                 word_type = ', '.join(entry['type']) if isinstance(entry['type'], list) else entry['type']
 
-                # Create a new Anki note with the formatted fields
+                # Create a new Anki note with a stable GUID
+                card_guid = note_guid(word)  # deterministic!
                 note = genanki.Note(
                     model=model,
+                    guid=card_guid,
                     fields=[
                         entry['word'],
                         word_type,
@@ -518,11 +515,10 @@ class FrenchVocabBuilder:
         table.add_column(style="white")
         table.add_row("[s]", "Skip: Don't add this word and return to the main menu.")
         table.add_row("[v]", "View: Display the existing entry and return to the main menu.")
-        table.add_row("[f]", "Force Add: Add this word as a new entry despite the duplication.")
 
         self.console.print(Panel(table, title="Please choose an action", border_style="blue"))
 
-        choice = Prompt.ask("Your choice", choices=["s", "v", "f"], default="s")
+        choice = Prompt.ask("Your choice", choices=["s", "v"], default="s")
 
         if choice == "s":
             self.console.print(Panel("Skipping this word. Returning to main menu.", border_style="green"))
@@ -535,13 +531,6 @@ class FrenchVocabBuilder:
             # Changed: Don't make a recursive call, just return to main menu
             self.console.print(Panel("Displayed existing entry. Returning to main menu.", border_style="blue"))
             return False # Return False, indicating not to add the word
-        else:  # choice == "f"
-            if Confirm.ask(f"[bold red]Are you absolutely sure you want to add '{word}'? This will create a duplicate entry based on the normalized word '{normalized_word}'. Existing entry is '{actual_existing_word}'.", default=False):
-                self.console.print(Panel(f"Proceeding to add '{word}' as a new entry, despite the duplication.", border_style="magenta"))
-                return True
-            else:
-                self.console.print(Panel("Force Add cancelled. Skipping this word.", border_style="yellow"))
-                return False
 
     def display_existing_entry(self, word: str):
         entry = self.word_entries[word.lower()]
@@ -550,13 +539,24 @@ class FrenchVocabBuilder:
 
     
     def welcome_screen(self):
+        # Determine which provider is being used
+        provider_name = "Unknown"
+        if isinstance(self.client, GeminiClient):
+            provider_name = "Google Gemini"
+        else:
+            # Check for Claude client (use string comparison to avoid import errors)
+            client_class_name = self.client.__class__.__name__
+            if client_class_name == "ClaudeClient":
+                provider_name = "Anthropic Claude"
+            
         console.print(
             Panel.fit(
                 f"[bold blue]Welcome to the French Vocabulary LaTeX Builder![/bold blue]\n\n"
                 f"This application helps you build a LaTeX document for French vocabulary.\n"
                 f"You can input French words, and the AI will provide definitions and examples.\n\n"
-                f"[bold green]Your current vocabulary library contains {self.entry_count} words.[/bold green]\n\n"
-                f"[italic cyan]Version 1.1[/italic cyan]\n"
+                f"[bold green]Your current vocabulary library contains {self.entry_count} words.[/bold green]\n"
+                f"[bold cyan]Using LLM provider: {provider_name}[/bold cyan]\n\n"
+                f"[italic cyan]Version 1.2[/italic cyan]\n"
                 f"[dim]GitHub: https://github.com/RazeBerry/FrenchVocab/tree/main[/dim]",
                 title="French Vocab Builder",
                 border_style="bold green",
@@ -564,14 +564,29 @@ class FrenchVocabBuilder:
         )
 
     def show_menu(self):
-        console.print("\n[bold cyan]Menu Options:[/bold cyan]")
-        console.print("1. Add a new word")
-        console.print("2. Export to Anki deck")
-        console.print("3. Reconcile LaTeX and Anki exports")
-        console.print("4. Display all vocabulary")
-        console.print("5. Exit")
-        console.print(f"[bold green]Current word count: {self.entry_count}[/bold green]")
-        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4", "5"])
+        # Create a table for menu options
+        table = Table(show_header=False, box=None, padding=(0, 1), expand=True)
+        table.add_column(style="bold cyan", width=3, justify="right") # For number
+        table.add_column() # For description
+
+        # Add rows to the table
+        table.add_row("1.", f"Add French word [dim]({self.entry_count} entries)[/dim]")
+        
+        eng_fr_count = 0
+        if self.eng_to_fr_translator:
+            eng_fr_count = self.eng_to_fr_translator.entry_count
+        table.add_row("2.", f"Translate English -> French [dim]({eng_fr_count} pairs)[/dim]")
+        
+        table.add_row("3.", "Export French words to Anki")
+        table.add_row("4.", "Reconcile Anki exports (Fr->En)")
+        table.add_row("5.", "Display all French words")
+        table.add_row("[bold yellow]q.[/bold yellow]", "Exit")
+
+        # Print the table inside a panel
+        self.console.print(Panel(table, title="Menu", border_style="blue", expand=False))
+
+        # Update choices to include 'q'
+        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4", "5", "q"], default="1")
         return choice
 
     def generate_table(self, search_term: str, results: dict) -> Table:
@@ -621,31 +636,70 @@ class FrenchVocabBuilder:
         return all(char.isalpha() or char.isspace() or char in "'-''àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ" for char in word.strip())
 
     def query_ai(self, word: str) -> str:
-        client = self.get_anthropic_client()
+        client = self.get_llm_client()
         if not client:
-            return "[bold red]Failed to initialize Anthropic client. Please check your API key and try again.[/bold red]"
+            return "[bold red]Failed to initialize Gemini client. Please check your API key and try again.[/bold red]"
         
         prompt = AI_PROMPT_TEMPLATE.format(word=word)
+        metrics = {} # Initialize metrics dictionary
+        full_text = "" # Initialize full_text
+
         with Progress() as progress:
-            task = progress.add_task("[cyan]Querying AI...", total=100)
+            task = progress.add_task("[cyan]Querying Gemini...", total=None)
+            
+            chunks = []
+            generator = client.stream(prompt) # Get the generator
 
             try:
-                message = client.messages.create(
-                    model="claude-3-5-sonnet-20240620",
-                    max_tokens=8192,
-                    temperature=0.1,
-                    messages=[
-                        {"role": "user", "content": [{"type": "text", "text": prompt}]}
-                    ],
-                    extra_headers={
-                        "anthropic-beta": "max-tokens-3-5-sonnet-2024-07-15"
-                    },
-                )
-                progress.update(task, advance=100)
-                return message.content[0].text
-            except anthropic.APIError as e:
-                console.print(f"[bold red]Error querying AI: {e}[/bold red]")
-                return ""
+                while True: # Loop to consume the generator
+                    try:
+                        text = next(generator) # Get next chunk
+                        chunks.append(text)
+                        progress.advance(task)
+                    except StopIteration as e:
+                        # Generator is exhausted, capture the return value (metrics)
+                        metrics = e.value if e.value else {}
+                        break # Exit the loop
+            except Exception as e:
+                # Catch potential errors during streaming itself
+                self.console.print(f"[bold red]Error during Gemini stream: {e}[/bold red]")
+                # Attempt to get metrics even if streaming errored mid-way
+                # This assumes the generator's finally block still runs, which it should
+                try:
+                    # Force generator cleanup and potential return value retrieval
+                    # We don't expect more text, just want the finally block to run
+                    # A simple `list(generator)` would try to iterate again, causing issues.
+                    # Calling `close()` might be appropriate if available/needed.
+                    # For now, we assume StopIteration's value is the best bet.
+                    pass # Metrics should have been captured in StopIteration
+                except Exception as final_e:
+                     self.console.print(f"[bold red]Error retrieving metrics after stream error: {final_e}[/bold red]")
+                # Set default metrics if none were captured
+                if not metrics:
+                    metrics = {'ttft': -1, 'tps': -1, 'tokens_out': -1} # Indicate error state
+                return "" # Return empty string on error
+            finally:
+                # Ensure progress bar completes if it hasn't
+                 progress.update(task, completed=True)
+                 
+            full_text = "".join(chunks)
+
+        # Display metrics if available
+        if metrics:
+            ttft = metrics.get('ttft', -1)
+            tps = metrics.get('tps', -1)
+            tokens = metrics.get('tokens_out', -1)
+            
+            metrics_text = (
+                f"TTFT: {ttft:.3f}s | "
+                f"Output Tokens: {tokens} | "
+                f"TPS: {tps:.1f}"
+            )
+            self.console.print(Panel(metrics_text, title="LLM Performance", border_style="dim blue"))
+        else:
+             self.console.print("[yellow]LLM Performance metrics not available.[/yellow]")
+             
+        return full_text
 
     def parse_ai_response(
             self, response: str
@@ -753,18 +807,11 @@ class FrenchVocabBuilder:
             with self.latex_file.open("w", encoding="utf-8") as file:
                 file.write(updated_content)
 
+            # Update the normalized entries dictionary after successful file write
+            normalized_new_word = self.normalize_word(new_word)
+            self.normalized_entries[normalized_new_word] = new_word.capitalize()
+            
             console.print(f"[bold green]Added/Updated entry for '{new_word}' in {self.latex_file}[/bold green]")
-            normalized_new_word = self.normalize_word(new_word)
-            self.normalized_entries[normalized_new_word] = new_word.capitalize()
-        except FileNotFoundError:
-            console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
-        except IOError as e:
-            console.print(f"[bold red]Error reading from or writing to file: {e}[/bold red]")
-
-            # Update the normalized entries dictionary
-            normalized_new_word = self.normalize_word(new_word)
-            self.normalized_entries[normalized_new_word] = new_word.capitalize()
-
         except FileNotFoundError:
             console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
         except IOError as e:
@@ -797,21 +844,47 @@ class FrenchVocabBuilder:
             entries_section = content[entries_start:entries_end]
             footer = content[entries_end:]
 
-            entry_pattern = r"(\\entry\{.*?\}.*?(?=\\entry|\Z))"
-            entries = re.findall(entry_pattern, entries_section, re.DOTALL)
-
-            if not entries:
+            # Improved regex pattern that handles nested braces
+            entry_pattern = r"""
+                \\entry
+                \{
+                    (?P<word>[^{}]+)
+                \}
+                \{
+                    (?P<type>[^{}]+)
+                \}
+                \{
+                    (?P<defs> (?: [^{}]+ | \{[^{}]*\} )* )
+                \}
+                \{
+                    (?P<exs>  (?: [^{}]+ | \{[^{}]*\} )* )
+                \}
+            """
+            
+            # Find all entries using the improved pattern
+            entry_matches = list(re.finditer(entry_pattern, entries_section, re.VERBOSE | re.DOTALL))
+            
+            if not entry_matches:
                 console.print("[bold yellow]No entries found to alphabetize.[/bold yellow]")
                 return
-
-            sorted_entries = sorted(
-                entries,
-                key=lambda x: self.normalize_word(re.search(r"\\entry\{(.*?)\}", x).group(1))
-            )
-
-            sorted_entries_section = "\\begin{itemize}[leftmargin=*]\n" + "".join(sorted_entries)
+            
+            # Extract full entry text and word for sorting
+            entries = []
+            for match in entry_matches:
+                start, end = match.span()
+                full_entry = entries_section[start:end]
+                word = match.group('word')
+                entries.append((word, full_entry))
+            
+            # Sort entries by normalized word
+            sorted_entries = sorted(entries, key=lambda x: self.normalize_word(x[0]))
+            
+            # Reconstruct the entries section
+            sorted_entries_section = "\\begin{itemize}[leftmargin=*]\n" + "\n\n".join([entry for _, entry in sorted_entries])
 
             sorted_content = header + sorted_entries_section + footer
+            
+            # Safety check to ensure we haven't lost content
             if len(sorted_content) < len(content) * 0.9:
                 console.print("[bold red]Warning: Significant content loss detected. Aborting alphabetization.[/bold red]")
                 return
@@ -820,14 +893,6 @@ class FrenchVocabBuilder:
                 file.write(sorted_content)
 
             console.print("[bold green]Entries alphabetized successfully.[/bold green]")
-        except FileNotFoundError:
-            console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
-        except IOError as e:
-            console.print(f"[bold red]Error reading from or writing to file: {e}[/bold red]")
-            file.write(sorted_content)
-
-            console.print("[bold green]Entries alphabetized successfully.[/bold green]")
-
         except FileNotFoundError:
             console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
         except IOError as e:
@@ -851,16 +916,23 @@ class FrenchVocabBuilder:
         self.welcome_screen()
         while True:
             self.entry_count = self.count_entries()
+            if self.eng_to_fr_translator: # Refresh count if initialized
+                 self.eng_to_fr_translator.entry_count = len(self.eng_to_fr_translator.eng_fr_pairs)
             choice = self.show_menu()
             if choice == "1":
                 self.handle_new_word_entry()
             elif choice == "2":
-                self.handle_anki_export()
+                if self.eng_to_fr_translator:
+                    self.eng_to_fr_translator.run()
+                else:
+                    self.console.print("[bold red]English-to-French translator is not available (initialization failed).[/bold red]")
             elif choice == "3":
-                self.reconcile_menu_option()
+                self.handle_anki_export()
             elif choice == "4":
-                self.display_all_vocabulary()
+                self.reconcile_menu_option()
             elif choice == "5":
+                self.display_all_vocabulary()
+            elif choice == "q":
                 self.exit_screen()
                 break
             self.console.input("\nPress Enter to continue...")
@@ -1142,13 +1214,19 @@ class FrenchVocabBuilder:
 def main() -> None:
     start_time = time.time()
     
-    if len(sys.argv) > 1:
-        latex_file = sys.argv[1]
-    else:
-        latex_file = None
+    # Parse command line arguments
+    import argparse
+    parser = argparse.ArgumentParser(description="French Vocabulary Builder")
+    parser.add_argument('latex_file', nargs='?', help='Path to LaTeX file')
+    parser.add_argument('--provider', choices=['gemini', 'claude'], 
+                        help='LLM provider to use (gemini or claude)')
+    args = parser.parse_args()
+    
+    latex_file = args.latex_file
+    provider = args.provider  # Will be None if not specified
 
     init_start = time.time()
-    app = FrenchVocabBuilder("/Users/sihao/Documents/LaTeX Files/FrenchVocab.tex")
+    app = FrenchVocabBuilder(latex_file, provider)
     init_end = time.time()
     
     run_start = time.time()

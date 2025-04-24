@@ -2,3 +2,4 @@ anthropic~=0.32.0
 genanki~=0.13.1
 rich~=13.7.1
 keyring~=24.1.0
+google-generativeai>=0.4.0
