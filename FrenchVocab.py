@@ -631,9 +631,10 @@ class FrenchVocabBuilder:
                 return word
 
     def is_valid_french_input(self, word: str) -> bool:
-        # Allow letters (including accented), spaces, hyphens, and apostrophes
+        # Allow letters (including accented), spaces, hyphens, and all types of apostrophes
         # Accept all common apostrophe types: ' (straight), ' (right single quote), ' (left single quote)
-        return all(char.isalpha() or char.isspace() or char in "'-''àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ" for char in word.strip())
+        valid_chars = set("'-\'àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ")
+        return all(char.isalpha() or char.isspace() or char in valid_chars for char in word.strip())
 
     def query_ai(self, word: str) -> str:
         client = self.get_llm_client()
@@ -1006,13 +1007,27 @@ class FrenchVocabBuilder:
         return bool(latex_entry.strip()) and "\\entry{" in latex_entry and "}{" in latex_entry
 
     def check_spelling(self, word, ai_response):
-        spelling_check_match = re.search(r'Spelling Check:\s*(.*)', ai_response)
-        spelling_check = spelling_check_match.group(1) if spelling_check_match else None
+        # More specific regex that stops at the next field and handles multiline content
+        spelling_check_match = re.search(r'Spelling Check:\s*(.*?)(?=\nCorrectly Spelt Word:|$)', ai_response, re.DOTALL)
+        spelling_check = spelling_check_match.group(1).strip() if spelling_check_match else None
 
-        corrected_spelling_match = re.search(r'Correctly Spelt Word:\s*(.*)', ai_response)
-        corrected_spelling = corrected_spelling_match.group(1) if corrected_spelling_match else None
-
-        if corrected_spelling and corrected_spelling.lower().strip() != word.lower().strip():
+        corrected_spelling_match = re.search(r'Correctly Spelt Word:\s*(.*?)(?=\nWord Type:|$)', ai_response, re.DOTALL)
+        corrected_spelling = corrected_spelling_match.group(1).strip() if corrected_spelling_match else None
+        
+        # Debug: Print what was extracted (can be removed later)
+        if corrected_spelling is not None:
+            self.console.print(f"[dim]Debug: Extracted corrected spelling: '{corrected_spelling}'[/dim]")
+        
+        # Validate the corrected spelling - check if it's empty, placeholder text, or same as input
+        if corrected_spelling:
+            # Remove common placeholder patterns
+            if (corrected_spelling.startswith('[') and corrected_spelling.endswith(']')) or \
+               not corrected_spelling.strip() or \
+               corrected_spelling.lower().strip() == word.lower().strip():
+                # Either placeholder text, empty, or same as input - no correction needed
+                return word
+            
+            # Valid correction found that's different from input
             self.console.print(f"Did you mean '{corrected_spelling}' instead of '{word}'?")
             self.console.print("y: Yes, use the corrected spelling")
             self.console.print("n: No, keep the original spelling")
@@ -1024,6 +1039,7 @@ class FrenchVocabBuilder:
             elif choice == "q":
                 self.console.print("[yellow]Abandoning edit. Returning to main menu.[/yellow]")
                 return None
+        
         return word
 
     def add_word_to_entries(self, word: str, word_type: str, definitions: List[str], examples: List[Tuple[str, str]]):

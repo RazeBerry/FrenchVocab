@@ -13,7 +13,7 @@ from google import genai
 from google.genai import types
 
 class GeminiClient(LLMClient):
-    MODEL_NAME = "gemini-2.5-flash-preview-04-17"
+    MODEL_NAME = "gemini-2.0-flash"
 
     def __init__(self, api_key: str | None = None):
         key = api_key or os.getenv("GEMINI_API_KEY")
