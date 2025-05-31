@@ -27,6 +27,7 @@ import hashlib
 
 # Import the new translator class
 from eng_to_fr_translator import EnglishToFrenchTranslator
+from ui_helper import UIHelper
 
 console = Console()
 
@@ -47,6 +48,7 @@ class FrenchVocabBuilder:
         init_start = time.time()
         
         self.console = Console()
+        self.ui = UIHelper(self.console)  # Initialize UIHelper
         # Use pathlib for cross-platform file handling
         script_dir = Path(__file__).parent # Get the directory where the script is located
 
@@ -81,9 +83,9 @@ class FrenchVocabBuilder:
         # Initialize LLM client using the factory
         try:
             self.client = ProviderFactory.create(provider)
-            self.console.print(f"[bold green]{provider.capitalize()} client initialized successfully![/bold green]")
+            self.ui.success(f"{provider.capitalize()} client initialized successfully!")
         except Exception as e:
-            self.console.print(f"[bold red]Error initializing {provider} client: {e}[/bold red]")
+            self.ui.error(f"Error initializing {provider} client: {e}")
             sys.exit(1)
         
         load_config_start = time.time()
@@ -106,7 +108,7 @@ class FrenchVocabBuilder:
                  latex_file_path=self.eng_to_fr_latex_file
              )
         else:
-             self.console.print("[bold red]Could not initialize EnglishToFrenchTranslator due to missing LLM client.[/bold red]")
+             self.ui.error("Could not initialize EnglishToFrenchTranslator due to missing LLM client.")
 
         init_end = time.time()
         print(f"Total init time: {init_end - init_start:.5f} seconds")
@@ -122,9 +124,9 @@ class FrenchVocabBuilder:
                 file.write(INITIAL_TEX_CONTENT)
                 file.write(SAMPLE_ENTRY)
                 file.write(FINAL_TEX_CONTENT)
-            self.console.print(f"[bold green]Created initial LaTeX file: {self.latex_file}[/bold green]")
+            self.ui.success(f"Created initial LaTeX file: {self.latex_file}")
         except IOError as e:
-            self.console.print(f"[bold red]Error creating initial LaTeX file: {e}[/bold red]")
+            self.ui.error(f"Error creating initial LaTeX file: {e}")
             raise
 
 
@@ -134,14 +136,14 @@ class FrenchVocabBuilder:
             try:
                 api_key = keyring.get_password("french_vocab_builder", "gemini_api_key")
             except KeyringError as e:
-                self.console.print(f"[bold red]Error accessing keyring: {e}[/bold red]")
+                self.ui.error(f"Error accessing keyring: {e}")
                 api_key = None
         
         if not api_key or not self.is_valid_api_key(api_key):
             api_key = self.first_time_setup()
         
         os.environ['GEMINI_API_KEY'] = api_key
-        self.console.print("[bold green]Valid GEMINI_API_KEY found and set.[/bold green]")
+        self.ui.success("Valid GEMINI_API_KEY found and set.")
 
     def is_valid_api_key(self, api_key):
         # Basic check for Gemini API key format
@@ -153,31 +155,30 @@ class FrenchVocabBuilder:
         return True
 
     def first_time_setup(self):
-        self.console.print(Panel(
+        self.ui.panel(
             "[bold yellow]No valid GEMINI_API_KEY found. Let's set it up.[/bold yellow]\n\n"
             "To obtain an API key:\n"
             "1. Go to https://ai.google.dev/ or https://makersuite.google.com/\n"
             "2. Sign up or log in to your account\n"
             "3. Navigate to the API section in your account dashboard\n"
-            "4. Generate a new API key\n",
+            "4. Generate a new API key",
             title="API Key Setup",
-            expand=False
-        ))
+            border_style="yellow"
+        )
         
         while True:
             api_key = getpass.getpass("Enter your Gemini API key: ")
             if self.is_valid_api_key(api_key):
                 try:
                     keyring.set_password("french_vocab_builder", "gemini_api_key", api_key)
-                    self.console.print("[bold green]API key saved securely.[/bold green]")
+                    self.ui.success("API key saved securely.")
                     return api_key
                 except KeyringError as e:
-                    self.console.print(f"[bold red]Error saving to keyring: {e}[/bold red]")
+                    self.ui.error(f"Error saving to keyring: {e}")
                     if Confirm.ask("Do you want to continue without saving to keyring?"):
                         return api_key
             else:
-                self.console.print("[bold red]Invalid API key. Please try again.[/bold red]")
-        
+                self.ui.error("Invalid API key. Please try again.")
 
     def get_llm_client(self):
         return self.client
@@ -197,10 +198,10 @@ class FrenchVocabBuilder:
                 content = file.read()
             return len(re.findall(r"\\entry\{", content))
         except FileNotFoundError:
-            console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
+            self.ui.error(f"File not found - {self.latex_file}")
             return 0
-        except IOError as e:
-            console.print(f"[bold red]Error reading file: {e}[/bold red]")
+        except Exception as e:
+            self.ui.error(f"Error reading file: {e}")
             return 0
 
 
@@ -211,10 +212,10 @@ class FrenchVocabBuilder:
             with self.latex_file.open("r", encoding="utf-8") as file:
                 content = file.read()
         except FileNotFoundError:
-            self.console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
+            self.ui.error(f"File not found - {self.latex_file}")
             return
         except IOError as e:
-            self.console.print(f"[bold red]Error reading file: {e}[/bold red]")
+            self.ui.error(f"Error reading file: {e}")
             return
 
         # Find ALL potential entry starts
@@ -252,7 +253,7 @@ class FrenchVocabBuilder:
                     "reason": f"Content Validation Failed: {', '.join(reason)}",
                     "index_in_parsed": i
                 })
-                self.console.print(f"[bold yellow]Skipping entry due to content: '{original_word_for_log or '[EMPTY WORD]'}' - Reason: {', '.join(reason)}[/bold yellow]")
+                self.ui.warning(f"Skipping entry due to content: '{original_word_for_log or '[EMPTY WORD]'}' - Reason: {', '.join(reason)}")
                 continue
 
             # --- Check for key collision BEFORE assigning ---
@@ -262,7 +263,7 @@ class FrenchVocabBuilder:
                     key_collisions[word_lower] = [self.word_entries[word_lower]['word']] # Add the word already there
                 key_collisions[word_lower].append(original_word_for_log) # Add the new word causing collision
 
-                self.console.print(f"[bold orange3]WARNING: Key collision detected for key '{word_lower}'. Overwriting entry for '{self.word_entries[word_lower]['word']}' with entry for '{original_word_for_log}'.[/bold orange3]")
+                self.ui.warning(f"Key collision detected for key '{word_lower}'. Overwriting entry for '{self.word_entries[word_lower]['word']}' with entry for '{original_word_for_log}'.")
 
             # Add to successful entries
             self.word_entries[word_lower] = {
@@ -275,7 +276,7 @@ class FrenchVocabBuilder:
             # Also check collision for normalized_entries (less likely to be the primary issue based on counts, but good practice)
             normalized_word = self.normalize_word(word_lower)
             if normalized_word in self.normalized_entries and self.normalized_entries[normalized_word] != word_lower:
-                 self.console.print(f"[bold yellow]NOTE: Normalized key collision for '{normalized_word}'. Mapping from '{self.normalized_entries[normalized_word]}' overwritten by '{word_lower}'.[/bold yellow]")
+                 self.ui.warning(f"NOTE: Normalized key collision for '{normalized_word}'. Mapping from '{self.normalized_entries[normalized_word]}' overwritten by '{word_lower}'.")
             self.normalized_entries[normalized_word] = word_lower
 
             parsed_words_set.add(original_word_for_log.strip()) # Add original word as parsed
@@ -291,7 +292,7 @@ class FrenchVocabBuilder:
         missed_words = all_raw_words_stripped - parsed_words_set
 
         if missed_words:
-             self.console.print(f"[bold red]DEBUG: Found {len(missed_words)} words present in raw \\entry{{...}} but NOT successfully parsed by the 4-group regex:[/bold red]")
+             self.ui.error(f"DEBUG: Found {len(missed_words)} words present in raw \\entry{{...}} but NOT successfully parsed by the 4-group regex:")
              # Try to find the context of these missed words in the original file
              for word in sorted(list(missed_words)):
                  # Find the line number (approximate)
@@ -312,21 +313,21 @@ class FrenchVocabBuilder:
                       missed_by_regex.append(f"Word: '{word}' (Error finding context: {e})")
 
         # --- Final Debug Summary ---
-        self.console.print(f"[bold magenta]DEBUG: Initial raw \\entry{{ count: {raw_entry_count_debug}[/bold magenta]")
-        self.console.print(f"[bold magenta]DEBUG: Entries matched by 4-group regex: {len(parsed_entries)}[/bold magenta]")
-        self.console.print(f"[bold magenta]DEBUG: Entries skipped by content validation: {len(skipped_entry_details)}[/bold magenta]")
-        self.console.print(f"[bold magenta]DEBUG: Final loaded entries (self.word_entries): {loaded_entries_count_debug}[/bold magenta]")
+        self.ui.debug(f"Initial raw \\entry{{ count: {raw_entry_count_debug}")
+        self.ui.debug(f"Entries matched by 4-group regex: {len(parsed_entries)}")
+        self.ui.debug(f"Entries skipped by content validation: {len(skipped_entry_details)}")
+        self.ui.debug(f"Final loaded entries (self.word_entries): {loaded_entries_count_debug}")
 
         # --- Permanent Warning for Duplicates (Always Show) ---
         if key_collisions:
-            self.console.print(Panel(
+            self.ui.panel(
                 f"[bold yellow]WARNING:[/bold yellow] {len(key_collisions)} duplicate word key(s) detected during loading, resulting in {sum(len(v)-1 for v in key_collisions.values())} overwritten entries.\n"
                 "The application uses the *last* encountered entry for each duplicate word.\n"
                 "Please review your `.tex` file and remove redundant entries for:\n" +
                 "\n".join([f" - Key: '{key}' (from words: {', '.join(words)})" for key, words in key_collisions.items()]),
                 title="Duplicate Entries Found",
                 border_style="yellow"
-            ))
+            )
 
         # Update the main count AFTER all checks
         self.entry_count = len(self.word_entries)
@@ -494,7 +495,7 @@ class FrenchVocabBuilder:
             feedback += f"\n{', '.join(sorted(extra_in_anki))}"
 
         # Display the feedback in a styled panel using Rich
-        self.console.print(Panel(feedback, title="Export Summary", expand=False, border_style="green"))
+        self.ui.panel(feedback, title="Export Summary", border_style="green")
 
     def check_duplicate(self, word: str) -> Optional[str]:
         normalized_word = self.normalize_word(word)
@@ -505,31 +506,30 @@ class FrenchVocabBuilder:
         normalized_word = self.normalize_word(word)
         actual_existing_word = self.normalized_entries.get(normalized_word, existing_word) # Get the stored version
 
-        warning_text = Text(f"Duplicate Warning:\nWord '{word}' (normalized: '{normalized_word}') already exists in the dictionary as '{actual_existing_word}'.", style="bold yellow")
+        warning_text = f"Duplicate Warning:\nWord '{word}' (normalized: '{normalized_word}') already exists in the dictionary as '{actual_existing_word}'."
         # Use a red border for higher visibility
-        self.console.print(Panel(warning_text, border_style="bold red", title="Duplicate Found!"))
+        self.ui.panel(warning_text, title="Duplicate Found!", border_style="bold red")
 
-        # Create a table for options
-        table = Table(show_header=False, box=None, padding=(0, 1))
-        table.add_column(style="cyan", no_wrap=True)
-        table.add_column(style="white")
-        table.add_row("[s]", "Skip: Don't add this word and return to the main menu.")
-        table.add_row("[v]", "View: Display the existing entry and return to the main menu.")
+        # Create options for the menu
+        options = [
+            ("s", "Skip: Don't add this word and return to the main menu."),
+            ("v", "View: Display the existing entry and return to the main menu.")
+        ]
 
-        self.console.print(Panel(table, title="Please choose an action", border_style="blue"))
+        self.ui.display_menu("Please choose an action", options, show_numbers=False)
 
         choice = Prompt.ask("Your choice", choices=["s", "v"], default="s")
 
         if choice == "s":
-            self.console.print(Panel("Skipping this word. Returning to main menu.", border_style="green"))
+            self.ui.panel("Skipping this word. Returning to main menu.", border_style="green")
             return False
         elif choice == "v":
-            self.console.print(Panel(f"Displaying existing entry for '{actual_existing_word}':", border_style="cyan"))
+            self.ui.panel(f"Displaying existing entry for '{actual_existing_word}':", border_style="cyan")
             # Ensure you use the correct key to retrieve the entry
             self.display_existing_entry(actual_existing_word.lower()) # Use the lowercase version which should be the key
             
             # Changed: Don't make a recursive call, just return to main menu
-            self.console.print(Panel("Displayed existing entry. Returning to main menu.", border_style="blue"))
+            self.ui.panel("Displayed existing entry. Returning to main menu.", border_style="blue")
             return False # Return False, indicating not to add the word
 
     def display_existing_entry(self, word: str):
@@ -549,84 +549,57 @@ class FrenchVocabBuilder:
             if client_class_name == "ClaudeClient":
                 provider_name = "Anthropic Claude"
             
-        console.print(
-            Panel.fit(
-                f"[bold blue]Welcome to the French Vocabulary LaTeX Builder![/bold blue]\n\n"
-                f"This application helps you build a LaTeX document for French vocabulary.\n"
-                f"You can input French words, and the AI will provide definitions and examples.\n\n"
-                f"[bold green]Your current vocabulary library contains {self.entry_count} words.[/bold green]\n"
-                f"[bold cyan]Using LLM provider: {provider_name}[/bold cyan]\n\n"
-                f"[italic cyan]Version 1.2[/italic cyan]\n"
-                f"[dim]GitHub: https://github.com/RazeBerry/FrenchVocab/tree/main[/dim]",
-                title="French Vocab Builder",
-                border_style="bold green",
-            )
+        self.ui.panel(
+            f"[bold blue]Welcome to the French Vocabulary LaTeX Builder![/bold blue]\n\n"
+            f"This application helps you build a LaTeX document for French vocabulary.\n"
+            f"You can input French words, and the AI will provide definitions and examples.\n\n"
+            f"[bold green]Your current vocabulary library contains {self.entry_count} words.[/bold green]\n"
+            f"[bold cyan]Using LLM provider: {provider_name}[/bold cyan]\n\n"
+            f"[italic cyan]Version 1.2[/italic cyan]\n"
+            f"[dim]GitHub: https://github.com/RazeBerry/FrenchVocab/tree/main[/dim]",
+            title="French Vocab Builder",
+            border_style="bold green"
         )
 
     def show_menu(self):
-        # Create a table for menu options
-        table = Table(show_header=False, box=None, padding=(0, 1), expand=True)
-        table.add_column(style="bold cyan", width=3, justify="right") # For number
-        table.add_column() # For description
-
-        # Add rows to the table
-        table.add_row("1.", f"Add French word [dim]({self.entry_count} entries)[/dim]")
-        
         eng_fr_count = 0
         if self.eng_to_fr_translator:
             eng_fr_count = self.eng_to_fr_translator.entry_count
-        table.add_row("2.", f"Translate English -> French [dim]({eng_fr_count} pairs)[/dim]")
+            
+        options = [
+            ("1", f"Add French word [dim]({self.entry_count} entries)[/dim]"),
+            ("2", f"Translate English -> French [dim]({eng_fr_count} pairs)[/dim]"),
+            ("3", "Export French words to Anki"),
+            ("4", "Reconcile Anki exports (Fr->En)"),
+            ("5", "Display all French words"),
+            ("q", "[bold yellow]Exit[/bold yellow]")
+        ]
         
-        table.add_row("3.", "Export French words to Anki")
-        table.add_row("4.", "Reconcile Anki exports (Fr->En)")
-        table.add_row("5.", "Display all French words")
-        table.add_row("[bold yellow]q.[/bold yellow]", "Exit")
-
-        # Print the table inside a panel
-        self.console.print(Panel(table, title="Menu", border_style="blue", expand=False))
-
+        self.ui.display_menu("Menu", options)
+        
         # Update choices to include 'q'
         choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4", "5", "q"], default="1")
         return choice
-
-    def generate_table(self, search_term: str, results: dict) -> Table:
-        table = Table(title=f"Search Results for: {search_term}")
-        table.add_column("Word", style="cyan")
-        table.add_column("Type", style="magenta")
-        table.add_column("Definitions", style="green")
-
-        for word, entry in results.items():
-            table.add_row(
-                entry["word"],
-                entry["type"],
-                (
-                    entry["definitions"][:50] + "..."
-                    if len(entry["definitions"]) > 50
-                    else entry["definitions"]
-                ),
-            )
-
-        return table
 
     def get_word_input(self) -> str:
         while True:
             word = input("\nEnter a French word or short expression (or 'q' to cancel): ").strip()
             
             if word.lower() == 'q':
-                self.console.print("[yellow]Input cancelled. Returning to main menu.[/yellow]")
+                self.ui.warning("Input cancelled. Returning to main menu.")
                 return ""
             
             # Normalize apostrophes
             word = word.replace("'", "'")
             
             if len(word.split()) > 10:
-                self.console.print("[bold red]Error: Please enter a single word or short expression (max 10 words).[/bold red]")
+                self.ui.error("Please enter a single word or short expression (max 10 words).")
             elif len(word) > self.max_word_length:
-                self.console.print(f"[bold red]Error: Input is too long. Please limit to {self.max_word_length} characters.[/bold red]")
+                self.ui.error(f"Input is too long. Please limit to {self.max_word_length} characters.")
             elif not word:
-                self.console.print("[bold red]Error: Input cannot be empty.[/bold red]")
+                self.ui.error("Input cannot be empty.")
             elif not self.is_valid_french_input(word):
-                self.console.print("[bold red]Error: Input contains invalid characters for French words.[/bold red]")
+                self.ui.error("Input contains invalid characters for French words.")
             else:
                 return word
 
@@ -663,7 +636,7 @@ class FrenchVocabBuilder:
                         break # Exit the loop
             except Exception as e:
                 # Catch potential errors during streaming itself
-                self.console.print(f"[bold red]Error during Gemini stream: {e}[/bold red]")
+                self.ui.error(f"Error during Gemini stream: {e}")
                 # Attempt to get metrics even if streaming errored mid-way
                 # This assumes the generator's finally block still runs, which it should
                 try:
@@ -674,7 +647,7 @@ class FrenchVocabBuilder:
                     # For now, we assume StopIteration's value is the best bet.
                     pass # Metrics should have been captured in StopIteration
                 except Exception as final_e:
-                     self.console.print(f"[bold red]Error retrieving metrics after stream error: {final_e}[/bold red]")
+                     self.ui.error(f"Error retrieving metrics after stream error: {final_e}")
                 # Set default metrics if none were captured
                 if not metrics:
                     metrics = {'ttft': -1, 'tps': -1, 'tokens_out': -1} # Indicate error state
@@ -686,19 +659,7 @@ class FrenchVocabBuilder:
             full_text = "".join(chunks)
 
         # Display metrics if available
-        if metrics:
-            ttft = metrics.get('ttft', -1)
-            tps = metrics.get('tps', -1)
-            tokens = metrics.get('tokens_out', -1)
-            
-            metrics_text = (
-                f"TTFT: {ttft:.3f}s | "
-                f"Output Tokens: {tokens} | "
-                f"TPS: {tps:.1f}"
-            )
-            self.console.print(Panel(metrics_text, title="LLM Performance", border_style="dim blue"))
-        else:
-             self.console.print("[yellow]LLM Performance metrics not available.[/yellow]")
+        self.ui.display_metrics(metrics)
              
         return full_text
 
@@ -812,11 +773,11 @@ class FrenchVocabBuilder:
             normalized_new_word = self.normalize_word(new_word)
             self.normalized_entries[normalized_new_word] = new_word.capitalize()
             
-            console.print(f"[bold green]Added/Updated entry for '{new_word}' in {self.latex_file}[/bold green]")
+            self.ui.success(f"Added/Updated entry for '{new_word}' in {self.latex_file}")
         except FileNotFoundError:
-            console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
+            self.ui.error(f"File not found - {self.latex_file}")
         except IOError as e:
-            console.print(f"[bold red]Error reading from or writing to file: {e}[/bold red]")
+            self.ui.error(f"Error reading from or writing to file: {e}")
 
     def alphabetize_entries(self) -> None:
         """Alphabetizes the entries in the LaTeX file.
@@ -838,7 +799,7 @@ class FrenchVocabBuilder:
             entries_end = content.rfind("\\end{itemize}")
 
             if entries_start == -1 or entries_end == -1:
-                console.print("[bold red]Error: Could not find the entries section.[/bold red]")
+                self.ui.error("Could not find the entries section.")
                 return
 
             header = content[:entries_start]
@@ -866,7 +827,7 @@ class FrenchVocabBuilder:
             entry_matches = list(re.finditer(entry_pattern, entries_section, re.VERBOSE | re.DOTALL))
             
             if not entry_matches:
-                console.print("[bold yellow]No entries found to alphabetize.[/bold yellow]")
+                self.ui.warning("No entries found to alphabetize.")
                 return
             
             # Extract full entry text and word for sorting
@@ -887,26 +848,24 @@ class FrenchVocabBuilder:
             
             # Safety check to ensure we haven't lost content
             if len(sorted_content) < len(content) * 0.9:
-                console.print("[bold red]Warning: Significant content loss detected. Aborting alphabetization.[/bold red]")
+                self.ui.error("Warning: Significant content loss detected. Aborting alphabetization.")
                 return
 
             with self.latex_file.open("w", encoding="utf-8") as file:
                 file.write(sorted_content)
 
-            console.print("[bold green]Entries alphabetized successfully.[/bold green]")
+            self.ui.success("Entries alphabetized successfully.")
         except FileNotFoundError:
-            console.print(f"[bold red]Error: File not found - {self.latex_file}[/bold red]")
+            self.ui.error(f"File not found - {self.latex_file}")
         except IOError as e:
-            console.print(f"[bold red]Error reading from or writing to file: {e}[/bold red]")
+            self.ui.error(f"Error reading from or writing to file: {e}")
 
     def exit_screen(self):
-        console.print(
-            Panel.fit(
-                "[bold blue]Thank you for using the French Vocabulary LaTeX Builder![/bold blue]\n\n"
-                "Your LaTeX file has been updated with the new entries.",
-                title="Goodbye!",
-                border_style="bold green",
-            )
+        self.ui.panel(
+            "[bold blue]Thank you for using the French Vocabulary LaTeX Builder![/bold blue]\n\n"
+            "Your LaTeX file has been updated with the new entries.",
+            title="Goodbye!",
+            border_style="bold green"
         )
 
     def remove_accents(self, input_str):
@@ -926,7 +885,7 @@ class FrenchVocabBuilder:
                 if self.eng_to_fr_translator:
                     self.eng_to_fr_translator.run()
                 else:
-                    self.console.print("[bold red]English-to-French translator is not available (initialization failed).[/bold red]")
+                    self.ui.error("English-to-French translator is not available (initialization failed).")
             elif choice == "3":
                 self.handle_anki_export()
             elif choice == "4":
@@ -936,7 +895,7 @@ class FrenchVocabBuilder:
             elif choice == "q":
                 self.exit_screen()
                 break
-            self.console.input("\nPress Enter to continue...")
+            input("\nPress Enter to continue...")
 
     def handle_new_word_entry(self):
         original_word = self.get_word_input()
@@ -947,19 +906,19 @@ class FrenchVocabBuilder:
         existing_word_check1 = self.check_duplicate(original_word)
         if existing_word_check1:
             if not self.handle_duplicate(original_word, existing_word_check1):
-                self.console.print(f"[yellow]Skipping '{original_word}' due to duplicate check (Stage 1).[/yellow]")
+                self.ui.warning(f"Skipping '{original_word}' due to duplicate check (Stage 1).")
                 return # User chose to skip or view existing entry
 
         # --- Query AI ---
         ai_response = self.query_ai(original_word)
         if not ai_response:
-            self.console.print(f"[bold red]Failed to get information for '{original_word}'. Skipping this entry.[/bold red]")
+            self.ui.error(f"Failed to get information for '{original_word}'. Skipping this entry.")
             return
 
         # --- Spelling Check and Final Word Determination ---
         final_word = self.check_spelling(original_word, ai_response)
         if final_word is None: # User chose to abandon the edit during spelling check
-            self.console.print(f"[yellow]Abandoning entry for '{original_word}'.[/yellow]")
+            self.ui.warning(f"Abandoning entry for '{original_word}'.")
             return
         
         # --- Stage 2 Duplicate Check (Final/Corrected Word) ---
@@ -968,15 +927,15 @@ class FrenchVocabBuilder:
         if final_word.lower() != original_word.lower():
             existing_word_check2 = self.check_duplicate(final_word)
             if existing_word_check2 and existing_word_check2 != existing_word_check1:
-                self.console.print(f"[cyan]Performing second duplicate check for corrected word '{final_word}'...[/cyan]")
+                self.ui.info(f"Performing second duplicate check for corrected word '{final_word}'...")
                 if not self.handle_duplicate(final_word, existing_word_check2):
-                    self.console.print(f"[yellow]Skipping '{final_word}' due to duplicate check (Stage 2).[/yellow]")
+                    self.ui.warning(f"Skipping '{final_word}' due to duplicate check (Stage 2).")
                     return # User chose to skip or view existing entry
 
         # --- Parse AI Response ---
         word_type, definitions, examples = self.parse_ai_response(ai_response)
         if not word_type or not definitions or not examples:
-             self.console.print("[bold red]Error: Failed to parse essential information from AI response. Aborting.[/bold red]")
+             self.ui.error("Failed to parse essential information from AI response. Aborting.")
              return
 
         # --- Display Parsed Info ---
@@ -987,7 +946,7 @@ class FrenchVocabBuilder:
 
         # --- Validate LaTeX Entry ---
         if not self.is_valid_latex_entry(latex_entry):
-            self.console.print("[bold red]Error: Generated LaTeX entry is empty or invalid. Aborting process.[/bold red]")
+            self.ui.error("Generated LaTeX entry is empty or invalid. Aborting process.")
             return
 
         # --- Display LaTeX Entry & Insert ---
@@ -1000,7 +959,7 @@ class FrenchVocabBuilder:
         # --- Alphabetize ---
         self.alphabetize_entries()
 
-        self.console.print(f"[bold green]Successfully processed and added entry for '{final_word}'.[/bold green]")
+        self.ui.success(f"Successfully processed and added entry for '{final_word}'.")
 
     def is_valid_latex_entry(self, latex_entry: str) -> bool:
         # Check if the entry is not empty and contains the expected LaTeX structure
@@ -1016,7 +975,7 @@ class FrenchVocabBuilder:
         
         # Debug: Print what was extracted (can be removed later)
         if corrected_spelling is not None:
-            self.console.print(f"[dim]Debug: Extracted corrected spelling: '{corrected_spelling}'[/dim]")
+            self.ui.debug(f"Extracted corrected spelling: '{corrected_spelling}'")
         
         # Validate the corrected spelling - check if it's empty, placeholder text, or same as input
         if corrected_spelling:
@@ -1037,7 +996,7 @@ class FrenchVocabBuilder:
             if choice == "y":
                 return corrected_spelling
             elif choice == "q":
-                self.console.print("[yellow]Abandoning edit. Returning to main menu.[/yellow]")
+                self.ui.warning("Abandoning edit. Returning to main menu.")
                 return None
         
         return word
@@ -1067,28 +1026,11 @@ class FrenchVocabBuilder:
             definitions: List[str],
             examples: List[Tuple[str, str]],
     ):
-        table = Table(
-            title=f"Information for [bold green]{word.capitalize()}[/bold green]"
-        )
-        table.add_column("Category", style="cyan", no_wrap=True)
-        table.add_column("Information", style="magenta")
-
         word_type_str = ", ".join(word_type)
-        table.add_row("Word Type", word_type_str)
-
-        def_str = "\n".join([f"• {d}" for d in definitions])
-        table.add_row("Definitions", def_str)
-
-        # Check if the English translation already has parentheses
-        ex_str = "\n".join([f"• {f}\n  {e if e.startswith('(') and e.endswith(')') else f'({e})'}" for f, e in examples])
-        table.add_row("Examples", ex_str)
-
-        console.print(table)
+        self.ui.display_word_entry(word, word_type_str, definitions, examples)
 
     def display_latex_entry(self, latex_entry: str):
-        console.print(
-            Panel(latex_entry, title="Generated LaTeX Entry", border_style="bold blue")
-        )
+        self.ui.display_latex_entry(latex_entry)
 
     def get_all_latex_entries(self) -> Set[str]:
         # Return a set of all words in the LaTeX file, including incomplete entries
@@ -1111,25 +1053,17 @@ class FrenchVocabBuilder:
     def generate_discrepancy_report(self):
         in_latex_not_exported, in_exports_not_latex = self.compare_entries_and_exports()
         
-        table = Table(title="Discrepancy Report")
-        table.add_column("Category", style="cyan")
-        table.add_column("Words", style="magenta")
+        data = {
+            "In LaTeX but not exported": ", ".join(sorted(in_latex_not_exported)) or "None",
+            "In exports but not in LaTeX": ", ".join(sorted(in_exports_not_latex)) or "None"
+        }
         
-        table.add_row(
-            "In LaTeX but not exported",
-            ", ".join(sorted(in_latex_not_exported)) or "None"
-        )
-        table.add_row(
-            "In exports but not in LaTeX",
-            ", ".join(sorted(in_exports_not_latex)) or "None"
-        )
-        
-        self.console.print(table)
+        self.ui.dict_to_table(data, title="Discrepancy Report")
         
         if not in_latex_not_exported and not in_exports_not_latex:
-            self.console.print("[green]No discrepancies found![/green]")
+            self.ui.success("No discrepancies found!")
         else:
-            self.console.print("[yellow]Discrepancies found. Please review the report above.[/yellow]")
+            self.ui.warning("Discrepancies found. Please review the report above.")
 
     def reconcile_menu_option(self):
         self.generate_discrepancy_report()
@@ -1142,35 +1076,31 @@ class FrenchVocabBuilder:
         into a Rich table, and displays them with pagination for better readability.
         """
         if not self.word_entries:
-            self.console.print("[bold yellow]No vocabulary entries found in the LaTeX file.[/bold yellow]")
+            self.ui.warning("No vocabulary entries found in the LaTeX file.")
             return
-        
-        # Create a table to display the vocabulary entries
-        table = Table(title=f"[bold blue]All Vocabulary Entries ({len(self.word_entries)} words)[/bold blue]")
-        table.add_column("No.", style="cyan", justify="right")
-        table.add_column("Word", style="green")
-        table.add_column("Type", style="magenta")
-        table.add_column("Definitions", style="yellow")
         
         # Sort entries alphabetically
         sorted_entries = sorted(self.word_entries.items(), key=lambda x: self.normalize_word(x[0]))
         
-        # Add rows to the table
+        # Prepare data for table
+        headers = ["No.", "Word", "Type", "Definitions"]
+        rows = []
+        
         for index, (word, entry) in enumerate(sorted_entries, 1):
             # Truncate definitions if too long
             definitions = entry["definitions"]
             if len(definitions) > 60:
                 definitions = definitions[:57] + "..."
             
-            table.add_row(
+            rows.append([
                 str(index),
                 entry["word"],
                 entry["type"] if isinstance(entry["type"], str) else ", ".join(entry["type"]),
                 definitions
-            )
+            ])
         
-        # Display the table with pagination
-        self.console.print(table)
+        # Display the table
+        self.ui.quick_table(f"[bold blue]All Vocabulary Entries ({len(self.word_entries)} words)[/bold blue]", headers, rows)
         
         # Add filter/search option
         if Confirm.ask("Would you like to search for a specific word?", default=False):
@@ -1189,14 +1119,12 @@ class FrenchVocabBuilder:
                 results[word] = entry
         
         if not results:
-            self.console.print(f"[bold yellow]No results found for '{search_term}'.[/bold yellow]")
+            self.ui.warning(f"No results found for '{search_term}'.")
             return
         
         # Display search results
-        table = Table(title=f"[bold blue]Search Results for '{search_term}' ({len(results)} matches)[/bold blue]")
-        table.add_column("Word", style="green")
-        table.add_column("Type", style="magenta")
-        table.add_column("Definitions", style="yellow")
+        headers = ["Word", "Type", "Definitions"]
+        rows = []
         
         for word, entry in sorted(results.items(), key=lambda x: self.normalize_word(x[0])):
             # Truncate definitions if too long
@@ -1204,13 +1132,13 @@ class FrenchVocabBuilder:
             if len(definitions) > 60:
                 definitions = definitions[:57] + "..."
             
-            table.add_row(
+            rows.append([
                 entry["word"],
                 entry["type"] if isinstance(entry["type"], str) else ", ".join(entry["type"]),
                 definitions
-            )
+            ])
         
-        self.console.print(table)
+        self.ui.quick_table(f"[bold blue]Search Results for '{search_term}' ({len(results)} matches)[/bold blue]", headers, rows)
         
         # Offer to display full entry for a selected word
         if Confirm.ask("Would you like to see the full entry for any of these words?", default=False):
@@ -1224,7 +1152,7 @@ class FrenchVocabBuilder:
                 if matching_words:
                     self.display_existing_entry(matching_words[0])
                 else:
-                    self.console.print(f"[bold red]Word '{word_to_view}' not found.[/bold red]")
+                    self.ui.error(f"Word '{word_to_view}' not found.")
 
 
 def main() -> None:
