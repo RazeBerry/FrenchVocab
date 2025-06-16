@@ -27,6 +27,7 @@ import hashlib
 
 # Import the new translator class
 from eng_to_fr_translator import EnglishToFrenchTranslator
+from fr_to_eng_translator import FrenchToEnglishTranslator
 from ui_helper import UIHelper
 
 console = Console()
@@ -55,10 +56,12 @@ class FrenchVocabBuilder:
         if latex_file is None:
             self.latex_file = script_dir / self.DEFAULT_FILENAME # Base path on script directory
             self.eng_to_fr_latex_file = script_dir / EnglishToFrenchTranslator.DEFAULT_FILENAME # Base path on script directory
+            self.fr_to_eng_latex_file = script_dir / FrenchToEnglishTranslator.DEFAULT_FILENAME
         else:
             self.latex_file = Path(latex_file)
             # Assume the Eng->Fr file lives alongside the main one if a path is given
             self.eng_to_fr_latex_file = self.latex_file.parent / EnglishToFrenchTranslator.DEFAULT_FILENAME
+            self.fr_to_eng_latex_file = self.latex_file.parent / FrenchToEnglishTranslator.DEFAULT_FILENAME
 
         if not self.latex_file.exists():
             self.create_initial_tex_file()
@@ -73,6 +76,7 @@ class FrenchVocabBuilder:
         
         # Initialize translator attribute
         self.eng_to_fr_translator: Optional[EnglishToFrenchTranslator] = None
+        self.fr_to_eng_translator: Optional[FrenchToEnglishTranslator] = None
 
         self.load_config()
         
@@ -107,8 +111,14 @@ class FrenchVocabBuilder:
                  client=self.client,
                  latex_file_path=self.eng_to_fr_latex_file
              )
+             self.fr_to_eng_translator = FrenchToEnglishTranslator(
+                 console=self.console,
+                 client=self.client,
+                 latex_file_path=self.fr_to_eng_latex_file
+             )
         else:
              self.ui.error("Could not initialize EnglishToFrenchTranslator due to missing LLM client.")
+             self.ui.error("Could not initialize FrenchToEnglishTranslator due to missing LLM client.")
 
         init_end = time.time()
         print(f"Total init time: {init_end - init_start:.5f} seconds")
@@ -565,20 +575,25 @@ class FrenchVocabBuilder:
         eng_fr_count = 0
         if self.eng_to_fr_translator:
             eng_fr_count = self.eng_to_fr_translator.entry_count
+        
+        fr_eng_count = 0
+        if self.fr_to_eng_translator:
+            fr_eng_count = self.fr_to_eng_translator.entry_count
             
         options = [
             ("1", f"Add French word [dim]({self.entry_count} entries)[/dim]"),
             ("2", f"Translate English -> French [dim]({eng_fr_count} pairs)[/dim]"),
-            ("3", "Export French words to Anki"),
-            ("4", "Reconcile Anki exports (Fr->En)"),
-            ("5", "Display all French words"),
+            ("3", f"Translate French -> English [dim]({fr_eng_count} pairs)[/dim]"),
+            ("4", "Export French words to Anki"),
+            ("5", "Reconcile Anki exports (Fr->En)"),
+            ("6", "Display all French words"),
             ("q", "[bold yellow]Exit[/bold yellow]")
         ]
         
         self.ui.display_menu("Menu", options)
         
         # Update choices to include 'q'
-        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4", "5", "q"], default="1")
+        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4", "5", "6", "q"], default="1")
         return choice
 
     def get_word_input(self) -> str:
@@ -878,6 +893,8 @@ class FrenchVocabBuilder:
             self.entry_count = self.count_entries()
             if self.eng_to_fr_translator: # Refresh count if initialized
                  self.eng_to_fr_translator.entry_count = len(self.eng_to_fr_translator.eng_fr_pairs)
+            if self.fr_to_eng_translator: # Refresh count if initialized
+                 self.fr_to_eng_translator.entry_count = len(self.fr_to_eng_translator.fr_eng_pairs)
             choice = self.show_menu()
             if choice == "1":
                 self.handle_new_word_entry()
@@ -887,10 +904,15 @@ class FrenchVocabBuilder:
                 else:
                     self.ui.error("English-to-French translator is not available (initialization failed).")
             elif choice == "3":
-                self.handle_anki_export()
+                if self.fr_to_eng_translator:
+                    self.fr_to_eng_translator.run()
+                else:
+                    self.ui.error("French-to-English translator is not available (initialization failed).")
             elif choice == "4":
-                self.reconcile_menu_option()
+                self.handle_anki_export()
             elif choice == "5":
+                self.reconcile_menu_option()
+            elif choice == "6":
                 self.display_all_vocabulary()
             elif choice == "q":
                 self.exit_screen()
