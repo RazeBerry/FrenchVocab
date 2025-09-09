@@ -45,7 +45,7 @@ class WordType(Enum):
 
 class FrenchVocabBuilder:
     DEFAULT_FILENAME = "FrenchVocab.tex"
-    def __init__(self, latex_file: Optional[str], provider: str = None, verbose: bool = False):
+    def __init__(self, latex_file: Optional[str], provider: str = None, verbose: bool = False, client: Optional[GeminiClient] = None):
         init_start = time.time()
         
         self.console = Console()
@@ -74,8 +74,8 @@ class FrenchVocabBuilder:
         self.normalized_entries: Dict[str, str] = {}
         self.config_file = "vocab_builder_config.json"
         
-        # Initialize the LLM client directly instead of using a background thread
-        self.client = None
+        # Initialize the LLM client (allow injection)
+        self.client = client
         
         # Initialize translator attribute
         self.eng_to_fr_translator: Optional[EnglishToFrenchTranslator] = None
@@ -88,18 +88,17 @@ class FrenchVocabBuilder:
         self.provider = provider.lower()
         self.verbose = verbose
 
-        # Load configuration (timed) using selected provider
+        # Load configuration + init client only if not injected
         load_config_start = time.time()
-        self.load_config()
+        if self.client is None:
+            self.load_config()
+            try:
+                self.client = ProviderFactory.create(self.provider)
+                self.ui.success(f"{self.provider.capitalize()} client initialized successfully!")
+            except Exception as e:
+                self.ui.error(f"Error initializing {self.provider} client: {e}")
+                sys.exit(1)
         load_config_end = time.time()
-        
-        # Initialize LLM client using the factory
-        try:
-            self.client = ProviderFactory.create(self.provider)
-            self.ui.success(f"{self.provider.capitalize()} client initialized successfully!")
-        except Exception as e:
-            self.ui.error(f"Error initializing {self.provider} client: {e}")
-            sys.exit(1)
         
         # Removed duplicate load_config call
         
