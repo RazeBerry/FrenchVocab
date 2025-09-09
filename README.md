@@ -17,13 +17,24 @@ The **French Vocabulary LaTeX Builder** is a Python application designed to help
 
 Before you begin, ensure you have the following installed:
 
-- **Python 3.7** or higher
-- **pip** (Python package installer)
-- An **Anthropic API key** for Claude AI integration
+- Python 3.8 or higher
+- pip (Python package installer)
+- One of the following API keys (depending on provider):
+  - Google Gemini (default)
+  - Anthropic Claude
 
-### Setting Up the Anthropic API Key
+### Providers and API Keys
 
-You need to set your Anthropic API key as an environment variable. Follow the instructions for your operating system:
+By default the app uses Google Gemini. You can switch providers with `--provider`.
+
+Supported providers:
+
+- Gemini (default): set `GEMINI_API_KEY`
+- Claude: set `ANTHROPIC_API_KEY`
+
+You can provide keys via environment variables or let the app prompt and save them to your system keyring on first run.
+
+### Set API key on macOS/Linux
 
 #### macOS
 
@@ -31,7 +42,10 @@ You need to set your Anthropic API key as an environment variable. Follow the in
 2. Run the following command, replacing `your-api-key-here` with your actual API key:
 
     ```bash
-    export ANTHROPIC_API_KEY='your-api-key-here'
+    # For Gemini (default)
+    export GEMINI_API_KEY='your-gemini-key-here'
+    # or for Claude
+    export ANTHROPIC_API_KEY='your-anthropic-key-here'
     ```
 
 3. To make this change permanent, follow these steps:
@@ -40,13 +54,13 @@ You need to set your Anthropic API key as an environment variable. Follow the in
       - For Bash: `nano ~/.bash_profile` or `nano ~/.bashrc`
       - For Zsh: `nano ~/.zshrc`
    
-   b. Add the following line to the end of the file:
+   b. Add one of the following lines to the end of the file:
 
       ```bash
-      export ANTHROPIC_API_KEY='your-api-key-here'
+      export GEMINI_API_KEY='your-gemini-key-here'
+      # or
+      export ANTHROPIC_API_KEY='your-anthropic-key-here'
       ```
-      
-      Replace 'your-api-key-here' with your actual Anthropic API key.
 
    c. Save the file and exit nano:
       - Press `Ctrl + X`
@@ -65,13 +79,15 @@ You need to set your Anthropic API key as an environment variable. Follow the in
 
    This will make the API key available in all new terminal sessions.
 
-#### Windows
+### Windows
 
 1. Open **Command Prompt** or **PowerShell**.
 2. Run the following command, replacing `your-api-key-here` with your actual API key:
 
     ```powershell
-    setx ANTHROPIC_API_KEY "your-api-key-here"
+    setx GEMINI_API_KEY "your-gemini-key-here"
+    # or
+    setx ANTHROPIC_API_KEY "your-anthropic-key-here"
     ```
 
 3. Restart your Command Prompt or PowerShell to apply the changes.
@@ -93,15 +109,9 @@ You need to set your Anthropic API key as an environment variable. Follow the in
 
 ## Configuration
 
-The French Vocabulary LaTeX Builder includes automatic setup and configuration:
+The app can bootstrap your API key on first run. If `GEMINI_API_KEY` or `ANTHROPIC_API_KEY` is not set, it will prompt you and save to your system keyring.
 
-1. **First-time Setup**:
-    - On the first run, if the ANTHROPIC_API_KEY is not set in the environment variables, the program will attempt to retrieve it from the system's secure keyring.
-    - If the API key is not found in the keyring, the program will guide you through the process of obtaining and entering a valid Anthropic API key.
-    - The API key will be securely stored in the system's keyring for future use.
-    - The program will validate the API key before proceeding.
-
-2. **Automatic LaTeX File Generation**:
+**Automatic LaTeX File Generation**:
     - If the LaTeX file doesn't exist, the program will automatically create it with the necessary structure.
     - The default filename is `FrenchVocab.tex` in the current working directory.
 
@@ -116,7 +126,7 @@ To run the French Vocabulary LaTeX Builder:
 2. Run the script:
 
     ```bash
-    python FrenchVocab.py
+    python FrenchVocab.py [path/to/FrenchVocab.tex] [--provider gemini|claude] [--verbose]
     ```
 
 3. Follow the on-screen prompts to add new words, search existing entries, export to Anki decks, or exit the program.
@@ -138,7 +148,7 @@ To run the French Vocabulary LaTeX Builder:
 - The system checks for duplicates and offers options to skip, view, or force add the entry.
 
 ### 4. AI-Powered Assistance
-- Utilizes Claude AI to generate accurate definitions and contextual examples.
+- Uses Gemini by default; Claude available via `--provider claude`.
 
 ### 5. **Export to Anki Decks**
 - Export your vocabulary list to Anki decks for efficient learning and review.
@@ -150,7 +160,7 @@ To run the French Vocabulary LaTeX Builder:
 
 ## Troubleshooting
 
-- **API Key Issues**: Ensure your Anthropic API key is correctly set as an environment variable.
+- API Key Issues: Ensure the correct environment variable is set for the selected provider (`GEMINI_API_KEY` for Gemini, `ANTHROPIC_API_KEY` for Claude).
 - **File Not Found Error**: Double-check the path to your LaTeX file in the `main()` function.
 - **Unicode Errors**: Make sure your terminal supports UTF-8 encoding for proper display of French characters.
 - **Anki Export Errors**: Ensure that the LaTeX file exists and contains valid entries before attempting to export.

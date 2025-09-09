@@ -157,13 +157,13 @@ class FrenchToEnglishTranslator:
             return None
 
     def confirm_translation(self, french: str, english: str) -> bool:
-        table = Table(title="Confirm Translation", show_header=False, box=None, padding=(0, 1))
-        table.add_column(style="magenta", no_wrap=True)
-        table.add_column(style="white")
+        table = Table(title="Confirm Translation", show_header=False, box=None, padding=(0, 1), expand=True)
+        table.add_column(style="magenta", no_wrap=True, width=10)
+        table.add_column(style="white", no_wrap=False, overflow="fold")
         table.add_row("French:", french)
         table.add_row("English:", f"[bold green]{english}[/bold green]")
 
-        self.console.print(Panel(table, border_style="blue", expand=False))
+        self.console.print(Panel(table, border_style="blue", expand=True))
         return Confirm.ask("Save this translation?", default=True)
 
     def _format_latex_entry(self, french: str, english: str) -> str:
@@ -245,11 +245,6 @@ class FrenchToEnglishTranslator:
         while True:
             # Directly ask for a translation. If the user quits, break the loop.
             if not self.run_single_translation():
-                break
-            
-            # After a translation, ask if they want to do another.
-            if not Confirm.ask("\nTranslate another phrase?", default=True):
-                self.console.print("[yellow]Returning to main menu...[/yellow]")
                 break
 
     def display_all_pairs(self):

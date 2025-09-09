@@ -45,7 +45,7 @@ class WordType(Enum):
 
 class FrenchVocabBuilder:
     DEFAULT_FILENAME = "FrenchVocab.tex"
-    def __init__(self, latex_file: Optional[str], provider: str = None):
+    def __init__(self, latex_file: Optional[str], provider: str = None, verbose: bool = False):
         init_start = time.time()
         
         self.console = Console()
@@ -77,30 +77,34 @@ class FrenchVocabBuilder:
         # Initialize translator attribute
         self.eng_to_fr_translator: Optional[EnglishToFrenchTranslator] = None
         self.fr_to_eng_translator: Optional[FrenchToEnglishTranslator] = None
+        self.duplicate_resolution: Optional[Dict[str, str]] = None  # stores {'mode': 'merge'|'force', 'existing': <word>}
 
-        self.load_config()
-        
-        # Get the provider name if not specified
+        # Determine provider early and set verbosity before key bootstrapping
         if provider is None:
             provider = ProviderFactory.default_provider()
-            
-        # Initialize LLM client using the factory
-        try:
-            self.client = ProviderFactory.create(provider)
-            self.ui.success(f"{provider.capitalize()} client initialized successfully!")
-        except Exception as e:
-            self.ui.error(f"Error initializing {provider} client: {e}")
-            sys.exit(1)
-        
+        self.provider = provider.lower()
+        self.verbose = verbose
+
+        # Load configuration (timed) using selected provider
         load_config_start = time.time()
         self.load_config()
         load_config_end = time.time()
+        
+        # Initialize LLM client using the factory
+        try:
+            self.client = ProviderFactory.create(self.provider)
+            self.ui.success(f"{self.provider.capitalize()} client initialized successfully!")
+        except Exception as e:
+            self.ui.error(f"Error initializing {self.provider} client: {e}")
+            sys.exit(1)
+        
+        # Removed duplicate load_config call
         
         load_entries_start = time.time()
         self.load_existing_entries()
         load_entries_end = time.time()
         
-        self.exported_words_file = Path("exported_words.json")
+        self.exported_words_file = script_dir / "exported_words.json"
         self.exported_words = self.load_exported_words()
         self.entry_count = self.count_entries()
         
@@ -141,19 +145,34 @@ class FrenchVocabBuilder:
 
 
     def load_config(self):
-        api_key = os.environ.get('GEMINI_API_KEY')
+        """Load API key for the selected provider and set env var."""
+        provider = getattr(self, 'provider', ProviderFactory.default_provider())
+        if provider == 'gemini':
+            env_var = 'GEMINI_API_KEY'
+            keyring_name = 'gemini_api_key'
+            provider_label = 'Gemini'
+        elif provider == 'claude':
+            env_var = 'ANTHROPIC_API_KEY'
+            keyring_name = 'anthropic_api_key'
+            provider_label = 'Anthropic Claude'
+        else:
+            env_var = 'GEMINI_API_KEY'
+            keyring_name = 'gemini_api_key'
+            provider_label = provider.capitalize()
+
+        api_key = os.environ.get(env_var)
         if not api_key:
             try:
-                api_key = keyring.get_password("french_vocab_builder", "gemini_api_key")
+                api_key = keyring.get_password("french_vocab_builder", keyring_name)
             except KeyringError as e:
                 self.ui.error(f"Error accessing keyring: {e}")
                 api_key = None
-        
+
         if not api_key or not self.is_valid_api_key(api_key):
-            api_key = self.first_time_setup()
-        
-        os.environ['GEMINI_API_KEY'] = api_key
-        self.ui.success("Valid GEMINI_API_KEY found and set.")
+            api_key = self.first_time_setup(provider)
+
+        os.environ[env_var] = api_key
+        self.ui.success(f"Valid {env_var} found and set for {provider_label}.")
 
     def is_valid_api_key(self, api_key):
         # Basic check for Gemini API key format
@@ -164,23 +183,39 @@ class FrenchVocabBuilder:
         # Return True if the call succeeds, False otherwise
         return True
 
-    def first_time_setup(self):
-        self.ui.panel(
-            "[bold yellow]No valid GEMINI_API_KEY found. Let's set it up.[/bold yellow]\n\n"
-            "To obtain an API key:\n"
-            "1. Go to https://ai.google.dev/ or https://makersuite.google.com/\n"
-            "2. Sign up or log in to your account\n"
-            "3. Navigate to the API section in your account dashboard\n"
-            "4. Generate a new API key",
-            title="API Key Setup",
-            border_style="yellow"
-        )
+    def first_time_setup(self, provider: str):
+        """Interactive first-time setup for API key based on provider."""
+        provider = provider.lower()
+        if provider == 'claude':
+            env_var = 'ANTHROPIC_API_KEY'
+            keyring_name = 'anthropic_api_key'
+            guide = (
+                "[bold yellow]No valid ANTHROPIC_API_KEY found. Let's set it up.[/bold yellow]\n\n"
+                "To obtain an API key:\n"
+                "1. Go to https://console.anthropic.com/\n"
+                "2. Create or log into your account\n"
+                "3. Generate a new API key"
+            )
+            prompt_text = "Enter your Anthropic API key: "
+        else:
+            env_var = 'GEMINI_API_KEY'
+            keyring_name = 'gemini_api_key'
+            guide = (
+                "[bold yellow]No valid GEMINI_API_KEY found. Let's set it up.[/bold yellow]\n\n"
+                "To obtain an API key:\n"
+                "1. Go to https://ai.google.dev/\n"
+                "2. Sign up or log in to your account\n"
+                "3. Navigate to the API section and generate a new API key"
+            )
+            prompt_text = "Enter your Gemini API key: "
+
+        self.ui.panel(guide, title="API Key Setup", border_style="yellow")
         
         while True:
-            api_key = getpass.getpass("Enter your Gemini API key: ")
+            api_key = getpass.getpass(prompt_text)
             if self.is_valid_api_key(api_key):
                 try:
-                    keyring.set_password("french_vocab_builder", "gemini_api_key", api_key)
+                    keyring.set_password("french_vocab_builder", keyring_name, api_key)
                     self.ui.success("API key saved securely.")
                     return api_key
                 except KeyringError as e:
@@ -275,12 +310,29 @@ class FrenchVocabBuilder:
 
                 self.ui.warning(f"Key collision detected for key '{word_lower}'. Overwriting entry for '{self.word_entries[word_lower]['word']}' with entry for '{original_word_for_log}'.")
 
+            # Prepare structured definitions/examples
+            def_list = [d.strip() for d in re.findall(r"\\item\s*(.*)", definitions)] or [x.strip() for x in definitions.split('\n') if x.strip()]
+            # Examples are of form: \item French \\ (English)
+            ex_list = []
+            for line in re.findall(r"\\item\s*(.*)", examples):
+                parts = line.split(' \\\\ ', 1)
+                if len(parts) == 2:
+                    fr = parts[0].strip()
+                    en = parts[1].strip()
+                    en = en[1:-1] if en.startswith('(') and en.endswith(')') else en
+                    ex_list.append((fr, en))
+
+            # Normalize type by stripping stray quotes
+            word_type_clean = word_type.strip().strip("'\"")
+
             # Add to successful entries
             self.word_entries[word_lower] = {
                 "word": original_word_for_log.capitalize(), # Store capitalized original
-                "type": word_type.strip(),
+                "type": word_type_clean,
                 "definitions": definitions.strip(),
                 "examples": examples.strip(),
+                "definitions_list": def_list,
+                "examples_list": ex_list,
             }
 
             # Also check collision for normalized_entries (less likely to be the primary issue based on counts, but good practice)
@@ -323,10 +375,22 @@ class FrenchVocabBuilder:
                       missed_by_regex.append(f"Word: '{word}' (Error finding context: {e})")
 
         # --- Final Debug Summary ---
-        self.ui.debug(f"Initial raw \\entry{{ count: {raw_entry_count_debug}")
+        self.ui.debug(f"Initial raw \\entry{{ count: {raw_entry_count_debug} }}")
         self.ui.debug(f"Entries matched by 4-group regex: {len(parsed_entries)}")
         self.ui.debug(f"Entries skipped by content validation: {len(skipped_entry_details)}")
         self.ui.debug(f"Final loaded entries (self.word_entries): {loaded_entries_count_debug}")
+
+        # Surface a compact diagnostic if strict parsing missed entries (verbose mode)
+        if missed_by_regex and getattr(self, 'verbose', False):
+            preview = "\n".join(missed_by_regex[:10])
+            more = len(missed_by_regex) - 10
+            tail = f"\n... and {more} more." if more > 0 else ""
+            self.ui.panel(
+                f"Detected {len(missed_by_regex)} entry start(s) not parsed by the strict 4-group regex.\n\n" +
+                preview + tail,
+                title="Parse Misses (diagnostic)",
+                border_style="yellow"
+            )
 
         # --- Permanent Warning for Duplicates (Always Show) ---
         if key_collisions:
@@ -523,12 +587,14 @@ class FrenchVocabBuilder:
         # Create options for the menu
         options = [
             ("s", "Skip: Don't add this word and return to the main menu."),
-            ("v", "View: Display the existing entry and return to the main menu.")
+            ("v", "View: Display the existing entry and return to the main menu."),
+            ("m", "Merge: Append AI definitions/examples into the existing entry."),
+            ("f", "Force add as a variant entry (will create a new entry)."),
         ]
 
         self.ui.display_menu("Please choose an action", options, show_numbers=False)
 
-        choice = Prompt.ask("Your choice", choices=["s", "v"], default="s")
+        choice = Prompt.ask("Your choice", choices=["s", "v", "m", "f"], default="s")
 
         if choice == "s":
             self.ui.panel("Skipping this word. Returning to main menu.", border_style="green")
@@ -541,11 +607,32 @@ class FrenchVocabBuilder:
             # Changed: Don't make a recursive call, just return to main menu
             self.ui.panel("Displayed existing entry. Returning to main menu.", border_style="blue")
             return False # Return False, indicating not to add the word
+        elif choice == "m":
+            # Defer merging until after AI response is parsed
+            self.duplicate_resolution = {"mode": "merge", "existing": actual_existing_word}
+            self.ui.info("Will merge new AI content into the existing entry after parsing.")
+            return True
+        elif choice == "f":
+            # Proceed to add; may need to create a unique variant label later
+            self.duplicate_resolution = {"mode": "force", "existing": actual_existing_word}
+            self.ui.info("Will force-add as a new variant entry.")
+            return True
 
     def display_existing_entry(self, word: str):
         entry = self.word_entries[word.lower()]
-        self.display_parsed_info(entry['word'], [entry['type']], entry['definitions'].split('; '),
-                                 [tuple(e.split(' (', 1)) for e in entry['examples'].split('; ')])
+        # Prefer structured lists if available
+        defs = entry.get('definitions_list')
+        exs = entry.get('examples_list')
+        if not defs:
+            defs = entry['definitions'].split('; ')
+        if not exs:
+            # Attempt to split gracefully
+            exs = []
+            for e in entry['examples'].split('; '):
+                if ' (' in e and e.endswith(')'):
+                    fr, en = e.rsplit(' (', 1)
+                    exs.append((fr, en[:-1]))
+        self.display_parsed_info(entry['word'], [entry['type']], defs, exs)
 
     
     def welcome_screen(self):
@@ -604,8 +691,8 @@ class FrenchVocabBuilder:
                 self.ui.warning("Input cancelled. Returning to main menu.")
                 return ""
             
-            # Normalize apostrophes
-            word = word.replace("'", "'")
+            # Normalize apostrophes: convert curly quotes to straight apostrophes
+            word = word.replace("’", "'").replace("‘", "'")
             
             if len(word.split()) > 10:
                 self.ui.error("Please enter a single word or short expression (max 10 words).")
@@ -619,9 +706,9 @@ class FrenchVocabBuilder:
                 return word
 
     def is_valid_french_input(self, word: str) -> bool:
-        # Allow letters (including accented), spaces, hyphens, and all types of apostrophes
-        # Accept all common apostrophe types: ' (straight), ' (right single quote), ' (left single quote)
-        valid_chars = set("'-\'àâäéèêëîïôöùûüçÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ")
+        # Allow letters (including accented), spaces, hyphens, and apostrophes
+        # Accept straight apostrophe U+0027 ('), and typographic apostrophes U+2019 (’), U+2018 (‘)
+        valid_chars = set("-'") | {"’", "‘"}
         return all(char.isalpha() or char.isspace() or char in valid_chars for char in word.strip())
 
     def query_ai(self, word: str) -> str:
@@ -729,8 +816,8 @@ class FrenchVocabBuilder:
 
         return word_type, definitions, examples
 
+    @staticmethod
     def format_latex_entry(
-            self,
             word: str,
             word_type: str,
             definitions: List[str],
@@ -748,17 +835,43 @@ class FrenchVocabBuilder:
         Returns:
             str: Formatted LaTeX entry for the word.
         """
-        # Capitalize the word
-        capitalized_word = word.capitalize()
+        # LaTeX escape helper (mirrors strategy used in eng_to_fr_translator)
+        def escape_latex(text: str) -> str:
+            if text is None:
+                return ""
+            mapping = {
+                '&': r'\&',
+                '%': r'\%',
+                '$': r'\$',
+                '#': r'\#',
+                '_': r'\_',
+                '{': r'\{',
+                '}': r'\}',
+                '~': r'\textasciitilde{}',
+                '^': r'\textasciicircum{}',
+                '\\': r'\textbackslash{}',
+            }
+            # Single-pass replacement over the original text only
+            pattern = re.compile('|'.join(re.escape(k) for k in sorted(mapping.keys(), key=len, reverse=True)))
+            return pattern.sub(lambda m: mapping[m.group(0)], text)
 
-        def_items = "".join([f"    \\item {d}\n" for d in definitions])
-        
-        # Check if the English translation already has parentheses before adding them
-        example_items = "".join(
-            [f"    \\item {e[0]} \\\\ {e[1] if e[1].startswith('(') and e[1].endswith(')') else f'({e[1]})'}\n" for e in examples]
-        )
+        # Capitalize and escape word and type
+        capitalized_word = escape_latex(word.capitalize())
+        escaped_type = escape_latex(word_type)
 
-        latex_entry = f"""\\entry{{{capitalized_word}}}{{{word_type}}}
+        # Escape definitions and examples
+        def_items = "".join([f"    \\item {escape_latex(d)}\n" for d in definitions])
+
+        example_lines = []
+        for fr, en in examples:
+            fr_esc = escape_latex(fr)
+            en_esc = escape_latex(en)
+            # Keep existing parentheses if already wrapped
+            english_part = en_esc if (en_esc.startswith('(') and en_esc.endswith(')')) else f'({en_esc})'
+            example_lines.append(f"    \\item {fr_esc} \\\\ {english_part}\n")
+        example_items = "".join(example_lines)
+
+        latex_entry = f"""\\entry{{{capitalized_word}}}{{{escaped_type}}}
       {{
     {def_items.rstrip()}
       }}
@@ -766,7 +879,7 @@ class FrenchVocabBuilder:
     {example_items.rstrip()}
       }}"""
 
-        # Remove all square brackets using regex
+        # Remove all square brackets (LLM sometimes wraps hints in [] )
         latex_entry = re.sub(r"\[|\]", "", latex_entry)
 
         return latex_entry
@@ -776,8 +889,20 @@ class FrenchVocabBuilder:
             with self.latex_file.open("r", encoding="utf-8") as file:
                 content = file.read()
 
-            insert_position = content.rfind("\\entry")
-            insert_position = content.find("\\end{itemize}", insert_position)
+            last_entry_index = content.rfind("\\entry")
+            if last_entry_index == -1:
+                # No existing entries; place before \end{itemize} or \end{document}
+                insert_position = content.rfind("\\end{itemize}")
+                if insert_position == -1:
+                    insert_position = content.rfind("\\end{document}")
+                    if insert_position == -1:
+                        insert_position = len(content)
+            else:
+                insert_position = content.find("\\end{itemize}", last_entry_index)
+                if insert_position == -1:
+                    insert_position = content.rfind("\\end{document}")
+                    if insert_position == -1:
+                        insert_position = len(content)
 
             updated_content = content[:insert_position] + new_entry + "\n\n" + content[insert_position:]
 
@@ -810,15 +935,21 @@ class FrenchVocabBuilder:
             with self.latex_file.open("r", encoding="utf-8") as file:
                 content = file.read()
 
-            entries_start = content.find("\\begin{itemize}[leftmargin=*]")
-            entries_end = content.rfind("\\end{itemize}")
-
-            if entries_start == -1 or entries_end == -1:
+            # Find the main vocab list itemize (one that includes leftmargin option)
+            itemize_header_match = re.search(r"\\begin{itemize}\[[^\]]*leftmargin[^\]]*\]", content, re.IGNORECASE)
+            if not itemize_header_match:
                 self.ui.error("Could not find the entries section.")
+                return
+            entries_start = itemize_header_match.start()
+            header_line = itemize_header_match.group(0)
+            entries_end = content.find("\\end{itemize}", itemize_header_match.end())
+
+            if entries_end == -1:
+                self.ui.error("Could not find the end of the entries section.")
                 return
 
             header = content[:entries_start]
-            entries_section = content[entries_start:entries_end]
+            entries_section = content[itemize_header_match.end():entries_end]
             footer = content[entries_end:]
 
             # Improved regex pattern that handles nested braces
@@ -856,8 +987,8 @@ class FrenchVocabBuilder:
             # Sort entries by normalized word
             sorted_entries = sorted(entries, key=lambda x: self.normalize_word(x[0]))
             
-            # Reconstruct the entries section
-            sorted_entries_section = "\\begin{itemize}[leftmargin=*]\n" + "\n\n".join([entry for _, entry in sorted_entries])
+            # Reconstruct the entries section preserving original header line
+            sorted_entries_section = header_line + "\n" + "\n\n".join([entry for _, entry in sorted_entries])
 
             sorted_content = header + sorted_entries_section + footer
             
@@ -920,6 +1051,8 @@ class FrenchVocabBuilder:
             input("\nPress Enter to continue...")
 
     def handle_new_word_entry(self):
+        # Reset duplicate resolution per new flow
+        self.duplicate_resolution = None
         original_word = self.get_word_input()
         if not original_word:
             return # User cancelled input
@@ -946,7 +1079,7 @@ class FrenchVocabBuilder:
         # --- Stage 2 Duplicate Check (Final/Corrected Word) ---
         # Check again only if the final word is different from the original input (case-insensitive)
         # and it wasn't the word found in the first check (if any)
-        if final_word.lower() != original_word.lower():
+        if final_word.lower() != original_word.lower() and not (self.duplicate_resolution and self.duplicate_resolution.get('mode') in ('merge','force')):
             existing_word_check2 = self.check_duplicate(final_word)
             if existing_word_check2 and existing_word_check2 != existing_word_check1:
                 self.ui.info(f"Performing second duplicate check for corrected word '{final_word}'...")
@@ -963,8 +1096,21 @@ class FrenchVocabBuilder:
         # --- Display Parsed Info ---
         self.display_parsed_info(final_word, word_type, definitions, examples)
 
+        # --- Merge path (if selected) ---
+        if self.duplicate_resolution and self.duplicate_resolution.get('mode') == 'merge':
+            target_key = self.duplicate_resolution.get('existing', final_word)
+            self.merge_into_existing(target_key, word_type[0], definitions, examples)
+            self.ui.success(f"Merged AI content into existing entry for '{target_key}'.")
+            self.duplicate_resolution = None
+            return
+
         # --- Format LaTeX Entry ---
-        latex_entry = self.format_latex_entry(final_word, word_type[0], definitions, examples) # Use first element of word_type list
+        insert_word = final_word
+        # If force mode and still colliding, create a unique variant
+        if self.duplicate_resolution and self.duplicate_resolution.get('mode') == 'force':
+            if self.check_duplicate(insert_word):
+                insert_word = self.create_unique_variant(insert_word)
+        latex_entry = self.format_latex_entry(insert_word, word_type[0], definitions, examples) # Use first element of word_type list
 
         # --- Validate LaTeX Entry ---
         if not self.is_valid_latex_entry(latex_entry):
@@ -973,15 +1119,107 @@ class FrenchVocabBuilder:
 
         # --- Display LaTeX Entry & Insert ---
         self.display_latex_entry(latex_entry)
-        self.insert_entry_alphabetically(latex_entry, final_word) # Insert using the final word
+        self.insert_entry_alphabetically(latex_entry, insert_word) # Insert using the (possibly variant) word
 
         # --- Update In-Memory Dictionaries ---
-        self.add_word_to_entries(final_word, word_type[0], definitions, examples) # Use first element of word_type list
+        self.add_word_to_entries(insert_word, word_type[0], definitions, examples) # Use first element of word_type list
 
         # --- Alphabetize ---
         self.alphabetize_entries()
 
+        self.duplicate_resolution = None
+
         self.ui.success(f"Successfully processed and added entry for '{final_word}'.")
+
+    def create_unique_variant(self, base_word: str) -> str:
+        """Create a unique variant label for a duplicate word using hyphenated suffixes."""
+        candidate = f"{base_word} - alt"
+        if not self.check_duplicate(candidate):
+            return candidate
+        # Try alphabetical suffixes
+        for suffix in 'abcdefghijklmnopqrstuvwxyz':
+            candidate = f"{base_word} - alt {suffix}"
+            if not self.check_duplicate(candidate):
+                return candidate
+        # Fallback with repeated 'alt'
+        i = 2
+        while True:
+            candidate = f"{base_word} - alt x{i}"
+            if not self.check_duplicate(candidate):
+                return candidate
+            i += 1
+
+    def merge_into_existing(self, existing_word: str, new_type: str, new_defs: List[str], new_examples: List[Tuple[str, str]]):
+        """Merge new definitions/examples into an existing entry and update the LaTeX file and memory."""
+        key = existing_word.lower()
+        if key not in self.word_entries:
+            self.ui.error(f"Cannot merge: existing entry for '{existing_word}' not found.")
+            return
+        entry = self.word_entries[key]
+
+        # Use structured lists if available else fallback
+        defs_existing = entry.get('definitions_list') or [d.strip() for d in entry['definitions'].split('; ') if d.strip()]
+        exs_existing = entry.get('examples_list') or []
+        if not exs_existing and entry.get('examples'):
+            for e in entry['examples'].split('; '):
+                if ' (' in e and e.endswith(')'):
+                    fr, en = e.rsplit(' (', 1)
+                    exs_existing.append((fr, en[:-1]))
+
+        # Dedup helpers
+        def norm_text(s: str) -> str:
+            return re.sub(r"\s+", " ", s).strip().lower()
+        def norm_pair(p: Tuple[str,str]) -> Tuple[str,str]:
+            return (norm_text(p[0]), norm_text(p[1]))
+
+        merged_defs_map = {norm_text(d): d for d in defs_existing}
+        for d in new_defs:
+            nd = norm_text(d)
+            if nd and nd not in merged_defs_map:
+                merged_defs_map[nd] = d
+        merged_defs = list(merged_defs_map.values())
+
+        merged_exs_map = {norm_pair(p): p for p in exs_existing}
+        for p in new_examples:
+            np = norm_pair(p)
+            if np not in merged_exs_map:
+                merged_exs_map[np] = p
+        merged_exs = list(merged_exs_map.values())
+
+        # Keep existing type by default; if unknown, use new
+        final_type = entry.get('type') or new_type
+        # Rebuild LaTeX entry and replace in file
+        latex_block = self.format_latex_entry(entry['word'], final_type, merged_defs, merged_exs)
+        self.update_entry_in_file(entry['word'], latex_block)
+
+        # Update memory
+        entry['type'] = final_type
+        entry['definitions_list'] = merged_defs
+        entry['examples_list'] = merged_exs
+        entry['definitions'] = "; ".join(merged_defs)
+        entry['examples'] = "; ".join([f"{f} ({e})" for f,e in merged_exs])
+
+    def update_entry_in_file(self, word_capitalized: str, new_block: str) -> None:
+        """Replace the LaTeX entry block for the given word with new_block."""
+        try:
+            with self.latex_file.open("r", encoding="utf-8") as f:
+                content = f.read()
+            # Regex to match the specific entry by word with robust body matching
+            pattern = r"""
+                \\entry
+                \{%(word)s\}
+                \{[^{}]*\}
+                \{ (?: [^{}]+ | \{[^{}]*\} )* \}
+                \{ (?: [^{}]+ | \{[^{}]*\} )* \}
+            """ % {"word": re.escape(word_capitalized)}
+            new_content, n = re.subn(pattern, new_block, content, count=1, flags=re.VERBOSE | re.DOTALL)
+            if n == 0:
+                self.ui.warning(f"Could not locate LaTeX entry for '{word_capitalized}' to update. Skipping file update.")
+                return
+            with self.latex_file.open("w", encoding="utf-8") as f:
+                f.write(new_content)
+        except Exception as e:
+            self.ui.error(f"Failed to update LaTeX entry for '{word_capitalized}': {e}")
 
     def is_valid_latex_entry(self, latex_entry: str) -> bool:
         # Check if the entry is not empty and contains the expected LaTeX structure
@@ -1089,7 +1327,19 @@ class FrenchVocabBuilder:
 
     def reconcile_menu_option(self):
         self.generate_discrepancy_report()
-        # Optionally, add interactive options to resolve discrepancies
+        # Offer one-click actions
+        in_latex_not_exported, in_exports_not_latex = self.compare_entries_and_exports()
+        # Export missing LaTeX words to Anki
+        if in_latex_not_exported:
+            if Confirm.ask(f"Export {len(in_latex_not_exported)} word(s) missing in Anki now?", default=True):
+                deck_name = Prompt.ask("Enter deck name", default="French Vocabulary")
+                self.export_to_anki(deck_name)
+        # Remove extra exported words not present in LaTeX
+        if in_exports_not_latex:
+            if Confirm.ask(f"Remove {len(in_exports_not_latex)} stale exported word(s) from tracking?", default=False):
+                self.exported_words.difference_update(in_exports_not_latex)
+                self.save_exported_words()
+                self.ui.success("Updated exported words; removed stale entries.")
 
     def display_all_vocabulary(self):
         """Displays all vocabulary entries present in the LaTeX file in a paginated table format.
@@ -1186,13 +1436,15 @@ def main() -> None:
     parser.add_argument('latex_file', nargs='?', help='Path to LaTeX file')
     parser.add_argument('--provider', choices=['gemini', 'claude'], 
                         help='LLM provider to use (gemini or claude)')
+    parser.add_argument('--verbose', action='store_true', help='Enable verbose diagnostics output')
     args = parser.parse_args()
     
     latex_file = args.latex_file
     provider = args.provider  # Will be None if not specified
+    verbose = bool(args.verbose)
 
     init_start = time.time()
-    app = FrenchVocabBuilder(latex_file, provider)
+    app = FrenchVocabBuilder(latex_file, provider, verbose=verbose)
     init_end = time.time()
     
     run_start = time.time()
