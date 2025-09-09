@@ -1,6 +1,5 @@
 import json
 import os
-import random
 import re
 import unicodedata
 from typing import List, Tuple, Optional, Dict, Set
@@ -12,7 +11,6 @@ from rich.prompt import Prompt, Confirm
 from enum import Enum, auto
 from latex_templates import INITIAL_TEX_CONTENT, SAMPLE_ENTRY, FINAL_TEX_CONTENT, AI_PROMPT_TEMPLATE
 import time
-import threading
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
@@ -21,6 +19,8 @@ import getpass
 from keyring.errors import KeyringError
 from pathlib import Path
 from llm_client import GeminiClient, ProviderFactory
+from models import WordEntry, normalize_word_key
+from latex_repository import LatexRepository
 import uuid
 import struct
 import hashlib
@@ -66,6 +66,9 @@ class FrenchVocabBuilder:
         if not self.latex_file.exists():
             self.create_initial_tex_file()
         
+        # Repository for LaTeX entries (balanced-brace parser)
+        self.repo = LatexRepository(self.latex_file)
+
         self.max_word_length = 500
         self.word_entries: Dict[str, Dict] = {}
         self.normalized_entries: Dict[str, str] = {}
@@ -252,147 +255,28 @@ class FrenchVocabBuilder:
 
 
     def load_existing_entries(self):
-        """Loads existing vocabulary entries from the LaTeX file."""
-        try: # Add try...finally to ensure file is closed
-            with self.latex_file.open("r", encoding="utf-8") as file:
-                content = file.read()
-        except FileNotFoundError:
-            self.ui.error(f"File not found - {self.latex_file}")
-            return
-        except IOError as e:
-            self.ui.error(f"Error reading file: {e}")
-            return
-
-        # Find ALL potential entry starts
-        raw_entry_starts = [match.start() for match in re.finditer(r"\\entry\{", content)]
-        raw_entry_count_debug = len(raw_entry_starts)
-
-        # Use the stricter regex to find successfully parsed entries
-        parsed_entries = re.findall(
-            r"\\entry\{(.*?)\}\{(.*?)\}\s*\{(.*?)\}\s*\{(.*?)\}", content, re.DOTALL
-        )
-
-        # Keep track of successfully parsed words (lowercase, normalized)
-        parsed_words_set = set()
-
-        self.word_entries.clear() # Clear existing entries before loading
+        """Loads existing vocabulary entries using a balanced-brace parser."""
+        self.word_entries.clear()
         self.normalized_entries.clear()
-        key_collisions = {} # Dictionary to track collisions: {key: [list_of_original_words_producing_this_key]}
-
-        skipped_entry_details = [] # Store details of skipped entries
-
-        for i, (word, word_type, definitions, examples) in enumerate(parsed_entries):
-            original_word_for_log = word.strip() # Keep original case for logging
-            word_lower = word.strip().lower()  # Normalize the word
-
-            # Check for empty content (the original check)
-            if not word_lower or not word_type or not definitions.strip() or not examples.strip():
-                reason = []
-                if not word_lower: reason.append("empty word")
-                if not word_type: reason.append("empty type")
-                if not definitions.strip(): reason.append("empty definitions")
-                if not examples.strip(): reason.append("empty examples")
-                # Store info about skipped entry due to content validation
-                skipped_entry_details.append({
-                    "word": original_word_for_log or '[EMPTY WORD]',
-                    "reason": f"Content Validation Failed: {', '.join(reason)}",
-                    "index_in_parsed": i
-                })
-                self.ui.warning(f"Skipping entry due to content: '{original_word_for_log or '[EMPTY WORD]'}' - Reason: {', '.join(reason)}")
+        entries = self.repo.load_entries()
+        key_collisions: Dict[str, List[str]] = {}
+        for e in entries:
+            if not e.word.strip() or not e.type or not e.definitions or not e.examples:
+                self.ui.warning(f"Skipping entry due to content: '{e.word or '[EMPTY WORD]'}'")
                 continue
-
-            # --- Check for key collision BEFORE assigning ---
-            if word_lower in self.word_entries:
-                # Collision detected for self.word_entries!
-                if word_lower not in key_collisions:
-                    key_collisions[word_lower] = [self.word_entries[word_lower]['word']] # Add the word already there
-                key_collisions[word_lower].append(original_word_for_log) # Add the new word causing collision
-
-                self.ui.warning(f"Key collision detected for key '{word_lower}'. Overwriting entry for '{self.word_entries[word_lower]['word']}' with entry for '{original_word_for_log}'.")
-
-            # Prepare structured definitions/examples
-            def_list = [d.strip() for d in re.findall(r"\\item\s*(.*)", definitions)] or [x.strip() for x in definitions.split('\n') if x.strip()]
-            # Examples are of form: \item French \\ (English)
-            ex_list = []
-            for line in re.findall(r"\\item\s*(.*)", examples):
-                parts = line.split(' \\\\ ', 1)
-                if len(parts) == 2:
-                    fr = parts[0].strip()
-                    en = parts[1].strip()
-                    en = en[1:-1] if en.startswith('(') and en.endswith(')') else en
-                    ex_list.append((fr, en))
-
-            # Normalize type by stripping stray quotes
-            word_type_clean = word_type.strip().strip("'\"")
-
-            # Add to successful entries
-            self.word_entries[word_lower] = {
-                "word": original_word_for_log.capitalize(), # Store capitalized original
-                "type": word_type_clean,
-                "definitions": definitions.strip(),
-                "examples": examples.strip(),
-                "definitions_list": def_list,
-                "examples_list": ex_list,
+            key = e.word.strip().lower()
+            if key in self.word_entries:
+                key_collisions.setdefault(key, [self.word_entries[key]['word']]).append(e.word)
+            self.word_entries[key] = {
+                'word': e.word,
+                'type': e.type,
+                'definitions': "; ".join(e.definitions),
+                'examples': "; ".join([f"{fr} ({en})" if en else fr for fr, en in e.examples]),
+                'definitions_list': e.definitions,
+                'examples_list': e.examples,
             }
-
-            # Also check collision for normalized_entries (less likely to be the primary issue based on counts, but good practice)
-            normalized_word = self.normalize_word(word_lower)
-            if normalized_word in self.normalized_entries and self.normalized_entries[normalized_word] != word_lower:
-                 self.ui.warning(f"NOTE: Normalized key collision for '{normalized_word}'. Mapping from '{self.normalized_entries[normalized_word]}' overwritten by '{word_lower}'.")
-            self.normalized_entries[normalized_word] = word_lower
-
-            parsed_words_set.add(original_word_for_log.strip()) # Add original word as parsed
-
-        loaded_entries_count_debug = len(self.word_entries)
-
-        # --- Find entries missed by the REGEX ---
-        missed_by_regex = []
-        # Extract the word part from ALL raw \entry{ lines for comparison
-        all_raw_words = re.findall(r"\\entry\{(.*?)\}", content, re.DOTALL)
-        all_raw_words_stripped = {w.strip() for w in all_raw_words}
-
-        missed_words = all_raw_words_stripped - parsed_words_set
-
-        if missed_words:
-             self.ui.error(f"DEBUG: Found {len(missed_words)} words present in raw \\entry{{...}} but NOT successfully parsed by the 4-group regex:")
-             # Try to find the context of these missed words in the original file
-             for word in sorted(list(missed_words)):
-                 # Find the line number (approximate)
-                 try:
-                     escaped_word = re.escape(word)
-                     match = re.search(fr"\\entry{{{escaped_word}}}", content)
-                     if match:
-                         start_index = match.start()
-                         line_number = content.count('\n', 0, start_index) + 1
-                         # Extract a snippet around the match
-                         context_start = max(0, start_index - 30)
-                         context_end = min(len(content), start_index + 150) # Look further ahead
-                         snippet = content[context_start:context_end].replace('\n', '\\n')
-                         missed_by_regex.append(f"Word: '{word}' (approx line {line_number}) - Snippet: ...{snippet}...")
-                     else:
-                         missed_by_regex.append(f"Word: '{word}' (Could not find exact context)")
-                 except Exception as e:
-                      missed_by_regex.append(f"Word: '{word}' (Error finding context: {e})")
-
-        # --- Final Debug Summary ---
-        self.ui.debug(f"Initial raw \\entry{{ count: {raw_entry_count_debug} }}")
-        self.ui.debug(f"Entries matched by 4-group regex: {len(parsed_entries)}")
-        self.ui.debug(f"Entries skipped by content validation: {len(skipped_entry_details)}")
-        self.ui.debug(f"Final loaded entries (self.word_entries): {loaded_entries_count_debug}")
-
-        # Surface a compact diagnostic if strict parsing missed entries (verbose mode)
-        if missed_by_regex and getattr(self, 'verbose', False):
-            preview = "\n".join(missed_by_regex[:10])
-            more = len(missed_by_regex) - 10
-            tail = f"\n... and {more} more." if more > 0 else ""
-            self.ui.panel(
-                f"Detected {len(missed_by_regex)} entry start(s) not parsed by the strict 4-group regex.\n\n" +
-                preview + tail,
-                title="Parse Misses (diagnostic)",
-                border_style="yellow"
-            )
-
-        # --- Permanent Warning for Duplicates (Always Show) ---
+            norm = self.normalize_word(key)
+            self.normalized_entries[norm] = key
         if key_collisions:
             self.ui.panel(
                 f"[bold yellow]WARNING:[/bold yellow] {len(key_collisions)} duplicate word key(s) detected during loading, resulting in {sum(len(v)-1 for v in key_collisions.values())} overwritten entries.\n"
@@ -402,8 +286,6 @@ class FrenchVocabBuilder:
                 title="Duplicate Entries Found",
                 border_style="yellow"
             )
-
-        # Update the main count AFTER all checks
         self.entry_count = len(self.word_entries)
 
     def latex_to_anki_format(self, text):
