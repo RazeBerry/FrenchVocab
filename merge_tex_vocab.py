@@ -12,7 +12,13 @@ Changes vs. v1
                   case‑ & accent‑insensitively before returning them.
 """
 from __future__ import annotations
-import argparse, datetime as _dt, pathlib as _pl, re, shutil, sys, unicodedata as _ud
+import argparse
+import datetime as _dt
+import pathlib as _pl
+import re
+import shutil
+import sys
+import unicodedata as _ud
 
 # ----------------------------------------------------------------------
 # Regexes

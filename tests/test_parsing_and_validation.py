@@ -1,7 +1,7 @@
 import os
 import unittest
 
-import sys, os
+import sys
 sys.path.append(os.path.dirname(__file__))
 from _stubs import install_basic_stubs
 install_basic_stubs()

@@ -42,7 +42,7 @@ FINAL_TEX_CONTENT = r"""
 \end{document}"""
 
 # --- REFINED AI PROMPT TEMPLATE ---
-AI_PROMPT_TEMPLATE = f"""
+AI_PROMPT_TEMPLATE = """
 # Persona & Goal
 You are a friendly and highly experienced DALF C1/C2 level French instructor. Your goal is to provide structured information for the French word or expression "{{word}}" so that it can be automatically parsed and formatted into a LaTeX entry by another script.
 

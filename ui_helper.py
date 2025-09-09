@@ -3,7 +3,6 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
-from rich.text import Text
 from typing import List, Dict, Any, Optional, Tuple, Callable
 from enum import Enum
 

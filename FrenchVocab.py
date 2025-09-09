@@ -11,15 +11,11 @@ from rich.prompt import Prompt, Confirm
 from enum import Enum, auto
 from latex_templates import INITIAL_TEX_CONTENT, SAMPLE_ENTRY, FINAL_TEX_CONTENT, AI_PROMPT_TEMPLATE
 import time
-from rich.table import Table
-from rich.panel import Panel
-from rich.text import Text
 import keyring
 import getpass
 from keyring.errors import KeyringError
 from pathlib import Path
 from llm_client import GeminiClient, ProviderFactory
-from models import WordEntry, normalize_word_key
 from latex_repository import LatexRepository
 import uuid
 import struct
@@ -189,7 +185,6 @@ class FrenchVocabBuilder:
         """Interactive first-time setup for API key based on provider."""
         provider = provider.lower()
         if provider == 'claude':
-            env_var = 'ANTHROPIC_API_KEY'
             keyring_name = 'anthropic_api_key'
             guide = (
                 "[bold yellow]No valid ANTHROPIC_API_KEY found. Let's set it up.[/bold yellow]\n\n"
@@ -200,7 +195,6 @@ class FrenchVocabBuilder:
             )
             prompt_text = "Enter your Anthropic API key: "
         else:
-            env_var = 'GEMINI_API_KEY'
             keyring_name = 'gemini_api_key'
             guide = (
                 "[bold yellow]No valid GEMINI_API_KEY found. Let's set it up.[/bold yellow]\n\n"
@@ -1108,8 +1102,9 @@ class FrenchVocabBuilder:
 
     def check_spelling(self, word, ai_response):
         # More specific regex that stops at the next field and handles multiline content
-        spelling_check_match = re.search(r'Spelling Check:\s*(.*?)(?=\nCorrectly Spelt Word:|$)', ai_response, re.DOTALL)
-        spelling_check = spelling_check_match.group(1).strip() if spelling_check_match else None
+        # Extract the spelling check section (value not used)
+        # Keep for potential future diagnostics, but avoid unused variable warnings
+        _ = re.search(r'Spelling Check:\s*(.*?)(?=\nCorrectly Spelt Word:|$)', ai_response, re.DOTALL)
 
         corrected_spelling_match = re.search(r'Correctly Spelt Word:\s*(.*?)(?=\nWord Type:|$)', ai_response, re.DOTALL)
         corrected_spelling = corrected_spelling_match.group(1).strip() if corrected_spelling_match else None
@@ -1175,7 +1170,6 @@ class FrenchVocabBuilder:
 
     def get_all_latex_entries(self) -> Set[str]:
         # Return a set of all words in the LaTeX file, including incomplete entries
-        all_entries = set()
         with self.latex_file.open("r", encoding="utf-8") as file:
             content = file.read()
         entries = re.findall(r"\\entry\{(.*?)\}", content)

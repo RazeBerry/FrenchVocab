@@ -1,16 +1,16 @@
 from abc import ABC, abstractmethod
 from time import perf_counter
+import os
+# Fix the imports for Google Generative AI
+from google import genai
+from google.genai import types
+
 
 class LLMClient(ABC):
     @abstractmethod
     def stream(self, prompt: str):
         """Yield chunks of pure text."""
         ...
-
-import os
-# Fix the imports for Google Generative AI
-from google import genai
-from google.genai import types
 
 class GeminiClient(LLMClient):
     MODEL_NAME = "gemini-2.0-flash"
