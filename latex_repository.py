@@ -44,7 +44,7 @@ class LatexRepository:
         raise ValueError("Unbalanced braces while parsing group")
 
     def _parse_entry_at(self, s: str, start: int) -> Optional[Tuple[WordEntry, int]]:
-        """Parse an \entry{...}{...}{...}{...} starting at index `start` where s[start:] begins with '\\entry'.
+        r"""Parse an \entry{...}{...}{...}{...} starting at index `start` where s[start:] begins with '\\entry'.
         Returns (WordEntry, next_index) or None if not a valid entry.
         """
         if not s.startswith("\\entry", start):
@@ -62,7 +62,7 @@ class LatexRepository:
             groups.append(content)
         try:
             word_raw = groups[0].strip()
-            type_raw = groups[1].strip()
+            type_raw = groups[1].strip().strip("'\"")
             # third group is an itemize block with \item lines
             defs_block = groups[2]
             exs_block = groups[3]
@@ -119,4 +119,3 @@ class LatexRepository:
             entries.append(entry)
             i = next_i
         return entries
-
