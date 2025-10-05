@@ -92,6 +92,8 @@ def install_basic_stubs():
         class _LLMClient:
             def stream(self, _prompt: str):
                 yield ""
+            def model_label(self) -> str:
+                return "Stub LLM"
         class _GeminiClient(_LLMClient):
             pass
         class _ProviderFactory:
@@ -105,4 +107,3 @@ def install_basic_stubs():
         ll.GeminiClient = _GeminiClient
         ll.ProviderFactory = _ProviderFactory
         sys.modules['llm_client'] = ll
-

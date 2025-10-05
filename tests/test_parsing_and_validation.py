@@ -48,6 +48,23 @@ class TestParsingAndValidation(unittest.TestCase):
         self.assertEqual(defs, [])
         self.assertEqual(exs, [])
 
+    def test_parse_ai_response_without_word_type(self):
+        resp = (
+            "Spelling Check: OK\n"
+            "Correctly Spelt Word: salut\n"
+            "Definitions:\n"
+            "a. hi\n"
+            "Examples:\n"
+            "1. Salut !\n( Hi! )\n"
+        )
+        wt, defs, exs = self.builder.parse_ai_response(resp)
+        # Ensure we retain the literal fallback rather than a single character from the string
+        self.assertEqual(wt, ['Unknown'])
+        self.assertEqual(defs, ['hi'])
+        self.assertEqual(len(exs), 1)
+        self.assertEqual(exs[0][0], 'Salut !')
+        self.assertIn('Hi!', exs[0][1])
+
     def test_is_valid_french_input(self):
         b = self.builder
         # bind method still works

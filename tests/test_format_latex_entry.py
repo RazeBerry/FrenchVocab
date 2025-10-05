@@ -182,10 +182,11 @@ class TestFormatLatexEntry(unittest.TestCase):
         self.assertIn(r"\item def a", out)
         self.assertIn(r"\item fr 1 \\ (en 1)", out)
 
-    def test_square_brackets_are_removed(self):
+    def test_square_brackets_are_preserved(self):
         out = self.formatter("mot", "noun", ["[abc]"], [("fr [x]", "en [y]")])
-        self.assertNotIn("[", out)
-        self.assertNotIn("]", out)
+        self.assertIn("[abc]", out)
+        self.assertIn("fr [x]", out)
+        self.assertIn("en [y]", out)
 
 
 if __name__ == '__main__':

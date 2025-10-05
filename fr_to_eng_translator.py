@@ -236,6 +236,35 @@ class FrenchToEnglishTranslator:
         
         return True
 
+    def translate_and_save(self, french_text: str) -> bool:
+        """Translate provided French text and save without prompting for input.
+
+        Returns False only if user cancels at confirmation step or translation fails.
+        """
+        if not french_text:
+            return False
+
+        normalized_french = self.normalize_french(french_text)
+        existing_entry = self.check_duplicate_french(normalized_french)
+
+        if existing_entry:
+            self.display_duplicate_warning(existing_entry)
+            return True
+
+        english_translation = self.query_ai_for_translation(french_text)
+        if not english_translation:
+            return False
+
+        if self.confirm_translation(french_text, english_translation):
+            latex_entry = self._format_latex_entry(french_text, english_translation)
+            self._add_entry_to_file(latex_entry)
+            self._add_entry_to_memory(french_text, english_translation, normalized_french)
+            self.console.print("[bold green]Translation saved![/bold green]")
+            return True
+        else:
+            self.console.print("[yellow]Save cancelled.[/yellow]")
+            return False
+
     def run(self):
         self.console.print(Panel(
             "[bold blue]French -> English Translator[/bold blue]\nEnter French phrases to translate. Type 'q' to return to the main menu at any time.",

@@ -10,6 +10,8 @@ from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
 from enum import Enum, auto
 from latex_templates import INITIAL_TEX_CONTENT, SAMPLE_ENTRY, FINAL_TEX_CONTENT, AI_PROMPT_TEMPLATE
+from anki_exporter import AnkiExporter, AnkiExportEntry, latex_to_anki_format as latex_to_anki_html
+from ai_response_parser import parse_ai_response_text
 import time
 import keyring
 import getpass
@@ -17,9 +19,6 @@ from keyring.errors import KeyringError
 from pathlib import Path
 from llm_client import GeminiClient, ProviderFactory
 from latex_repository import LatexRepository
-import uuid
-import struct
-import hashlib
 
 # Import the new translator class
 from eng_to_fr_translator import EnglishToFrenchTranslator
@@ -65,7 +64,12 @@ class FrenchVocabBuilder:
         # Repository for LaTeX entries (balanced-brace parser)
         self.repo = LatexRepository(self.latex_file)
 
-        self.max_word_length = 500
+        # Allow longer phrases before triggering the length check
+        self.max_word_length = 1000  # default max characters (overridable)
+        self.max_words: Optional[int] = None  # unlimited by default; overridable
+        self.allow_sentence_punctuation: bool = True  # allow punctuation by default
+        self.route_sentences: bool = True  # default: route sentences to Fr->En translator
+        self.sentence_examples_in_vocab: bool = False  # default: omit examples for sentences
         self.word_entries: Dict[str, Dict] = {}
         self.normalized_entries: Dict[str, str] = {}
         self.config_file = "vocab_builder_config.json"
@@ -73,6 +77,9 @@ class FrenchVocabBuilder:
         # Initialize the LLM client (allow injection)
         self.client = client
         
+        # Apply optional runtime settings (env/config overrides)
+        self._load_input_limits()
+
         # Initialize translator attribute
         self.eng_to_fr_translator: Optional[EnglishToFrenchTranslator] = None
         self.fr_to_eng_translator: Optional[FrenchToEnglishTranslator] = None
@@ -123,9 +130,31 @@ class FrenchVocabBuilder:
              self.ui.error("Could not initialize FrenchToEnglishTranslator due to missing LLM client.")
 
         init_end = time.time()
-        print(f"Total init time: {init_end - init_start:.5f} seconds")
-        print(f"  Load config time: {load_config_end - load_config_start:.5f} seconds")
-        print(f"  Load entries time: {load_entries_end - load_entries_start:.5f} seconds")
+        if self.verbose:
+            self.console.print(
+                f"Total init time: {init_end - init_start:.5f} seconds\n"
+                f"  Load config time: {load_config_end - load_config_start:.5f} seconds\n"
+                f"  Load entries time: {load_entries_end - load_entries_start:.5f} seconds"
+            )
+
+    def detect_input_type(self, text: str) -> str:
+        """Classify input as 'word', 'expression', or 'sentence' using simple heuristics."""
+        if not text:
+            return 'word'
+        t = text.strip()
+        # Newlines strongly indicate sentence text
+        if '\n' in t:
+            return 'sentence'
+        # Sentence-ending punctuation or long length
+        if any(p in t for p in '.!?;:') or len(t) > 120:
+            return 'sentence'
+        # Word count thresholds
+        wc = len(t.split())
+        if wc >= 9:
+            return 'sentence'
+        if wc >= 2:
+            return 'expression'
+        return 'word'
 
     def create_initial_tex_file(self):
         try:
@@ -141,7 +170,104 @@ class FrenchVocabBuilder:
             self.ui.error(f"Error creating initial LaTeX file: {e}")
             raise
 
+    def _load_input_limits(self) -> None:
+        """Load UI/input and routing options from env or optional JSON config.
 
+        Priority: defaults < config file < environment variables.
+        - Env vars: FRENCH_VOCAB_MAX_CHARS, FRENCH_VOCAB_MAX_WORDS
+        - Config file (JSON): {"input_limits": {"max_chars": int, "max_words": int|null}}
+        Any non-positive or null max_words disables the word-count limit.
+        """
+        # 1) Config file (optional)
+        try:
+            from pathlib import Path as _Path
+            cfg_path = _Path(__file__).parent / str(self.config_file)
+            if cfg_path.exists():
+                with cfg_path.open('r', encoding='utf-8') as f:
+                    data = json.load(f)
+                limits = (data or {}).get('input_limits', {})
+                if isinstance(limits, dict):
+                    if 'max_chars' in limits:
+                        try:
+                            mc = int(limits['max_chars'])
+                            if mc > 0:
+                                self.max_word_length = mc
+                        except (ValueError, TypeError):
+                            pass
+                    if 'max_words' in limits:
+                        try:
+                            mw = limits['max_words']
+                            # allow null/None/<=0 to mean unlimited
+                            if mw is None:
+                                self.max_words = None
+                            else:
+                                mw_int = int(mw)
+                                self.max_words = mw_int if mw_int > 0 else None
+                        except (ValueError, TypeError):
+                            pass
+                    # sentence mode flag (optional)
+                    if 'sentence_mode' in limits:
+                        try:
+                            sm = limits['sentence_mode']
+                            if isinstance(sm, bool):
+                                self.allow_sentence_punctuation = sm
+                            elif isinstance(sm, str):
+                                self.allow_sentence_punctuation = sm.strip().lower() in ("1", "true", "yes", "y", "on")
+                        except Exception:
+                            pass
+                    # sentence routing (optional)
+                    if 'route_sentences' in limits:
+                        try:
+                            rs = limits['route_sentences']
+                            if isinstance(rs, bool):
+                                self.route_sentences = rs
+                            elif isinstance(rs, str):
+                                self.route_sentences = rs.strip().lower() in ("1", "true", "yes", "y", "on")
+                        except Exception:
+                            pass
+                    # include examples for sentences when kept in vocab
+                    if 'sentence_examples' in limits:
+                        try:
+                            se = limits['sentence_examples']
+                            if isinstance(se, bool):
+                                self.sentence_examples_in_vocab = se
+                            elif isinstance(se, str):
+                                self.sentence_examples_in_vocab = se.strip().lower() in ("1", "true", "yes", "y", "on")
+                        except Exception:
+                            pass
+        except Exception:
+            # Be resilient; ignore config errors
+            pass
+
+        # 2) Environment variables (highest priority)
+        try:
+            env_chars = os.getenv('FRENCH_VOCAB_MAX_CHARS')
+            if env_chars:
+                ec = int(env_chars)
+                if ec > 0:
+                    self.max_word_length = ec
+        except (ValueError, TypeError):
+            pass
+        try:
+            env_words = os.getenv('FRENCH_VOCAB_MAX_WORDS')
+            if env_words is not None:
+                ew = int(env_words)
+                self.max_words = ew if ew > 0 else None
+        except (ValueError, TypeError):
+            pass
+        # sentence mode via env
+        env_sentence = os.getenv('FRENCH_VOCAB_SENTENCE_MODE') or os.getenv('FRENCH_VOCAB_ALLOW_PUNCT')
+        if env_sentence is not None:
+            self.allow_sentence_punctuation = str(env_sentence).strip().lower() in ("1", "true", "yes", "y", "on")
+        # routing and sentence examples
+        env_route = os.getenv('FRENCH_VOCAB_ROUTE_SENTENCES')
+        if env_route is not None:
+            self.route_sentences = str(env_route).strip().lower() in ("1", "true", "yes", "y", "on")
+        env_sent_ex = os.getenv('FRENCH_VOCAB_SENTENCE_EXAMPLES')
+        if env_sent_ex is not None:
+            self.sentence_examples_in_vocab = str(env_sent_ex).strip().lower() in ("1", "true", "yes", "y", "on")
+
+    
     def load_config(self):
         """Load API key for the selected provider and set env var."""
         provider = getattr(self, 'provider', ProviderFactory.default_provider())
@@ -281,40 +407,6 @@ class FrenchVocabBuilder:
             )
         self.entry_count = len(self.word_entries)
 
-    def latex_to_anki_format(self, text):
-        """Converts LaTeX-formatted text to Anki-compatible HTML format.
-
-        This method processes a given LaTeX string by removing LaTeX-specific
-        commands, converting newlines to HTML line breaks, and formatting
-        list items with bullet points suitable for Anki flashcards.
-
-        Args:
-            text (str): The LaTeX-formatted string to be converted.
-
-        Returns:
-            str: The converted string formatted with HTML line breaks and
-                 bullet points, ready for Anki import.
-        """
-        # Remove LaTeX item markers
-        text = re.sub(r'\\item\s*', '', text)
-        
-        # Convert LaTeX newlines to HTML line breaks
-        text = text.replace('\\\\ ', '<br>')
-        
-        # Remove any remaining LaTeX commands
-        text = re.sub(r'\\[a-zA-Z]+(\[.*?\])?(\{.*?\})?', '', text)
-        
-        # Split the text into individual items
-        items = [item.strip() for item in text.split('\n') if item.strip()]
-        
-        # Add bullet points to each item
-        formatted_items = [f'• {item}' for item in items]
-        
-        # Join the items with HTML line breaks
-        formatted_text = '<br>'.join(formatted_items)
-        
-        return formatted_text.strip()
-
     def normalize_word(self, word: str) -> str:
         """Normalize a given word by converting it to lowercase and removing accents.
 
@@ -331,6 +423,10 @@ class FrenchVocabBuilder:
         word = word.lower().strip()
         return ''.join(c for c in unicodedata.normalize('NFD', word) if unicodedata.category(c) != 'Mn')
 
+    def latex_to_anki_format(self, text: str) -> str:
+        """Delegate to the shared LaTeX→HTML conversion helper."""
+        return latex_to_anki_html(text)
+
     def export_to_anki(self, deck_name: str = "French Vocabulary"):
         """Exports the French vocabulary entries to an Anki deck.
 
@@ -346,75 +442,57 @@ class FrenchVocabBuilder:
         Raises:
             IOError: If there's an error writing the Anki package file.
         """
-        def stable_32(seed: str) -> int:
-            """Return a deterministic 32-bit *signed* int for deck/model IDs."""
-            h = hashlib.sha1(seed.encode()).digest()
-            return struct.unpack(">I", h[:4])[0] & 0x7FFFFFFF  # keep positive
-
-        def note_guid(word: str) -> str:
-            """Return the exact same 128-bit GUID for this word every time."""
-            return uuid.uuid5(uuid.NAMESPACE_URL, f"fr_vocab::{word.lower()}").hex
-        
-        # Define the model with a stable ID
-        MODEL_ID = stable_32("FrenchVocabModel/v1")
-        model = genanki.Model(
-            MODEL_ID,
-            'French Vocab Model v1',
-            fields=[
-                {'name': 'French'},
-                {'name': 'Type'},
-                {'name': 'English'},
-                {'name': 'Example'},
-            ],
-            templates=[
-                {
-                    'name': 'Card 1',
-                    'qfmt': '{{French}}<br>{{Type}}',
-                    'afmt': '{{FrontSide}}<hr id="answer">{{English}}<br><br>Example:<br>{{Example}}',
-                },
-            ])
-
-        # Create a new Anki deck with a stable ID
-        DECK_ID = stable_32(f"FrenchDeck::{deck_name}")
-        deck = genanki.Deck(DECK_ID, deck_name)
-
-        # Create sets for all words in LaTeX and all words ever exported to Anki
+        exporter = AnkiExporter(deck_name)
         latex_words = set(self.word_entries.keys())
-        all_exported_words = set(self.exported_words)  # This should contain all previously exported words
+        all_exported_words = set(self.exported_words)
 
-        # Set to keep track of newly added words in this export
-        newly_added_words = set()
+        entries_for_export: List[Tuple[str, str, AnkiExportEntry]] = []
 
-        # Iterate over all word entries
-        for word, entry in self.word_entries.items():
-            # Normalize the word by stripping whitespace and converting to lowercase
-            word = word.strip().lower()
+        for key, entry in self.word_entries.items():
+            normalized_word = key.strip().lower()
+            if normalized_word in all_exported_words:
+                continue
 
-            # Check if the word has already been exported to Anki
-            if word not in all_exported_words:
-                # Ensure word_type is always a string
-                word_type = ', '.join(entry['type']) if isinstance(entry['type'], list) else entry['type']
+            word_type = ', '.join(entry['type']) if isinstance(entry['type'], list) else entry['type']
 
-                # Create a new Anki note with a stable GUID
-                card_guid = note_guid(word)  # deterministic!
-                note = genanki.Note(
-                    model=model,
-                    guid=card_guid,
-                    fields=[
-                        entry['word'],
-                        word_type,
-                        self.latex_to_anki_format(entry['definitions']),
-                        self.latex_to_anki_format(entry['examples']),
-                    ])
-                # Add the note to the deck
-                deck.add_note(note)
-                # Mark the word as exported
-                all_exported_words.add(word)
-                # Add the word to the set of newly added words
-                newly_added_words.add(word)
+            definitions_list = entry.get('definitions_list')
+            if not definitions_list:
+                definitions_source = entry.get('definitions', '')
+                definitions_list = [d.strip() for d in re.split(r';\s*', definitions_source) if d.strip()]
+
+            examples_list = entry.get('examples_list')
+            if not examples_list:
+                examples_list = []
+                for example in re.split(r';\s*', entry.get('examples', '')):
+                    example = example.strip()
+                    if not example:
+                        continue
+                    if ' (' in example and example.endswith(')'):
+                        fr, en = example.rsplit(' (', 1)
+                        examples_list.append((fr, en[:-1]))
+                    else:
+                        examples_list.append((example, ''))
+
+            export_entry = AnkiExportEntry(
+                word=entry['word'],
+                word_type=word_type,
+                definitions=definitions_list,
+                examples=examples_list,
+            )
+            entries_for_export.append((normalized_word, entry['word'], export_entry))
+
+        deck = exporter.build_deck([item[2] for item in entries_for_export])
 
         # Write the deck to a .apkg file
         genanki.Package(deck).write_to_file(f'{deck_name}.apkg')
+
+        newly_added_words_normalized = set()
+        newly_added_display = set()
+
+        for normalized_word, display_word, _ in entries_for_export:
+            all_exported_words.add(normalized_word)
+            newly_added_words_normalized.add(normalized_word)
+            newly_added_display.add(display_word)
 
         # Update the exported_words set and save it
         self.exported_words = all_exported_words
@@ -425,10 +503,10 @@ class FrenchVocabBuilder:
         [bold green]Anki deck '{deck_name}.apkg' created successfully![/bold green]
 
         [bold blue]Total words in deck: {len(all_exported_words)}[/bold blue]
-        [bold cyan]Newly added words in this export: {len(newly_added_words)}[/bold cyan]
+        [bold cyan]Newly added words in this export: {len(newly_added_words_normalized)}[/bold cyan]
 
         New words added:
-        {', '.join(sorted(newly_added_words)) if newly_added_words else 'No new words added in this export.'}
+        {', '.join(sorted(newly_added_display, key=str.lower)) if newly_added_display else 'No new words added in this export.'}
         """
 
         # Compare LaTeX words with all exported words
@@ -511,16 +589,20 @@ class FrenchVocabBuilder:
 
     
     def welcome_screen(self):
-        # Determine which provider is being used
+        # Determine which provider/model is being used
         provider_name = "Unknown"
-        if isinstance(self.client, GeminiClient):
-            provider_name = "Google Gemini"
-        else:
-            # Check for Claude client (use string comparison to avoid import errors)
-            client_class_name = self.client.__class__.__name__
-            if client_class_name == "ClaudeClient":
-                provider_name = "Anthropic Claude"
-            
+        if self.client is not None:
+            label_getter = getattr(self.client, "model_label", None)
+            if callable(label_getter):
+                try:
+                    provider_name = label_getter()
+                except Exception:
+                    provider_name = self.client.__class__.__name__
+            elif isinstance(self.client, GeminiClient):
+                provider_name = f"Google Gemini ({self.client.MODEL_NAME})"
+            else:
+                provider_name = self.client.__class__.__name__
+        
         self.ui.panel(
             f"[bold blue]Welcome to the French Vocabulary LaTeX Builder![/bold blue]\n\n"
             f"This application helps you build a LaTeX document for French vocabulary.\n"
@@ -559,44 +641,105 @@ class FrenchVocabBuilder:
         return choice
 
     def get_word_input(self) -> str:
+        """Read French text from the user, supporting multi-line input.
+
+        Instructions:
+        - Type/paste your text. Press Enter on an empty line to submit.
+        - Enter 'q' on the first line to cancel.
+        """
+        lines = []
+        first = True
         while True:
-            word = input("\nEnter a French word or short expression (or 'q' to cancel): ").strip()
-            
-            if word.lower() == 'q':
+            try:
+                prompt = (
+                    "\nEnter French text (word/phrase/sentence). Empty line to submit (or 'q' to cancel): "
+                    if first
+                    else "Enter more text (or press Enter to finish): "
+                )
+                line = input(prompt)
+            except EOFError:
+                break
+
+            # Allow cancel on the very first line
+            if first and line.strip().lower() == 'q':
                 self.ui.warning("Input cancelled. Returning to main menu.")
                 return ""
-            
-            # Normalize apostrophes: convert curly quotes to straight apostrophes
-            word = word.replace("’", "'").replace("‘", "'")
-            
-            if len(word.split()) > 10:
-                self.ui.error("Please enter a single word or short expression (max 10 words).")
-            elif len(word) > self.max_word_length:
-                self.ui.error(f"Input is too long. Please limit to {self.max_word_length} characters.")
-            elif not word:
-                self.ui.error("Input cannot be empty.")
-            elif not self.is_valid_french_input(word):
-                self.ui.error("Input contains invalid characters for French words.")
-            else:
-                return word
+
+            # Empty line after at least one line submits the entry
+            if not line.strip() and not first:
+                break
+
+            lines.append(line)
+            first = False
+
+        word = "\n".join(lines).strip()
+
+        # Normalize apostrophes: convert curly quotes to straight apostrophes
+        word = word.replace("’", "'").replace("‘", "'")
+
+        # Basic validations
+        if not word:
+            self.ui.error("Input cannot be empty.")
+            return ""
+        if self.max_words is not None and len(word.split()) > self.max_words:
+            self.ui.error(f"Please limit to {self.max_words} words.")
+            return ""
+        if len(word) > self.max_word_length:
+            self.ui.error(f"Input is too long. Please limit to {self.max_word_length} characters.")
+            return ""
+        if not self.is_valid_french_input(word):
+            self.ui.error("Input contains unsupported characters for French text.")
+            return ""
+
+        return word
 
     def is_valid_french_input(self, word: str) -> bool:
-        # Allow letters (including accented), spaces, hyphens, and apostrophes
-        # Accept straight apostrophe U+0027 ('), and typographic apostrophes U+2019 (’), U+2018 (‘)
-        valid_chars = set("-'") | {"’", "‘"}
-        return all(char.isalpha() or char.isspace() or char in valid_chars for char in word.strip())
+        """Validate user input for French text.
+
+        - In strict mode (default for tests or when sentence mode disabled),
+          only letters, spaces, hyphens, and apostrophes are allowed.
+        - In sentence mode (default at runtime), also allow digits and common punctuation.
+        """
+        text = word.strip()
+        if not text:
+            return False
+
+        allow_sentences = getattr(self, 'allow_sentence_punctuation', False)
+        if not allow_sentences:
+            # Original strict behavior
+            base_valid = set(["-", "'", "’", "‘"])  # hyphen and apostrophes
+            return all(ch.isalpha() or ch.isspace() or ch in base_valid for ch in text)
+
+        # Sentence-friendly behavior
+        valid_chars = set([
+            "-", "'", "’", "‘",          # apostrophes/hyphen
+            "–", "—",                       # en/em dash
+            ",", ".", ";", ":", "!", "?",  # punctuation
+            "(", ")", "[", "]",
+            '"', "«", "»", "“", "”",
+            "…", "/", "\\",              # ellipsis, slash, backslash (escaped later for LaTeX)
+            "%", "$", "€", "#", "&", "+", "*", "@", "=",
+        ])
+        return all(
+            ch.isalpha() or ch.isspace() or ch.isdigit() or ch in valid_chars
+            for ch in text
+        )
 
     def query_ai(self, word: str) -> str:
+        provider_key = getattr(self, 'provider', ProviderFactory.default_provider())
+        provider_label = provider_key.capitalize() if isinstance(provider_key, str) else 'Provider'
+
         client = self.get_llm_client()
         if not client:
-            return "[bold red]Failed to initialize Gemini client. Please check your API key and try again.[/bold red]"
+            return f"[bold red]Failed to initialize {provider_label} client. Please check your API key and try again.[/bold red]"
         
-        prompt = AI_PROMPT_TEMPLATE.format(word=word)
+        detected_type = self.detect_input_type(word)
+        prompt = AI_PROMPT_TEMPLATE.format(input_text=word, detected_type=detected_type)
         metrics = {} # Initialize metrics dictionary
         full_text = "" # Initialize full_text
 
         with Progress() as progress:
-            task = progress.add_task("[cyan]Querying Gemini...", total=None)
+            task = progress.add_task(f"[cyan]Querying {provider_label}...", total=None)
             
             chunks = []
             generator = client.stream(prompt) # Get the generator
@@ -613,7 +756,7 @@ class FrenchVocabBuilder:
                         break # Exit the loop
             except Exception as e:
                 # Catch potential errors during streaming itself
-                self.ui.error(f"Error during Gemini stream: {e}")
+                self.ui.error(f"Error during {provider_label} stream: {e}")
                 # Attempt to get metrics even if streaming errored mid-way
                 # This assumes the generator's finally block still runs, which it should
                 try:
@@ -628,6 +771,7 @@ class FrenchVocabBuilder:
                 # Set default metrics if none were captured
                 if not metrics:
                     metrics = {'ttft': -1, 'tps': -1, 'tokens_out': -1} # Indicate error state
+                self.ui.display_metrics(metrics)
                 return "" # Return empty string on error
             finally:
                 # Ensure progress bar completes if it hasn't
@@ -655,41 +799,8 @@ class FrenchVocabBuilder:
                 - list of definitions (List[str])
                 - list of examples, each a tuple of (French, English) (List[Tuple[str, str]])
         """
-        # Extract word type
-        word_type_match = re.search(r"Word Type:\s*(.*?)\nDefinitions:", response, re.DOTALL)
-        if word_type_match:
-            word_type_string = word_type_match.group(1).strip()
-            word_type = [word_type_string]  # Treat as a single-item list
-        else:
-            word_type: str = "Unknown"
-
-        # Extract definitions
-        definitions_match = re.search(
-            r"Definitions:(.*?)Examples:", response, re.DOTALL
-        )
-        if definitions_match:
-            definitions_text = definitions_match.group(1)
-            definitions = [
-                d.strip() for d in re.findall(r"[a-z]\.\s*(.*)", definitions_text)
-            ]
-        else:
-            definitions = []
-
-        # Extract examples
-        examples_match = re.search(r"Examples:(.*)", response, re.DOTALL)
-        if examples_match:
-            examples_text = examples_match.group(1)
-            examples = re.findall(
-                r"(\d+\.\s*(.*?)\n\s*(.*?)(?=\n\d+\.|\Z))", examples_text, re.DOTALL
-            )
-            examples = [
-                (french.strip(), english.strip().strip("[]"))
-                for _, french, english in examples
-            ]
-        else:
-            examples = []
-
-        return word_type, definitions, examples
+        parsed = parse_ai_response_text(response)
+        return parsed.word_type, parsed.definitions, parsed.examples
 
     @staticmethod
     def format_latex_entry(
@@ -731,7 +842,7 @@ class FrenchVocabBuilder:
             return pattern.sub(lambda m: mapping[m.group(0)], text)
 
         # Capitalize and escape word and type
-        capitalized_word = escape_latex(word.capitalize())
+        capitalized_word = escape_latex(word if word_type.lower() == 'sentence' else word.capitalize())
         escaped_type = escape_latex(word_type)
 
         # Escape definitions and examples
@@ -753,9 +864,6 @@ class FrenchVocabBuilder:
       {{
     {example_items.rstrip()}
       }}"""
-
-        # Remove all square brackets (LLM sometimes wraps hints in [] )
-        latex_entry = re.sub(r"\[|\]", "", latex_entry)
 
         return latex_entry
 
@@ -939,6 +1047,25 @@ class FrenchVocabBuilder:
                 self.ui.warning(f"Skipping '{original_word}' due to duplicate check (Stage 1).")
                 return # User chose to skip or view existing entry
 
+        # Detect input type early (used to control downstream flow)
+        detected_type = self.detect_input_type(original_word)
+
+        # Optional intelligent routing: send sentences to Fr->En translator
+        if detected_type == 'sentence' and getattr(self, 'route_sentences', True):
+            try:
+                route = Confirm.ask("This looks like a full sentence. Translate and save in FrenchToEnglish.tex instead?", default=True)
+            except Exception:
+                route = True
+            if route:
+                if not self.fr_to_eng_translator:
+                    self.ui.error("French-to-English translator is not available (initialization failed). Proceeding in vocab mode.")
+                else:
+                    # Perform translation and save via the translator
+                    ok = self.fr_to_eng_translator.translate_and_save(original_word)
+                    if ok is False:
+                        self.ui.warning("Translation cancelled or failed.")
+                    return
+
         # --- Query AI ---
         ai_response = self.query_ai(original_word)
         if not ai_response:
@@ -946,9 +1073,16 @@ class FrenchVocabBuilder:
             return
 
         # --- Spelling Check and Final Word Determination ---
-        final_word = self.check_spelling(original_word, ai_response)
+        if detected_type == 'sentence':
+            # For sentences, do not attempt to auto-correct; keep text as-is
+            final_word = original_word
+        else:
+            final_word = self.check_spelling(original_word, ai_response)
         if final_word is None: # User chose to abandon the edit during spelling check
-            self.ui.warning(f"Abandoning entry for '{original_word}'.")
+            preview = original_word.strip().replace('\n', ' ')
+            if len(preview) > 80:
+                preview = preview[:77] + '...'
+            self.ui.warning(f"Abandoning entry for '{preview}'.")
             return
         
         # --- Stage 2 Duplicate Check (Final/Corrected Word) ---
@@ -967,6 +1101,26 @@ class FrenchVocabBuilder:
         if not word_type or not definitions or not examples:
              self.ui.error("Failed to parse essential information from AI response. Aborting.")
              return
+
+        # Post-parse routing opportunity if AI identified as sentence
+        if (word_type and isinstance(word_type, list) and word_type[0].lower() == 'sentence' and
+            getattr(self, 'route_sentences', True)):
+            try:
+                route2 = Confirm.ask("AI identified this as a sentence. Route to French→English translator instead?", default=True)
+            except Exception:
+                route2 = True
+            if route2:
+                if not self.fr_to_eng_translator:
+                    self.ui.error("French-to-English translator is not available (initialization failed). Proceeding in vocab mode.")
+                else:
+                    ok = self.fr_to_eng_translator.translate_and_save(original_word)
+                    if ok is False:
+                        self.ui.warning("Translation cancelled or failed.")
+                    return
+
+        # If we keep sentence in vocab and examples are disabled, drop them
+        if word_type and word_type[0].lower() == 'sentence' and not getattr(self, 'sentence_examples_in_vocab', False):
+            examples = []
 
         # --- Display Parsed Info ---
         self.display_parsed_info(final_word, word_type, definitions, examples)
@@ -1125,26 +1279,37 @@ class FrenchVocabBuilder:
             # Valid correction found that's different from input
             self.console.print(f"Did you mean '{corrected_spelling}' instead of '{word}'?")
             self.console.print("y: Yes, use the corrected spelling")
-            self.console.print("n: No, keep the original spelling")
+            self.console.print("n: No, cancel this entry")
             self.console.print("q: Quit and abandon this edit")
-            choice = Prompt.ask("Your choice", choices=["y", "n", "q"], default="y")
-            
-            if choice == "y":
-                return corrected_spelling
-            elif choice == "q":
-                self.ui.warning("Abandoning edit. Returning to main menu.")
-                return None
+            # Robust input loop to avoid issues with leftover buffered lines
+            while True:
+                try:
+                    choice = input("Your choice [y/n/q] (y): ").strip().lower()
+                except EOFError:
+                    choice = ''
+                if choice in ('', 'y', 'yes'):
+                    return corrected_spelling
+                if choice in ('n', 'no'):
+                    self.ui.warning("Correction rejected. Entry cancelled.")
+                    return None
+                if choice in ('q', 'quit'):
+                    self.ui.warning("Abandoning edit. Returning to main menu.")
+                    return None
+                self.ui.error("Please select one of: y, n, q.")
         
         return word
 
     def add_word_to_entries(self, word: str, word_type: str, definitions: List[str], examples: List[Tuple[str, str]]):
         """Updates the in-memory dictionaries with the new word entry."""
         word_lower = word.lower()
+        display_word = word if word_type.lower() == 'sentence' else word.capitalize()
         self.word_entries[word_lower] = {
-            "word": word.capitalize(),
+            "word": display_word,
             "type": word_type,
             "definitions": "; ".join(definitions),
             "examples": "; ".join([f"{f} ({e})" for f, e in examples]),
+            "definitions_list": list(definitions),
+            "examples_list": list(examples),
         }
         # Update normalized entries as well
         normalized_word = self.normalize_word(word_lower)

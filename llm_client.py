@@ -12,8 +12,12 @@ class LLMClient(ABC):
         """Yield chunks of pure text."""
         ...
 
+    def model_label(self) -> str:
+        """Return a human-readable provider/model label."""
+        return self.__class__.__name__
+
 class GeminiClient(LLMClient):
-    MODEL_NAME = "gemini-2.0-flash"
+    MODEL_NAME = "gemini-flash-latest"
 
     def __init__(self, api_key: str | None = None):
         key = api_key or os.getenv("GEMINI_API_KEY")
@@ -38,7 +42,10 @@ class GeminiClient(LLMClient):
                 parts=[types.Part.from_text(text=prompt)]
             )
         ]
-        cfg = types.GenerateContentConfig(response_mime_type="text/plain")
+        cfg = types.GenerateContentConfig(
+            response_mime_type="text/plain",
+            thinking_config=types.ThinkingConfig(thinking_budget=-1),
+        )
 
         stream = client.models.generate_content_stream(
             model=model_name,
@@ -93,11 +100,14 @@ class GeminiClient(LLMClient):
             duration = duration or 1e-9
             tps = out_tokens / duration
 
-            return dict(
-                ttft=ttft,
-                tokens_out=out_tokens,
-                tps=tps,
-            )
+        return dict(
+            ttft=ttft,
+            tokens_out=out_tokens,
+            tps=tps,
+        )
+
+    def model_label(self) -> str:
+        return f"Google Gemini ({self.MODEL_NAME})"
 
 # Optional Claude client implementation for backward compatibility
 # To restore Claude support, users can simply switch to this client
@@ -127,6 +137,9 @@ try:
             ) as stream:
                 for text in stream.text_stream:
                     yield text
+
+        def model_label(self) -> str:
+            return f"Anthropic Claude ({self.MODEL_NAME})"
 except ImportError:
     # If anthropic is not installed, provide a stub that raises an informative error
     class ClaudeClient(LLMClient):
@@ -138,6 +151,9 @@ except ImportError:
         
         def stream(self, prompt: str):
             yield ""
+
+        def model_label(self) -> str:
+            return "Anthropic Claude (unavailable)"
 
 class ProviderFactory:
     """Factory to create different LLM client implementations."""

@@ -30,6 +30,11 @@ class TestLatexToAnki(unittest.TestCase):
         out = FrenchVocab.FrenchVocabBuilder.latex_to_anki_format(self.builder, "")
         self.assertEqual(out, "")
 
+    def test_latex_to_anki_preserves_macro_content(self):
+        text = "\\item Texte en \\textbf{gras} et \\emph{italique}"
+        out = FrenchVocab.FrenchVocabBuilder.latex_to_anki_format(self.builder, text)
+        self.assertIn('• Texte en gras et italique', out)
+
 
 if __name__ == '__main__':
     unittest.main()
