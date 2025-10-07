@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 from rich.table import Table
+from rich.text import Text
 
 from llm_client import LLMClient
 from fr_to_eng_latex_templates import INITIAL_FR_ENG_TEX_CONTENT, FINAL_FR_ENG_TEX_CONTENT, FR_TO_ENG_TRANSLATION_PROMPT_TEMPLATE
@@ -177,9 +178,12 @@ class FrenchToEnglishTranslator:
             lines.append(line)
             first = False
             current_text = "\n".join(lines).strip()
+            display = Text()
+            display.append(f"Captured so far ({len(lines)} line(s)):\n", style="dim")
+            display.append(current_text if current_text else "[empty]")
             self.console.print(
                 Panel(
-                    f"[dim]Captured so far ({len(lines)} line(s)):[/dim] {current_text if current_text else '[empty]'}",
+                    display,
                     border_style="dim",
                     expand=False,
                 )
@@ -255,8 +259,10 @@ class FrenchToEnglishTranslator:
         table = Table(title="Confirm Translation", show_header=False, box=None, padding=(0, 1), expand=True)
         table.add_column(style="magenta", no_wrap=True, width=10)
         table.add_column(style="white", no_wrap=False, overflow="fold")
-        table.add_row(f"{self.source_label}:", french)
-        table.add_row(f"{self.target_label}:", f"[bold green]{english}[/bold green]")
+        source_text = Text(french)
+        target_text = Text(english, style="bold green")
+        table.add_row(f"{self.source_label}:", source_text)
+        table.add_row(f"{self.target_label}:", target_text)
 
         self.console.print(Panel(table, border_style="blue", expand=True))
         return self._confirm_yes_no(
