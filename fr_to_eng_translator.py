@@ -375,10 +375,8 @@ class FrenchToEnglishTranslator:
             title="Translator Mode",
             border_style="blue"
         ))
-        while True:
-            # Directly ask for a translation. If the user quits, break the loop.
-            if not self.run_single_translation():
-                break
+        self.run_single_translation()
+        self.console.print("Returning to main menu.")
 
     def display_all_pairs(self):
         if not self.fr_eng_pairs:
