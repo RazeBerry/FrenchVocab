@@ -2,7 +2,7 @@ import re
 import string
 import unicodedata
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from rich.console import Console
 from rich.panel import Panel
@@ -15,12 +15,34 @@ from fr_to_eng_latex_templates import INITIAL_FR_ENG_TEX_CONTENT, FINAL_FR_ENG_T
 class FrenchToEnglishTranslator:
     DEFAULT_FILENAME = "FrenchToEnglish.tex"
 
-    def __init__(self, console: Console, client: LLMClient, latex_file_path: Optional[Path] = None):
+    def __init__(
+        self,
+        console: Console,
+        client: LLMClient,
+        latex_file_path: Optional[Path] = None,
+        prompt_template: str = FR_TO_ENG_TRANSLATION_PROMPT_TEMPLATE,
+        initial_tex_content: str = INITIAL_FR_ENG_TEX_CONTENT,
+        final_tex_content: str = FINAL_FR_ENG_TEX_CONTENT,
+        default_filename: Optional[str] = None,
+        source_label: str = "French",
+        target_label: str = "English",
+        ui_title: str = "French → English Translator",
+        table_headers: Tuple[str, str] = ("French", "English"),
+    ):
         self.console = console
         self.client = client
+        self.prompt_template = prompt_template
+        self.initial_tex_content = initial_tex_content
+        self.final_tex_content = final_tex_content
+        self.source_label = source_label
+        self.target_label = target_label
+        self.ui_title = ui_title
+        self.table_headers = table_headers
+
+        filename = default_filename or self.DEFAULT_FILENAME
 
         if latex_file_path is None:
-            self.latex_file = Path.cwd() / self.DEFAULT_FILENAME
+            self.latex_file = Path.cwd() / filename
         else:
             self.latex_file = latex_file_path
 
@@ -38,8 +60,8 @@ class FrenchToEnglishTranslator:
         try:
             self.latex_file.parent.mkdir(parents=True, exist_ok=True)
             with self.latex_file.open('w', encoding='utf-8') as file:
-                file.write(INITIAL_FR_ENG_TEX_CONTENT)
-                file.write(FINAL_FR_ENG_TEX_CONTENT)
+                file.write(self.initial_tex_content)
+                file.write(self.final_tex_content)
             self.console.print(f"[bold green]Created initial LaTeX file: {self.latex_file}[/bold green]")
         except IOError as e:
             self.console.print(f"[bold red]Error creating initial LaTeX file {self.latex_file}: {e}[/bold red]")
@@ -70,14 +92,18 @@ class FrenchToEnglishTranslator:
                 english_translation = match.group(2).strip()
 
                 if not french_original or not english_translation:
-                   self.console.print(f"[bold yellow]Skipping entry with empty French or English near {match.start()}[/bold yellow]")
+                   self.console.print(
+                       f"[bold yellow]Skipping entry with empty {self.source_label} or {self.target_label} near {match.start()}[/bold yellow]"
+                   )
                    parse_errors += 1
                    continue
 
                 normalized_french = self.normalize_french(french_original)
 
                 if normalized_french in self.fr_eng_pairs:
-                    self.console.print(f"[bold orange3]Warning: Duplicate normalized French key '{normalized_french}' found. Overwriting.[/bold orange3]")
+                    self.console.print(
+                        f"[bold orange3]Warning: Duplicate normalized {self.source_label} key '{normalized_french}' found. Overwriting.[/bold orange3]"
+                    )
 
                 self.fr_eng_pairs[normalized_french] = {
                     'french': french_original,
@@ -90,7 +116,10 @@ class FrenchToEnglishTranslator:
                 parse_errors += 1
 
         self.entry_count = len(self.fr_eng_pairs)
-        self.console.print(f"Loaded {self.entry_count} French-English pairs from {self.latex_file}. ({parse_errors} errors)")
+        pair_label = f"{self.source_label}-{self.target_label}"
+        self.console.print(
+            f"Loaded {self.entry_count} {pair_label} pairs from {self.latex_file}. ({parse_errors} errors)"
+        )
 
     def normalize_french(self, text: str) -> str:
         if not text:
@@ -106,21 +135,64 @@ class FrenchToEnglishTranslator:
 
     def display_duplicate_warning(self, existing_entry: Dict[str, str]):
         panel_content = (
-            f"This French phrase already exists:\n\n"
-            f"  [bold magenta]FR:[/bold magenta] {existing_entry['french']}\n"
-            f"  [bold cyan]EN:[/bold cyan] {existing_entry['english']}"
+            f"This {self.source_label} phrase already exists:\n\n"
+            f"  [bold magenta]{self.source_label}:[/bold magenta] {existing_entry['french']}\n"
+            f"  [bold cyan]{self.target_label}:[/bold cyan] {existing_entry['english']}"
         )
         self.console.print(Panel(panel_content, title="Duplicate Found", border_style="yellow", expand=False))
 
-    def get_french_input(self) -> Optional[str]:
+    def _collect_multiline_input(self, language_label: str) -> Optional[str]:
+        instructions = (
+            f"[cyan]Enter {language_label} text to translate.[/cyan]\n"
+            "[dim]- Paste or type your text. Press Enter on an empty line to submit.\n"
+            "- Enter 'q' on the first line to cancel.\n"
+            "- After each line, the current text will be echoed so you can simply press Enter to finish.[/dim]"
+        )
+        self.console.print(Panel(instructions, border_style="blue", expand=False))
+
+        lines = []
+        first = True
         while True:
-            french_text = Prompt.ask("\nEnter the French text to translate (or 'q' to cancel)").strip()
-            if french_text.lower() == 'q':
+            try:
+                prompt = (
+                    f"\nEnter {language_label} text (or 'q' to cancel): "
+                    if first
+                    else "Enter additional text (leave blank to finish): "
+                )
+                line = input(prompt)
+            except EOFError:
+                break
+
+            if first and line.strip().lower() == 'q':
                 self.console.print("[yellow]Translation cancelled.[/yellow]")
                 return None
-            if not french_text:
-                self.console.print("[bold red]Input cannot be empty.[/bold red]")
-            else:
+
+            if not line and not first:
+                break
+
+            lines.append(line)
+            first = False
+            current_text = "\n".join(lines).strip()
+            self.console.print(
+                Panel(
+                    f"[dim]Captured so far ({len(lines)} line(s)):[/dim] {current_text if current_text else '[empty]'}",
+                    border_style="dim",
+                    expand=False,
+                )
+            )
+
+        text = "\n".join(lines).strip()
+        if not text:
+            self.console.print("[bold red]Input cannot be empty.[/bold red]")
+            return None
+        return text
+
+    def get_french_input(self) -> Optional[str]:
+        while True:
+            french_text = self._collect_multiline_input(self.source_label)
+            if french_text is None:
+                return None
+            if french_text:
                 return french_text
 
     def query_ai_for_translation(self, french_text: str) -> Optional[str]:
@@ -128,7 +200,7 @@ class FrenchToEnglishTranslator:
             self.console.print("[bold red]LLM client not available.[/bold red]")
             return None
 
-        prompt = FR_TO_ENG_TRANSLATION_PROMPT_TEMPLATE.format(french_text=french_text)
+        prompt = self.prompt_template.format(french_text=french_text)
 
         try:
             with self.console.status("[cyan]Querying AI for translation..."):
@@ -156,15 +228,32 @@ class FrenchToEnglishTranslator:
             self.console.print(f"[bold red]An error occurred during AI query: {e}[/bold red]")
             return None
 
+    def _confirm_yes_no(self, message: str, default: bool = True) -> bool:
+        default_choice = "y" if default else "n"
+        prompt_text = f"{message} [y/n]"
+        while True:
+            response = Prompt.ask(prompt_text, default=default_choice)
+            if response is None:
+                response = default_choice
+            normalized = response.strip().lower()
+            if normalized in {"y", "yes"}:
+                return True
+            if normalized in {"n", "no"}:
+                return False
+            self.console.print("[bold yellow]Please enter Y or N.[/bold yellow]")
+
     def confirm_translation(self, french: str, english: str) -> bool:
         table = Table(title="Confirm Translation", show_header=False, box=None, padding=(0, 1), expand=True)
         table.add_column(style="magenta", no_wrap=True, width=10)
         table.add_column(style="white", no_wrap=False, overflow="fold")
-        table.add_row("French:", french)
-        table.add_row("English:", f"[bold green]{english}[/bold green]")
+        table.add_row(f"{self.source_label}:", french)
+        table.add_row(f"{self.target_label}:", f"[bold green]{english}[/bold green]")
 
         self.console.print(Panel(table, border_style="blue", expand=True))
-        return Confirm.ask("Save this translation?", default=True)
+        return self._confirm_yes_no(
+            f"Save this {self.source_label.lower()} → {self.target_label.lower()} translation?",
+            default=True,
+        )
 
     def _format_latex_entry(self, french: str, english: str) -> str:
         def escape_latex(text: str) -> str:
@@ -267,7 +356,7 @@ class FrenchToEnglishTranslator:
 
     def run(self):
         self.console.print(Panel(
-            "[bold blue]French -> English Translator[/bold blue]\nEnter French phrases to translate. Type 'q' to return to the main menu at any time.",
+            f"[bold blue]{self.ui_title}[/bold blue]\nEnter {self.source_label} phrases to translate. Type 'q' to return to the main menu at any time.",
             title="Translator Mode",
             border_style="blue"
         ))
@@ -278,12 +367,12 @@ class FrenchToEnglishTranslator:
 
     def display_all_pairs(self):
         if not self.fr_eng_pairs:
-            self.console.print("[yellow]No saved French-English pairs found.[/yellow]")
+            self.console.print(f"[yellow]No saved {self.source_label}-{self.target_label} pairs found.[/yellow]")
             return
 
-        table = Table(title=f"All French-English Pairs ({self.entry_count})", expand=True)
-        table.add_column("French", style="magenta", max_width=50)
-        table.add_column("English", style="cyan", max_width=50)
+        table = Table(title=f"All {self.source_label}-{self.target_label} Pairs ({self.entry_count})", expand=True)
+        table.add_column(self.table_headers[0], style="magenta", max_width=50)
+        table.add_column(self.table_headers[1], style="cyan", max_width=50)
         
         sorted_pairs = sorted(self.fr_eng_pairs.values(), key=lambda p: self.normalize_french(p['french']))
 

@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import shutil
 import unicodedata
 from typing import List, Tuple, Optional, Dict, Set
 import sys
@@ -8,8 +9,8 @@ import genanki
 from rich.console import Console
 from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
+from rich.text import Text
 from enum import Enum, auto
-from latex_templates import INITIAL_TEX_CONTENT, SAMPLE_ENTRY, FINAL_TEX_CONTENT, AI_PROMPT_TEMPLATE
 from anki_exporter import AnkiExporter, AnkiExportEntry, latex_to_anki_format as latex_to_anki_html
 from ai_response_parser import parse_ai_response_text
 import time
@@ -19,6 +20,13 @@ from keyring.errors import KeyringError
 from pathlib import Path
 from llm_client import GeminiClient, ProviderFactory
 from latex_repository import LatexRepository
+from languages import (
+    LanguageConfig,
+    TranslatorConfig,
+    available_language_codes,
+    default_language_code,
+    get_language_config,
+)
 
 # Import the new translator class
 from eng_to_fr_translator import EnglishToFrenchTranslator
@@ -26,6 +34,23 @@ from fr_to_eng_translator import FrenchToEnglishTranslator
 from ui_helper import UIHelper
 
 console = Console()
+
+WELCOME_ASCII_ART = r"""
+,--,                                          ,---,                         ,-.           
+       ,---.                                  ,---,                 ,--.'|                                         '  .' \                    ,--/ /|   ,--,    
+      /__./|   ,---.                        ,---.'|            ,--, |  | :                __  ,-.                 /  ;    '.          ,---, ,--. :/ | ,--.'|    
+ ,---.;  ; |  '   ,'\                       |   | :          ,'_ /| :  : '              ,' ,'/ /|                :  :       \     ,-+-. /  |:  : ' /  |  |,     
+/___/ \  | | /   /   |   ,---.     ,--.--.  :   : :     .--. |  | : |  ' |     ,--.--.  '  | |' |   .--,         :  |   /\   \   ,--.'|'   ||  '  /   `--'_     
+\   ;  \ ' |.   ; ,. :  /     \   /       \ :     |,-.,'_ /| :  . | '  | |    /       \ |  |   ,' /_ ./|         |  :  ' ;.   : |   |  ,"' |'  |  :   ,' ,'|    
+ \   \  \: |'   | |: : /    / '  .--.  .-. ||   : '  ||  ' | |  | | '  | :   .--.  .-. |'  :  /, ' , ' :         |  |  ;/  \   \|   | /  | ||  |   \  '  | |    
+  ;   \  ' .'   | .; :.    ' /    \__\/: . .|   |  / :|  | ' |  | | '  : |__  \__\/: . .|  | '/___/ \: |         '  :  | \  \ ,'|   | |  | |'  : |. \ |  | :    
+   \   \   '|   :    |'   ; :__   ," .--.; |'   : |: |:  | : ;  ; | |  | '.'| ," .--.; |;  : | .  \  ' |         |  |  '  '--'  |   | |--'  |  | ' \ \'  : |__  
+    \   `  ; \   \  / '   | '.'| /  /  ,.  ||   | '/ :'  :  `--'   \;  :    ;/  /  ,.  ||  , ;  \  ;   :         |  :  :        |   |/      '  : |--' |  | '.'| 
+     :   \ |  `----'  |   :    :;  :   .'   \   :    |:  ,      .-./|  ,   /;  :   .'   \---'    \  \  ;         |  | ,'        |   |       ;  |,'    ;  :    ; 
+      '---"            \   \  / |  ,     .-./    \  /  `--`----'     ---`-' |  ,     .-./         :  \  \        `--''          '---'       '--'      |  ,   /  
+                        `----'   `--`---'   `-'----'                         `--`---'              \  ' ;                                              ---`-'   
+                                                                                                    `--`
+"""
 
 
 class WordType(Enum):
@@ -39,30 +64,60 @@ class WordType(Enum):
 
 
 class FrenchVocabBuilder:
-    DEFAULT_FILENAME = "FrenchVocab.tex"
-    def __init__(self, latex_file: Optional[str], provider: str = None, verbose: bool = False, client: Optional[GeminiClient] = None):
+    DEFAULT_LANGUAGE_CONFIG = get_language_config(None)
+    DEFAULT_LANGUAGE_CODE = default_language_code()
+    DEFAULT_FILENAME = DEFAULT_LANGUAGE_CONFIG.vocab_filename
+    language_config: LanguageConfig = DEFAULT_LANGUAGE_CONFIG
+    language_code: str = DEFAULT_LANGUAGE_CODE
+
+    def __init__(
+        self,
+        latex_file: Optional[str],
+        provider: str = None,
+        verbose: bool = False,
+        client: Optional[GeminiClient] = None,
+        language: Optional[str] = None,
+        language_config: Optional[LanguageConfig] = None,
+    ):
         init_start = time.time()
-        
+
+        if language and language_config:
+            raise ValueError("Provide either language or language_config, not both.")
+
+        if language_config is None:
+            resolved_language = language or self.DEFAULT_LANGUAGE_CODE
+            language_config = get_language_config(resolved_language)
+
+        self.language_config = language_config
+        self.language_code = language_config.code
+        self.vocab_template = language_config.vocab
+        entry_command = self.vocab_template.entry_command or "\\entry"
+        if not entry_command.startswith("\\"):
+            entry_command = f"\\{entry_command}"
+        self.entry_command = entry_command
+
         self.console = Console()
         self.ui = UIHelper(self.console)  # Initialize UIHelper
         # Use pathlib for cross-platform file handling
-        script_dir = Path(__file__).parent # Get the directory where the script is located
+        script_dir = Path(__file__).parent  # Get the directory where the script is located
 
+        self.default_vocab_filename = self.language_config.vocab_filename
         if latex_file is None:
-            self.latex_file = script_dir / self.DEFAULT_FILENAME # Base path on script directory
-            self.eng_to_fr_latex_file = script_dir / EnglishToFrenchTranslator.DEFAULT_FILENAME # Base path on script directory
-            self.fr_to_eng_latex_file = script_dir / FrenchToEnglishTranslator.DEFAULT_FILENAME
+            self.latex_file = script_dir / self.default_vocab_filename  # Base path on script directory
+            self.eng_to_fr_latex_file = script_dir / self.language_config.eng_to_target_filename
+            self.fr_to_eng_latex_file = script_dir / self.language_config.target_to_eng_filename
         else:
             self.latex_file = Path(latex_file)
             # Assume the Eng->Fr file lives alongside the main one if a path is given
-            self.eng_to_fr_latex_file = self.latex_file.parent / EnglishToFrenchTranslator.DEFAULT_FILENAME
-            self.fr_to_eng_latex_file = self.latex_file.parent / FrenchToEnglishTranslator.DEFAULT_FILENAME
+            base_dir = self.latex_file.parent
+            self.eng_to_fr_latex_file = base_dir / self.language_config.eng_to_target_filename
+            self.fr_to_eng_latex_file = base_dir / self.language_config.target_to_eng_filename
 
         if not self.latex_file.exists():
             self.create_initial_tex_file()
-        
+
         # Repository for LaTeX entries (balanced-brace parser)
-        self.repo = LatexRepository(self.latex_file)
+        self.repo = LatexRepository(self.latex_file, entry_command=self.entry_command)
 
         # Allow longer phrases before triggering the length check
         self.max_word_length = 1000  # default max characters (overridable)
@@ -109,21 +164,40 @@ class FrenchVocabBuilder:
         self.load_existing_entries()
         load_entries_end = time.time()
         
-        self.exported_words_file = script_dir / "exported_words.json"
+        self.exported_words_file = self._resolve_exported_words_path(script_dir)
         self.exported_words = self.load_exported_words()
         self.entry_count = self.count_entries()
         
         # Initialize the Eng->Fr translator 
         if self.client:
+             eng_to_target = self.language_config.eng_to_target
+             target_to_eng = self.language_config.target_to_eng
+
              self.eng_to_fr_translator = EnglishToFrenchTranslator(
                  console=self.console,
                  client=self.client,
-                 latex_file_path=self.eng_to_fr_latex_file
+                 latex_file_path=self.eng_to_fr_latex_file,
+                 prompt_template=eng_to_target.prompt_template,
+                 initial_tex_content=eng_to_target.initial_tex_content,
+                 final_tex_content=eng_to_target.final_tex_content,
+                 default_filename=eng_to_target.default_filename,
+                 source_label=eng_to_target.source_label,
+                 target_label=eng_to_target.target_label,
+                 ui_title=eng_to_target.ui_title,
+                 table_headers=eng_to_target.table_headers,
              )
              self.fr_to_eng_translator = FrenchToEnglishTranslator(
                  console=self.console,
                  client=self.client,
-                 latex_file_path=self.fr_to_eng_latex_file
+                 latex_file_path=self.fr_to_eng_latex_file,
+                 prompt_template=target_to_eng.prompt_template,
+                 initial_tex_content=target_to_eng.initial_tex_content,
+                 final_tex_content=target_to_eng.final_tex_content,
+                 default_filename=target_to_eng.default_filename,
+                 source_label=target_to_eng.source_label,
+                 target_label=target_to_eng.target_label,
+                 ui_title=target_to_eng.ui_title,
+                 table_headers=target_to_eng.table_headers,
              )
         else:
              self.ui.error("Could not initialize EnglishToFrenchTranslator due to missing LLM client.")
@@ -136,6 +210,43 @@ class FrenchVocabBuilder:
                 f"  Load config time: {load_config_end - load_config_start:.5f} seconds\n"
                 f"  Load entries time: {load_entries_end - load_entries_start:.5f} seconds"
             )
+
+    def _ui_text(self, key: str, fallback: str) -> str:
+        strings = getattr(self.language_config, "ui_strings", {}) or {}
+        return strings.get(key, fallback)
+
+    def _translator_title(self, config: TranslatorConfig) -> str:
+        title = getattr(config, "ui_title", None)
+        if title:
+            return title
+        source = getattr(config, "source_label", "Source")
+        target = getattr(config, "target_label", "Target")
+        return f"{source} → {target} Translator"
+
+    def _resolve_exported_words_path(self, script_dir: Path) -> Path:
+        lang_code = self.language_code
+        candidate = script_dir / f"exported_words_{lang_code}.json"
+        if lang_code == self.DEFAULT_LANGUAGE_CODE:
+            legacy = script_dir / "exported_words.json"
+            if legacy.exists() and not candidate.exists():
+                try:
+                    legacy.rename(candidate)
+                except OSError:
+                    try:
+                        shutil.copyfile(legacy, candidate)
+                    except OSError:
+                        return legacy
+                return candidate
+            if candidate.exists():
+                return candidate
+            return candidate if not legacy.exists() else legacy
+        return candidate
+
+    def _entry_command(self) -> str:
+        entry_cmd = getattr(self, "entry_command", self.DEFAULT_LANGUAGE_CONFIG.vocab.entry_command)
+        if not entry_cmd.startswith('\\'):
+            entry_cmd = f"\\{entry_cmd}"
+        return entry_cmd
 
     def detect_input_type(self, text: str) -> str:
         """Classify input as 'word', 'expression', or 'sentence' using simple heuristics."""
@@ -158,13 +269,16 @@ class FrenchVocabBuilder:
 
     def create_initial_tex_file(self):
         try:
+            template = getattr(self, "vocab_template", self.DEFAULT_LANGUAGE_CONFIG.vocab)
             # Create the parent directory if needed (only if not in the current directory)
             if self.latex_file.parent != Path('.'):
                 self.latex_file.parent.mkdir(parents=True, exist_ok=True)
             with self.latex_file.open('w', encoding='utf-8') as file:
-                file.write(INITIAL_TEX_CONTENT)
-                file.write(SAMPLE_ENTRY)
-                file.write(FINAL_TEX_CONTENT)
+                file.write(template.initial_content)
+                sample = template.sample_entry or ""
+                if sample:
+                    file.write(sample)
+                file.write(template.final_content)
             self.ui.success(f"Created initial LaTeX file: {self.latex_file}")
         except IOError as e:
             self.ui.error(f"Error creating initial LaTeX file: {e}")
@@ -351,19 +465,26 @@ class FrenchVocabBuilder:
         return self.client
 
     def load_exported_words(self):
-        if self.exported_words_file.exists():
-            with self.exported_words_file.open('r') as f:
+        path = self.exported_words_file
+        if path.exists():
+            with path.open('r', encoding='utf-8') as f:
                 return set(json.load(f))
         return set()
     def save_exported_words(self):
-        with self.exported_words_file.open('w') as f:
+        path = self.exported_words_file
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        except FileExistsError:
+            pass
+        with path.open('w', encoding='utf-8') as f:
             json.dump(list(self.exported_words), f)
 
     def count_entries(self) -> int:
         try:
             with self.latex_file.open("r", encoding="utf-8") as file:
                 content = file.read()
-            return len(re.findall(r"\\entry\{", content))
+            cmd_pattern = re.escape(self._entry_command()) + r"\{"
+            return len(re.findall(cmd_pattern, content))
         except FileNotFoundError:
             self.ui.error(f"File not found - {self.latex_file}")
             return 0
@@ -427,8 +548,8 @@ class FrenchVocabBuilder:
         """Delegate to the shared LaTeX→HTML conversion helper."""
         return latex_to_anki_html(text)
 
-    def export_to_anki(self, deck_name: str = "French Vocabulary"):
-        """Exports the French vocabulary entries to an Anki deck.
+    def export_to_anki(self, deck_name: Optional[str] = None):
+        """Exports the vocabulary entries to an Anki deck.
 
         This method creates an Anki deck using the genanki library by iterating over
         the current vocabulary entries, formatting each entry into an Anki note, and
@@ -437,12 +558,13 @@ class FrenchVocabBuilder:
 
         Args:
             deck_name (str, optional): The name of the Anki deck to be created.
-                Defaults to "French Vocabulary".
+                Defaults to the deck name defined by the active language configuration.
 
         Raises:
             IOError: If there's an error writing the Anki package file.
         """
-        exporter = AnkiExporter(deck_name)
+        deck_name = deck_name or self.language_config.anki.default_deck_name
+        exporter = AnkiExporter(deck_name, self.language_config.anki)
         latex_words = set(self.word_entries.keys())
         all_exported_words = set(self.exported_words)
 
@@ -600,18 +722,25 @@ class FrenchVocabBuilder:
                     provider_name = self.client.__class__.__name__
             elif isinstance(self.client, GeminiClient):
                 provider_name = f"Google Gemini ({self.client.MODEL_NAME})"
-            else:
-                provider_name = self.client.__class__.__name__
-        
+        else:
+            provider_name = self.client.__class__.__name__
+
+        art_text = Text(WELCOME_ASCII_ART, no_wrap=True)
+        self.console.print(art_text, overflow="crop", soft_wrap=False)
+
+        language_name = self.language_config.display_name
+        app_title = self._ui_text("app.title", f"{language_name} Vocabulary LaTeX Builder")
+
         self.ui.panel(
-            f"[bold blue]Welcome to the French Vocabulary LaTeX Builder![/bold blue]\n\n"
-            f"This application helps you build a LaTeX document for French vocabulary.\n"
-            f"You can input French words, and the AI will provide definitions and examples.\n\n"
+            f"[bold blue]Welcome to the {app_title}![/bold blue]\n\n"
+            f"This application helps you build a LaTeX document for {language_name} vocabulary.\n"
+            f"You can input {language_name} words, and the AI will provide definitions and examples.\n\n"
             f"[bold green]Your current vocabulary library contains {self.entry_count} words.[/bold green]\n"
-            f"[bold cyan]Using LLM provider: {provider_name}[/bold cyan]\n\n"
-            f"[italic cyan]Version 1.2[/italic cyan]\n"
+            f"[bold cyan]Using LLM provider: {provider_name}[/bold cyan]\n"
+            f"[bold magenta]Active language: {language_name}[/bold magenta]\n\n"
+            f"[italic cyan]Version 2.0[/italic cyan]\n"
             f"[dim]GitHub: https://github.com/RazeBerry/FrenchVocab/tree/main[/dim]",
-            title="French Vocab Builder",
+            title=self._ui_text("app.panel_title", f"{language_name} Vocab Builder"),
             border_style="bold green"
         )
 
@@ -624,24 +753,76 @@ class FrenchVocabBuilder:
         if self.fr_to_eng_translator:
             fr_eng_count = self.fr_to_eng_translator.entry_count
             
+        exported_count = len(getattr(self, "exported_words", []))
+        language_name = self.language_config.display_name
+        add_word_label = self._ui_text("menu.add_word", f"Add {language_name} word")
+        eng_to_cfg = self.language_config.eng_to_target
+        target_to_cfg = self.language_config.target_to_eng
+        eng_to_target_label = self._ui_text(
+            "menu.eng_to_target",
+            f"Translate {eng_to_cfg.source_label} -> {eng_to_cfg.target_label}",
+        )
+        target_to_eng_label = self._ui_text(
+            "menu.target_to_eng",
+            f"Translate {target_to_cfg.source_label} -> {target_to_cfg.target_label}",
+        )
+
+        display_all_label = self._ui_text("menu.display_all", f"Display all {language_name} words")
+
         options = [
-            ("1", f"Add French word [dim]({self.entry_count} entries)[/dim]"),
-            ("2", f"Translate English -> French [dim]({eng_fr_count} pairs)[/dim]"),
-            ("3", f"Translate French -> English [dim]({fr_eng_count} pairs)[/dim]"),
-            ("4", "Export French words to Anki"),
-            ("5", "Reconcile Anki exports (Fr->En)"),
-            ("6", "Display all French words"),
+            ("1", f"{add_word_label} [dim]({self.entry_count} entries)[/dim]"),
+            ("2", f"{eng_to_target_label} [dim]({eng_fr_count} pairs)[/dim]"),
+            ("3", f"{target_to_eng_label} [dim]({fr_eng_count} pairs)[/dim]"),
+            ("4", f"Anki tools [dim]({exported_count} tracked exports)[/dim]"),
+            ("5", display_all_label),
             ("q", "[bold yellow]Exit[/bold yellow]")
         ]
-        
+
         self.ui.display_menu("Menu", options)
-        
+
         # Update choices to include 'q'
-        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4", "5", "6", "q"], default="1")
+        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4", "5", "q"], default="1")
         return choice
 
+    def show_anki_menu(self) -> str:
+        """Display the nested Anki submenu and return the selected option."""
+        in_latex_not_exported, in_exports_not_latex = self.compare_entries_and_exports()
+        language_name = self.language_config.display_name
+        export_label = self._ui_text("menu.anki_export", f"Export {language_name} words to Anki")
+        reconcile_label = self._ui_text(
+            "menu.anki_reconcile",
+            f"Reconcile Anki exports ({self.language_config.target_to_eng.source_label} -> {self.language_config.target_to_eng.target_label})",
+        )
+        options = [
+            ("1", f"{export_label} [dim](pending: {len(in_latex_not_exported)})[/dim]"),
+            ("2", f"{reconcile_label} [dim](extra: {len(in_exports_not_latex)})[/dim]"),
+            ("b", "[bold yellow]Back to main menu[/bold yellow]")
+        ]
+
+        self.ui.display_menu("Anki Tools", options)
+        return Prompt.ask(
+            "Choose an Anki option",
+            choices=["1", "2", "b"],
+            default="1"
+        )
+
+    def handle_anki_tools(self) -> bool:
+        """Route to the requested Anki workflow.
+
+        Returns True if an action was executed (so we pause afterwards), False if user went back.
+        """
+        choice = self.show_anki_menu()
+        if choice == "1":
+            self.handle_anki_export()
+            return True
+        if choice == "2":
+            self.reconcile_menu_option()
+            return True
+        self.ui.info("Returning to main menu without running Anki actions.")
+        return False
+
     def get_word_input(self) -> str:
-        """Read French text from the user, supporting multi-line input.
+        """Read target-language text from the user, supporting multi-line input.
 
         Instructions:
         - Type/paste your text. Press Enter on an empty line to submit.
@@ -649,12 +830,15 @@ class FrenchVocabBuilder:
         """
         lines = []
         first = True
+        language_name = self.language_config.display_name
+        first_prompt = f"\nEnter {language_name} text (word/phrase/sentence). Empty line to submit (or 'q' to cancel): "
+        continuation_prompt = "Enter more text (or press Enter to finish): "
         while True:
             try:
                 prompt = (
-                    "\nEnter French text (word/phrase/sentence). Empty line to submit (or 'q' to cancel): "
+                    first_prompt
                     if first
-                    else "Enter more text (or press Enter to finish): "
+                    else continuation_prompt
                 )
                 line = input(prompt)
             except EOFError:
@@ -687,43 +871,21 @@ class FrenchVocabBuilder:
         if len(word) > self.max_word_length:
             self.ui.error(f"Input is too long. Please limit to {self.max_word_length} characters.")
             return ""
-        if not self.is_valid_french_input(word):
-            self.ui.error("Input contains unsupported characters for French text.")
+        if not self.is_valid_input(word):
+            self.ui.error(f"Input contains unsupported characters for {self.language_config.display_name} text.")
             return ""
 
         return word
 
-    def is_valid_french_input(self, word: str) -> bool:
-        """Validate user input for French text.
-
-        - In strict mode (default for tests or when sentence mode disabled),
-          only letters, spaces, hyphens, and apostrophes are allowed.
-        - In sentence mode (default at runtime), also allow digits and common punctuation.
-        """
-        text = word.strip()
-        if not text:
-            return False
-
+    def is_valid_input(self, word: str) -> bool:
+        """Validate user input using the active language configuration."""
+        config = getattr(self, "language_config", self.DEFAULT_LANGUAGE_CONFIG)
         allow_sentences = getattr(self, 'allow_sentence_punctuation', False)
-        if not allow_sentences:
-            # Original strict behavior
-            base_valid = set(["-", "'", "’", "‘"])  # hyphen and apostrophes
-            return all(ch.isalpha() or ch.isspace() or ch in base_valid for ch in text)
+        return config.input_validator(word, allow_sentences)
 
-        # Sentence-friendly behavior
-        valid_chars = set([
-            "-", "'", "’", "‘",          # apostrophes/hyphen
-            "–", "—",                       # en/em dash
-            ",", ".", ";", ":", "!", "?",  # punctuation
-            "(", ")", "[", "]",
-            '"', "«", "»", "“", "”",
-            "…", "/", "\\",              # ellipsis, slash, backslash (escaped later for LaTeX)
-            "%", "$", "€", "#", "&", "+", "*", "@", "=",
-        ])
-        return all(
-            ch.isalpha() or ch.isspace() or ch.isdigit() or ch in valid_chars
-            for ch in text
-        )
+    def is_valid_french_input(self, word: str) -> bool:
+        """Backward-compatible alias relying on the active language validator."""
+        return self.is_valid_input(word)
 
     def query_ai(self, word: str) -> str:
         provider_key = getattr(self, 'provider', ProviderFactory.default_provider())
@@ -734,7 +896,9 @@ class FrenchVocabBuilder:
             return f"[bold red]Failed to initialize {provider_label} client. Please check your API key and try again.[/bold red]"
         
         detected_type = self.detect_input_type(word)
-        prompt = AI_PROMPT_TEMPLATE.format(input_text=word, detected_type=detected_type)
+        config = getattr(self, "language_config", self.DEFAULT_LANGUAGE_CONFIG)
+        prompt_template = getattr(config, "prompt_template", None) or self.DEFAULT_LANGUAGE_CONFIG.prompt_template
+        prompt = prompt_template.format(input_text=word, detected_type=detected_type)
         metrics = {} # Initialize metrics dictionary
         full_text = "" # Initialize full_text
 
@@ -807,7 +971,8 @@ class FrenchVocabBuilder:
             word: str,
             word_type: str,
             definitions: List[str],
-            examples: List[Tuple[str, str]]
+            examples: List[Tuple[str, str]],
+            entry_command: Optional[str] = None,
     ) -> str:
         """
         Format the word information into a LaTeX entry.
@@ -841,6 +1006,11 @@ class FrenchVocabBuilder:
             pattern = re.compile('|'.join(re.escape(k) for k in sorted(mapping.keys(), key=len, reverse=True)))
             return pattern.sub(lambda m: mapping[m.group(0)], text)
 
+        # Determine which LaTeX command to use for entries
+        entry_cmd = entry_command or FrenchVocabBuilder.DEFAULT_LANGUAGE_CONFIG.vocab.entry_command
+        if not entry_cmd.startswith('\\'):
+            entry_cmd = f"\\{entry_cmd}"
+
         # Capitalize and escape word and type
         capitalized_word = escape_latex(word if word_type.lower() == 'sentence' else word.capitalize())
         escaped_type = escape_latex(word_type)
@@ -857,7 +1027,7 @@ class FrenchVocabBuilder:
             example_lines.append(f"    \\item {fr_esc} \\\\ {english_part}\n")
         example_items = "".join(example_lines)
 
-        latex_entry = f"""\\entry{{{capitalized_word}}}{{{escaped_type}}}
+        latex_entry = f"""{entry_cmd}{{{capitalized_word}}}{{{escaped_type}}}
       {{
     {def_items.rstrip()}
       }}
@@ -872,7 +1042,8 @@ class FrenchVocabBuilder:
             with self.latex_file.open("r", encoding="utf-8") as file:
                 content = file.read()
 
-            last_entry_index = content.rfind("\\entry")
+            entry_cmd = self._entry_command()
+            last_entry_index = content.rfind(entry_cmd)
             if last_entry_index == -1:
                 # No existing entries; place before \end{itemize} or \end{document}
                 insert_position = content.rfind("\\end{itemize}")
@@ -936,20 +1107,21 @@ class FrenchVocabBuilder:
             footer = content[entries_end:]
 
             # Improved regex pattern that handles nested braces
-            entry_pattern = r"""
-                \\entry
-                \{
-                    (?P<word>[^{}]+)
-                \}
-                \{
-                    (?P<type>[^{}]+)
-                \}
-                \{
-                    (?P<defs> (?: [^{}]+ | \{[^{}]*\} )* )
-                \}
-                \{
-                    (?P<exs>  (?: [^{}]+ | \{[^{}]*\} )* )
-                \}
+            entry_cmd_pattern = re.escape(self._entry_command())
+            entry_pattern = rf"""
+                {entry_cmd_pattern}
+                \{{
+                    (?P<word>[^{{}}]+)
+                \}}
+                \{{
+                    (?P<type>[^{{}}]+)
+                \}}
+                \{{
+                    (?P<defs> (?: [^{{}}]+ | \{{[^{{}}]*\}} )* )
+                \}}
+                \{{
+                    (?P<exs>  (?: [^{{}}]+ | \{{[^{{}}]*\}} )* )
+                \}}
             """
             
             # Find all entries using the improved pattern
@@ -990,8 +1162,10 @@ class FrenchVocabBuilder:
             self.ui.error(f"Error reading from or writing to file: {e}")
 
     def exit_screen(self):
+        language_name = self.language_config.display_name
+        app_title = self._ui_text("app.title", f"{language_name} Vocabulary LaTeX Builder")
         self.ui.panel(
-            "[bold blue]Thank you for using the French Vocabulary LaTeX Builder![/bold blue]\n\n"
+            f"[bold blue]Thank you for using the {app_title}![/bold blue]\n\n"
             "Your LaTeX file has been updated with the new entries.",
             title="Goodbye!",
             border_style="bold green"
@@ -1010,28 +1184,31 @@ class FrenchVocabBuilder:
             if self.fr_to_eng_translator: # Refresh count if initialized
                  self.fr_to_eng_translator.entry_count = len(self.fr_to_eng_translator.fr_eng_pairs)
             choice = self.show_menu()
+            pause_required = True
             if choice == "1":
                 self.handle_new_word_entry()
             elif choice == "2":
                 if self.eng_to_fr_translator:
                     self.eng_to_fr_translator.run()
                 else:
-                    self.ui.error("English-to-French translator is not available (initialization failed).")
+                    title = self._translator_title(self.language_config.eng_to_target)
+                    self.ui.error(f"{title} is not available (initialization failed).")
             elif choice == "3":
                 if self.fr_to_eng_translator:
                     self.fr_to_eng_translator.run()
                 else:
-                    self.ui.error("French-to-English translator is not available (initialization failed).")
+                    title = self._translator_title(self.language_config.target_to_eng)
+                    self.ui.error(f"{title} is not available (initialization failed).")
             elif choice == "4":
-                self.handle_anki_export()
+                pause_required = self.handle_anki_tools()
             elif choice == "5":
-                self.reconcile_menu_option()
-            elif choice == "6":
                 self.display_all_vocabulary()
             elif choice == "q":
                 self.exit_screen()
+                pause_required = False
                 break
-            input("\nPress Enter to continue...")
+            if pause_required:
+                input("\nPress Enter to continue...")
 
     def handle_new_word_entry(self):
         # Reset duplicate resolution per new flow
@@ -1053,12 +1230,17 @@ class FrenchVocabBuilder:
         # Optional intelligent routing: send sentences to Fr->En translator
         if detected_type == 'sentence' and getattr(self, 'route_sentences', True):
             try:
-                route = Confirm.ask("This looks like a full sentence. Translate and save in FrenchToEnglish.tex instead?", default=True)
+                target_filename = self.language_config.target_to_eng.default_filename
+                route = Confirm.ask(
+                    f"This looks like a full sentence. Translate and save in {target_filename} instead?",
+                    default=True,
+                )
             except Exception:
                 route = True
             if route:
                 if not self.fr_to_eng_translator:
-                    self.ui.error("French-to-English translator is not available (initialization failed). Proceeding in vocab mode.")
+                    title = self._translator_title(self.language_config.target_to_eng)
+                    self.ui.error(f"{title} is not available (initialization failed). Proceeding in vocab mode.")
                 else:
                     # Perform translation and save via the translator
                     ok = self.fr_to_eng_translator.translate_and_save(original_word)
@@ -1106,12 +1288,17 @@ class FrenchVocabBuilder:
         if (word_type and isinstance(word_type, list) and word_type[0].lower() == 'sentence' and
             getattr(self, 'route_sentences', True)):
             try:
-                route2 = Confirm.ask("AI identified this as a sentence. Route to French→English translator instead?", default=True)
+                title = self._translator_title(self.language_config.target_to_eng)
+                route2 = Confirm.ask(
+                    f"AI identified this as a sentence. Route to {title} instead?",
+                    default=True,
+                )
             except Exception:
                 route2 = True
             if route2:
                 if not self.fr_to_eng_translator:
-                    self.ui.error("French-to-English translator is not available (initialization failed). Proceeding in vocab mode.")
+                    alt_title = self._translator_title(self.language_config.target_to_eng)
+                    self.ui.error(f"{alt_title} is not available (initialization failed). Proceeding in vocab mode.")
                 else:
                     ok = self.fr_to_eng_translator.translate_and_save(original_word)
                     if ok is False:
@@ -1139,7 +1326,13 @@ class FrenchVocabBuilder:
         if self.duplicate_resolution and self.duplicate_resolution.get('mode') == 'force':
             if self.check_duplicate(insert_word):
                 insert_word = self.create_unique_variant(insert_word)
-        latex_entry = self.format_latex_entry(insert_word, word_type[0], definitions, examples) # Use first element of word_type list
+        latex_entry = self.format_latex_entry(
+            insert_word,
+            word_type[0],
+            definitions,
+            examples,
+            entry_command=self.entry_command,
+        )  # Use first element of word_type list
 
         # --- Validate LaTeX Entry ---
         if not self.is_valid_latex_entry(latex_entry):
@@ -1218,7 +1411,13 @@ class FrenchVocabBuilder:
         # Keep existing type by default; if unknown, use new
         final_type = entry.get('type') or new_type
         # Rebuild LaTeX entry and replace in file
-        latex_block = self.format_latex_entry(entry['word'], final_type, merged_defs, merged_exs)
+        latex_block = self.format_latex_entry(
+            entry['word'],
+            final_type,
+            merged_defs,
+            merged_exs,
+            entry_command=self.entry_command,
+        )
         self.update_entry_in_file(entry['word'], latex_block)
 
         # Update memory
@@ -1234,13 +1433,15 @@ class FrenchVocabBuilder:
             with self.latex_file.open("r", encoding="utf-8") as f:
                 content = f.read()
             # Regex to match the specific entry by word with robust body matching
-            pattern = r"""
-                \\entry
-                \{%(word)s\}
-                \{[^{}]*\}
-                \{ (?: [^{}]+ | \{[^{}]*\} )* \}
-                \{ (?: [^{}]+ | \{[^{}]*\} )* \}
-            """ % {"word": re.escape(word_capitalized)}
+            entry_cmd_pattern = re.escape(self._entry_command())
+            word_pattern = re.escape(word_capitalized)
+            pattern = rf"""
+                {entry_cmd_pattern}
+                \{{{word_pattern}\}}
+                \{{[^{{}}]*\}}
+                \{{ (?: [^{{}}]+ | \{{[^{{}}]*\}} )* \}}
+                \{{ (?: [^{{}}]+ | \{{[^{{}}]*\}} )* \}}
+            """
             new_content, n = re.subn(pattern, new_block, content, count=1, flags=re.VERBOSE | re.DOTALL)
             if n == 0:
                 self.ui.warning(f"Could not locate LaTeX entry for '{word_capitalized}' to update. Skipping file update.")
@@ -1252,7 +1453,8 @@ class FrenchVocabBuilder:
 
     def is_valid_latex_entry(self, latex_entry: str) -> bool:
         # Check if the entry is not empty and contains the expected LaTeX structure
-        return bool(latex_entry.strip()) and "\\entry{" in latex_entry and "}{" in latex_entry
+        entry_cmd = self._entry_command()
+        return bool(latex_entry.strip()) and entry_cmd in latex_entry
 
     def check_spelling(self, word, ai_response):
         # More specific regex that stops at the next field and handles multiline content
@@ -1317,7 +1519,8 @@ class FrenchVocabBuilder:
         self.entry_count = len(self.word_entries) # Keep count accurate
 
     def handle_anki_export(self):
-        deck_name = Prompt.ask("Enter a name for your Anki deck", default="French Vocabulary")
+        default_deck = self.language_config.anki.default_deck_name
+        deck_name = Prompt.ask("Enter a name for your Anki deck", default=default_deck)
         self.export_to_anki(deck_name)
     
     def display_parsed_info(
@@ -1337,7 +1540,8 @@ class FrenchVocabBuilder:
         # Return a set of all words in the LaTeX file, including incomplete entries
         with self.latex_file.open("r", encoding="utf-8") as file:
             content = file.read()
-        entries = re.findall(r"\\entry\{(.*?)\}", content)
+        entry_cmd_pattern = re.escape(self._entry_command()) + r"\{(.*?)\}"
+        entries = re.findall(entry_cmd_pattern, content)
         return set(entry.lower() for entry in entries)
 
     def get_all_exported_words(self) -> Set[str]:
@@ -1372,7 +1576,7 @@ class FrenchVocabBuilder:
         # Export missing LaTeX words to Anki
         if in_latex_not_exported:
             if Confirm.ask(f"Export {len(in_latex_not_exported)} word(s) missing in Anki now?", default=True):
-                deck_name = Prompt.ask("Enter deck name", default="French Vocabulary")
+                deck_name = Prompt.ask("Enter deck name", default=self.language_config.anki.default_deck_name)
                 self.export_to_anki(deck_name)
         # Remove extra exported words not present in LaTeX
         if in_exports_not_latex:
@@ -1472,19 +1676,30 @@ def main() -> None:
     
     # Parse command line arguments
     import argparse
-    parser = argparse.ArgumentParser(description="French Vocabulary Builder")
+    language_choices = available_language_codes()
+    default_language_name = FrenchVocabBuilder.DEFAULT_LANGUAGE_CONFIG.display_name
+    parser = argparse.ArgumentParser(
+        description=f"Vocabulary Builder (default language: {default_language_name})"
+    )
     parser.add_argument('latex_file', nargs='?', help='Path to LaTeX file')
     parser.add_argument('--provider', choices=['gemini', 'claude'], 
                         help='LLM provider to use (gemini or claude)')
     parser.add_argument('--verbose', action='store_true', help='Enable verbose diagnostics output')
+    parser.add_argument(
+        '--language',
+        choices=language_choices,
+        default=default_language_code(),
+        help=f"Select target language ({', '.join(language_choices)})",
+    )
     args = parser.parse_args()
     
     latex_file = args.latex_file
     provider = args.provider  # Will be None if not specified
     verbose = bool(args.verbose)
+    language = args.language
 
     init_start = time.time()
-    app = FrenchVocabBuilder(latex_file, provider, verbose=verbose)
+    app = FrenchVocabBuilder(latex_file, provider, verbose=verbose, language=language)
     init_end = time.time()
     
     run_start = time.time()

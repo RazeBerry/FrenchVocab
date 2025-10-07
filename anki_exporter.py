@@ -11,6 +11,8 @@ from typing import Iterable, List, Sequence, Tuple
 
 import genanki
 
+from languages.base import AnkiConfig, AnkiCardTemplate
+
 
 # Public API -----------------------------------------------------------------
 
@@ -86,12 +88,11 @@ class AnkiExportEntry:
 class AnkiExporter:
     """Create deterministic Anki decks from structured vocabulary entries."""
 
-    MODEL_SEED = "FrenchVocabModel/v1"
-
-    def __init__(self, deck_name: str):
+    def __init__(self, deck_name: str, config: AnkiConfig):
         self.deck_name = deck_name
-        self.deck_id = self._stable_32(f"FrenchDeck::{deck_name}")
-        self.model_id = self._stable_32(self.MODEL_SEED)
+        self.config = config
+        self.deck_id = self._stable_32(f"{config.deck_namespace}::{deck_name}")
+        self.model_id = self._stable_32(config.model_seed)
 
     def build_deck(self, entries: Iterable[AnkiExportEntry]) -> genanki.Deck:
         model = self._build_model()
@@ -104,35 +105,37 @@ class AnkiExporter:
     # Internal helpers -----------------------------------------------------
 
     def _build_model(self) -> genanki.Model:
+        field_defs = [{"name": name} for name in self.config.field_names]
+        templates = [
+            {
+                "name": template.name,
+                "qfmt": template.question_format,
+                "afmt": template.answer_format,
+            }
+            for template in self.config.card_templates
+        ]
         return genanki.Model(
             self.model_id,
-            "French Vocab Model v1",
-            fields=[
-                {"name": "French"},
-                {"name": "Type"},
-                {"name": "English"},
-                {"name": "Example"},
-            ],
-            templates=[
-                {
-                    "name": "Card 1",
-                    "qfmt": "{{French}}<br>{{Type}}",
-                    "afmt": "{{FrontSide}}<hr id=\"answer\">{{English}}<br><br>Example:<br>{{Example}}",
-                },
-            ],
+            self.config.model_name,
+            fields=field_defs,
+            templates=templates,
         )
 
     def _build_note(self, entry: AnkiExportEntry, model: genanki.Model) -> genanki.Note:
         normalized = entry.word.strip().lower()
-        guid = uuid.uuid5(uuid.NAMESPACE_URL, f"fr_vocab::{normalized}").hex
+        guid_namespace = self.config.deck_namespace.lower()
+        guid = uuid.uuid5(uuid.NAMESPACE_URL, f"{guid_namespace}::{normalized}").hex
         definitions_text = latex_to_anki_format(entry.definitions_text())
         examples_text = latex_to_anki_format(entry.examples_text())
-        fields = [
+        field_values = [
             entry.word,
             entry.word_type,
             definitions_text,
             examples_text,
         ]
+        if len(self.config.field_names) > len(field_values):
+            field_values.extend(["" for _ in range(len(self.config.field_names) - len(field_values))])
+        fields = field_values[:len(self.config.field_names)]
         return genanki.Note(model=model, guid=guid, fields=fields)
 
     @staticmethod

@@ -13,8 +13,12 @@ class LatexRepository:
     Write/update operations can be added incrementally to replace regex usage.
     """
 
-    def __init__(self, latex_file: Path):
+    def __init__(self, latex_file: Path, entry_command: str = "\\entry"):
         self.latex_file = Path(latex_file)
+        if not entry_command.startswith("\\"):
+            entry_command = f"\\{entry_command}"
+        self.entry_command = entry_command
+        self._entry_command_len = len(entry_command)
 
     def _parse_balanced_group(self, s: str, start: int) -> Tuple[str, int]:
         """Parse a single {...} group starting at index `start` (which should point to '{').
@@ -44,12 +48,13 @@ class LatexRepository:
         raise ValueError("Unbalanced braces while parsing group")
 
     def _parse_entry_at(self, s: str, start: int) -> Optional[Tuple[WordEntry, int]]:
-        r"""Parse an \entry{...}{...}{...}{...} starting at index `start` where s[start:] begins with '\\entry'.
+        r"""Parse an entry command \entry{...}{...}{...}{...} starting at index `start`.
         Returns (WordEntry, next_index) or None if not a valid entry.
         """
-        if not s.startswith("\\entry", start):
+        cmd = self.entry_command
+        if not s.startswith(cmd, start):
             return None
-        i = start + len("\\entry")
+        i = start + self._entry_command_len
         groups: List[str] = []
         # Expect exactly four groups
         for _ in range(4):
@@ -108,12 +113,12 @@ class LatexRepository:
         i = 0
         n = len(content)
         while i < n:
-            j = content.find('\\entry', i)
+            j = content.find(self.entry_command, i)
             if j == -1:
                 break
             parsed = self._parse_entry_at(content, j)
             if parsed is None:
-                i = j + 6
+                i = j + self._entry_command_len
                 continue
             entry, next_i = parsed
             entries.append(entry)
