@@ -188,34 +188,34 @@ class EnglishToFrenchTranslator:
 
         lines = []
         first = True
-        while True:
-            try:
+        try:
+            while True:
                 prompt = (
                     f"\nEnter {language_label} text (or 'q' to cancel): "
                     if first
                     else "Enter additional text (leave blank to finish): "
                 )
                 line = input(prompt)
-            except EOFError:
-                break
 
-            if first and line.strip().lower() == 'q':
-                self.console.print("[yellow]Translation cancelled.[/yellow]")
-                return None
+                if first and line.strip().lower() == 'q':
+                    self.console.print("[yellow]Translation cancelled.[/yellow]")
+                    return None
 
-            if not line and not first:
-                break
+                if not line and not first:
+                    break
 
-            lines.append(line)
-            first = False
-            current_text = "\n".join(lines).strip()
-            self.console.print(
-                Panel(
-                    f"[dim]Captured so far ({len(lines)} line(s)):[/dim] {current_text if current_text else '[empty]'}",
-                    border_style="dim",
-                    expand=False,
+                lines.append(line)
+                first = False
+                current_text = "\n".join(lines).strip()
+                self.console.print(
+                    Panel(
+                        f"[dim]Captured so far ({len(lines)} line(s)):[/dim] {current_text if current_text else '[empty]'}",
+                        border_style="dim",
+                        expand=False,
+                    )
                 )
-            )
+        except EOFError:
+            pass
 
         text = "\n".join(lines).strip()
         if not text:

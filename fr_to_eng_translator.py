@@ -152,6 +152,7 @@ class FrenchToEnglishTranslator:
 
         lines = []
         first = True
+        exit_marker = ""  # Tracks blank-line submission
         while True:
             try:
                 prompt = (
@@ -168,7 +169,10 @@ class FrenchToEnglishTranslator:
                 return None
 
             if not line and not first:
+                exit_marker = ""
                 break
+
+            exit_marker = line
 
             lines.append(line)
             first = False
