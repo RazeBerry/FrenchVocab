@@ -20,6 +20,7 @@ from keyring.errors import KeyringError
 from pathlib import Path
 from llm_client import GeminiClient, ProviderFactory
 from latex_repository import LatexRepository
+from models import normalize_word_key
 from languages import (
     LanguageConfig,
     TranslatorConfig,
@@ -541,8 +542,7 @@ class FrenchVocabBuilder:
         Returns:
             str: The normalized word without accents.
         """
-        word = word.lower().strip()
-        return ''.join(c for c in unicodedata.normalize('NFD', word) if unicodedata.category(c) != 'Mn')
+        return normalize_word_key(word)
 
     def latex_to_anki_format(self, text: str) -> str:
         """Delegate to the shared LaTeX→HTML conversion helper."""
@@ -1110,16 +1110,16 @@ class FrenchVocabBuilder:
             entry_cmd_pattern = re.escape(self._entry_command())
             entry_pattern = rf"""
                 {entry_cmd_pattern}
-                \{{
+                \s*\{{
                     (?P<word>[^{{}}]+)
                 \}}
-                \{{
+                \s*\{{
                     (?P<type>[^{{}}]+)
                 \}}
-                \{{
+                \s*\{{
                     (?P<defs> (?: [^{{}}]+ | \{{[^{{}}]*\}} )* )
                 \}}
-                \{{
+                \s*\{{
                     (?P<exs>  (?: [^{{}}]+ | \{{[^{{}}]*\}} )* )
                 \}}
             """
@@ -1484,17 +1484,21 @@ class FrenchVocabBuilder:
             self.console.print("n: No, cancel this entry")
             self.console.print("q: Quit and abandon this edit")
             # Robust input loop to avoid issues with leftover buffered lines
+            yes_tokens = {"y", "yes", "ja", "j", ""}
+            no_tokens = {"n", "no", "nein"}
+            quit_tokens = {"q", "quit"}
             while True:
                 try:
-                    choice = input("Your choice [y/n/q] (y): ").strip().lower()
+                    choice = input("Your choice [y/n/q] (y): ").strip()
                 except EOFError:
                     choice = ''
-                if choice in ('', 'y', 'yes'):
+                normalized = choice.casefold()
+                if normalized in yes_tokens:
                     return corrected_spelling
-                if choice in ('n', 'no'):
+                if normalized in no_tokens:
                     self.ui.warning("Correction rejected. Entry cancelled.")
                     return None
-                if choice in ('q', 'quit'):
+                if normalized in quit_tokens:
                     self.ui.warning("Abandoning edit. Returning to main menu.")
                     return None
                 self.ui.error("Please select one of: y, n, q.")

@@ -274,14 +274,19 @@ class EnglishToFrenchTranslator:
         """Prompt user for a yes/no answer accepting upper/lowercase responses."""
         default_choice = "y" if default else "n"
         prompt_text = f"{message} [y/n]"
+        yes_tokens = {"y", "yes", "ja", "j", "oui", "o", "1", "true"}
+        no_tokens = {"n", "no", "nein", "non", "0", "false"}
         while True:
             response = Prompt.ask(prompt_text, default=default_choice)
             if response is None:
                 response = default_choice
-            normalized = response.strip().lower()
-            if normalized in {"y", "yes"}:
+            normalized = response.strip()
+            if not normalized:
+                normalized = default_choice
+            normalized = normalized.casefold()
+            if normalized in yes_tokens:
                 return True
-            if normalized in {"n", "no"}:
+            if normalized in no_tokens:
                 return False
             self.console.print("[bold yellow]Please enter Y or N.[/bold yellow]")
 
