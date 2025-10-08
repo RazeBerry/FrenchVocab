@@ -10,13 +10,13 @@ from .base import (
     AnkiConfig,
     AnkiCardTemplate,
 )
-from eng_to_fr_latex_templates import (
-    INITIAL_ENG_FR_TEX_CONTENT,
-    FINAL_ENG_FR_TEX_CONTENT,
-)
-from fr_to_eng_latex_templates import (
-    INITIAL_FR_ENG_TEX_CONTENT,
-    FINAL_FR_ENG_TEX_CONTENT,
+from .german_tex import (
+    GERMAN_INITIAL_TEX_CONTENT,
+    GERMAN_FINAL_TEX_CONTENT,
+    INITIAL_ENG_DE_TEX_CONTENT,
+    FINAL_ENG_DE_TEX_CONTENT,
+    INITIAL_DE_ENG_TEX_CONTENT,
+    FINAL_DE_ENG_TEX_CONTENT,
 )
 
 
@@ -54,35 +54,6 @@ _UI_STRINGS: Dict[str, str] = {
     "menu.anki_reconcile": "Reconcile Anki exports (German -> English)",
 }
 
-GERMAN_INITIAL_TEX_CONTENT = r"""\documentclass[12pt]{article}
-\usepackage[margin=1in]{geometry}
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage{lmodern}
-\usepackage[ngerman,english]{babel}
-\usepackage{enumitem}
-\newcommand{\entry}[4]{
-  \item \textbf{#1} (#2)
-    \begin{enumerate}[label=\alph*., leftmargin=*]
-      #3
-    \end{enumerate}
-    \textbf{Examples:}
-    \begin{itemize}
-      #4
-    \end{itemize}
-  \vspace{0.5cm}
-}
-\title{Detailed German Vocabulary List}
-\author{}
-\date{}
-\begin{document}
-\maketitle
-\begin{itemize}[leftmargin=*]"""
-
-GERMAN_FINAL_TEX_CONTENT = r"""
-\end{itemize}
-\end{document}"""
-
 GERMAN_ENG_TO_DE_PROMPT = """Translate the following English text accurately and naturally into German. Provide only the German translation, without any introductory phrases, explanations, or quotation marks.
 
 English Text: "{english_text}"
@@ -91,7 +62,7 @@ German Translation:"""
 
 GERMAN_DE_TO_ENG_PROMPT = """Translate the following German text accurately and naturally into English. Provide only the English translation, without any introductory phrases, explanations, or quotation marks.
 
-German: "{french_text}"
+German: "{german_text}"
 
 English Translation:"""
 
@@ -107,23 +78,27 @@ GERMAN_CONFIG = LanguageConfig(
     input_validator=_validate_german_text,
     eng_to_target=TranslatorConfig(
         default_filename="EnglishToGerman.tex",
-        initial_tex_content=INITIAL_ENG_FR_TEX_CONTENT,
-        final_tex_content=FINAL_ENG_FR_TEX_CONTENT,
+        initial_tex_content=INITIAL_ENG_DE_TEX_CONTENT,
+        final_tex_content=FINAL_ENG_DE_TEX_CONTENT,
         prompt_template=GERMAN_ENG_TO_DE_PROMPT,
+        prompt_variable="english_text",
         source_label="English",
         target_label="German",
         ui_title="English → German Translator",
         table_headers=("English", "German"),
+        latex_commands=("engde", "engfre"),
     ),
     target_to_eng=TranslatorConfig(
         default_filename="GermanToEnglish.tex",
-        initial_tex_content=INITIAL_FR_ENG_TEX_CONTENT,
-        final_tex_content=FINAL_FR_ENG_TEX_CONTENT,
+        initial_tex_content=INITIAL_DE_ENG_TEX_CONTENT,
+        final_tex_content=FINAL_DE_ENG_TEX_CONTENT,
         prompt_template=GERMAN_DE_TO_ENG_PROMPT,
+        prompt_variable="german_text",
         source_label="German",
         target_label="English",
         ui_title="German → English Translator",
         table_headers=("German", "English"),
+        latex_commands=("deeng", "freeng"),
     ),
     vocab=VocabTemplate(
         initial_content=GERMAN_INITIAL_TEX_CONTENT,

@@ -1,10 +1,12 @@
+import argparse
 import tempfile
 from pathlib import Path
 
 import pytest
 
 import FrenchVocab
-from languages import available_language_codes
+from cli.bootstrap import build_app, parse_args
+from languages import available_language_codes, get_language_config
 
 
 @pytest.mark.parametrize("language_code", ["fr", "de"])
@@ -28,3 +30,35 @@ def test_available_language_codes_include_german():
     codes = available_language_codes()
     assert "fr" in codes
     assert "de" in codes
+
+
+def test_parse_args_respects_defaults(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "x" * 40)
+    args = parse_args([])
+    assert isinstance(args, argparse.Namespace)
+    assert args.language == FrenchVocab.FrenchVocabBuilder.DEFAULT_LANGUAGE_CODE
+
+
+@pytest.mark.parametrize("language_code", ["fr", "de"])
+def test_build_app_sets_language(monkeypatch, language_code, tmp_path):
+    monkeypatch.setenv("GEMINI_API_KEY", "x" * 40)
+    latex_path = tmp_path / f"{language_code}_cli.tex"
+    args = argparse.Namespace(
+        latex_file=str(latex_path),
+        provider="gemini",
+        verbose=False,
+        language=language_code,
+    )
+    builder = build_app(args)
+    assert builder.language_code == language_code
+    assert builder.latex_file.exists()
+
+
+def test_german_translator_config_has_dedicated_macros():
+    cfg = get_language_config("de")
+    assert cfg.eng_to_target.prompt_variable == "english_text"
+    assert cfg.target_to_eng.prompt_variable == "german_text"
+    assert "engde" in cfg.eng_to_target.latex_commands
+    assert "deeng" in cfg.target_to_eng.latex_commands
+    assert "English to German" in cfg.eng_to_target.initial_tex_content
+    assert "German to English" in cfg.target_to_eng.initial_tex_content

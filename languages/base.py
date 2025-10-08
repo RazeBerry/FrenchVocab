@@ -14,10 +14,12 @@ class TranslatorConfig:
     initial_tex_content: str
     final_tex_content: str
     prompt_template: str
+    prompt_variable: str
     source_label: str
     target_label: str
     ui_title: str
     table_headers: Tuple[str, str]
+    latex_commands: Tuple[str, ...]
 
 
 @dataclass(frozen=True)

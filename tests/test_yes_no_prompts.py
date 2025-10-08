@@ -6,8 +6,7 @@ from _stubs import install_basic_stubs
 
 install_basic_stubs()
 
-import eng_to_fr_translator  # noqa: E402
-import fr_to_eng_translator  # noqa: E402
+import core.translator as translator_module  # noqa: E402
 
 
 class _SilentConsole:
@@ -26,19 +25,30 @@ def _make_fake_prompt(responses):
     return _FakePrompt
 
 
-def test_eng_to_fr_confirm_accepts_uppercase(monkeypatch):
-    translator = object.__new__(eng_to_fr_translator.EnglishToFrenchTranslator)
+def _translator_stub():
+    translator = object.__new__(translator_module.TranslatorCLI)
     translator.console = _SilentConsole()
+    translator.source_label = "Source"
+    translator.target_label = "Target"
+    translator.prompt_variable = "text"
+    translator.prompt_template = ""
+    translator.latex_command = "cmd"
+    translator.pairs = {}
+    translator.entry_count = 0
+    return translator
+
+
+def test_confirm_accepts_uppercase(monkeypatch):
+    translator = _translator_stub()
     fake_prompt = _make_fake_prompt(["Y"])
-    monkeypatch.setattr(eng_to_fr_translator, "Prompt", fake_prompt)
+    monkeypatch.setattr(translator_module, "Prompt", fake_prompt)
 
     assert translator._confirm_yes_no("Save translation?", default=True) is True
 
 
-def test_fr_to_eng_confirm_accepts_uppercase(monkeypatch):
-    translator = object.__new__(fr_to_eng_translator.FrenchToEnglishTranslator)
-    translator.console = _SilentConsole()
+def test_confirm_accepts_uppercase_no(monkeypatch):
+    translator = _translator_stub()
     fake_prompt = _make_fake_prompt(["N"])
-    monkeypatch.setattr(fr_to_eng_translator, "Prompt", fake_prompt)
+    monkeypatch.setattr(translator_module, "Prompt", fake_prompt)
 
     assert translator._confirm_yes_no("Save translation?", default=True) is False

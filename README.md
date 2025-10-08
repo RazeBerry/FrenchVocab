@@ -56,7 +56,7 @@ All commands accept `--language` (defaults to French) and `--provider` (`gemini`
 | `FrenchVocab.py` | Main CLI orchestrator, routing, and language-aware configuration |
 | `languages/` | Config definitions (`french.py`, `german.py`) plus shared schemas (`base.py`) |
 | `ai_prompts.py` | Prompt templates for vocab generation per language |
-| `eng_to_fr_translator.py`, `fr_to_eng_translator.py` | Translator workflows (config-injected labels/templates) |
+| `core/translator.py` | Shared translator workflow (config-injected labels/templates) |
 | `latex_repository.py` | Brace-safe parsing of `\entry{}` structures |
 | `anki_exporter.py` | Deterministic deck/model builder parameterized by language metadata |
 | `tests/` | Pytest suite; `test_language_configs.py` ensures every registered language initializes cleanly |

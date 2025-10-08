@@ -1,9 +1,8 @@
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
-from typing import List, Dict, Any, Optional, Tuple, Callable
+from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
 
 class MessageType(Enum):
@@ -19,7 +18,7 @@ class UIHelper:
     
     def __init__(self, console: Optional[Console] = None):
         self.console = console or Console()
-        self._progress_stack = []  # Track nested progress contexts
+        self._progress_stack = []  # Reserved for future progress integrations
     
     # ========== Basic Message Methods ==========
     
@@ -72,11 +71,6 @@ class UIHelper:
             expand=expand,
             **kwargs
         ))
-    
-    def multi_panel(self, panels: List[Dict[str, Any]]) -> None:
-        """Display multiple panels in sequence"""
-        for panel_config in panels:
-            self.panel(**panel_config)
     
     # ========== Table Methods ==========
     
@@ -136,38 +130,7 @@ class UIHelper:
         
         self.panel(table, title=title, border_style="blue", expand=False)
     
-    # ========== Progress Methods ==========
-    
-    def progress_context(self, description: str, total: Optional[int] = None) -> Progress:
-        """Create a progress context"""
-        progress = Progress()
-        task = progress.add_task(f"[cyan]{description}", total=total)
-        self._progress_stack.append((progress, task))
-        return progress
-    
-    def with_progress(self, description: str, operation: Callable, 
-                      total: Optional[int] = None) -> Any:
-        """Execute an operation with a progress bar"""
-        with Progress() as progress:
-            task = progress.add_task(f"[cyan]{description}", total=total)
-            try:
-                result = operation(lambda: progress.advance(task))
-                progress.update(task, completed=True)
-                return result
-            except Exception as e:
-                self.error(f"Operation failed: {e}")
-                raise
-    
     # ========== Input Methods ==========
-    
-    def prompt(self, message: str, choices: Optional[List[str]] = None, 
-               default: Optional[str] = None) -> str:
-        """Wrapper for Rich Prompt.ask"""
-        return Prompt.ask(message, choices=choices, default=default)
-    
-    def confirm(self, message: str, default: bool = False) -> bool:
-        """Wrapper for Rich Confirm.ask"""
-        return Confirm.ask(message, default=default)
     
     # ========== Specialized Display Methods ==========
     
