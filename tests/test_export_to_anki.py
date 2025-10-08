@@ -8,8 +8,8 @@ sys.path.append(os.path.dirname(__file__))
 from _stubs import install_basic_stubs
 install_basic_stubs()
 
-import FrenchVocab
-import genanki
+import FrenchVocab  # noqa: E402
+import genanki  # noqa: E402
 
 
 class _StubUI:

@@ -8,7 +8,7 @@ sys.path.append(str(Path(__file__).parent))
 from _stubs import install_basic_stubs
 install_basic_stubs()
 
-import FrenchVocab
+import FrenchVocab  # noqa: E402
 
 
 SIMPLE_TEX = r"""\documentclass{article}

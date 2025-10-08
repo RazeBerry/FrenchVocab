@@ -11,8 +11,8 @@ from _stubs import install_basic_stubs
 install_basic_stubs()
 
 
-import FrenchVocab
-from models import normalize_word_key
+import FrenchVocab  # noqa: E402
+from models import normalize_word_key  # noqa: E402
 
 
 GERMAN_ENTRY_TEMPLATE = r"""\entry{{{word}}}{{noun}}

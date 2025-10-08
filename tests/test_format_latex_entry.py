@@ -2,6 +2,8 @@ import sys
 import types
 import unittest
 
+_types = types
+
 
 # ---- Minimal stubs to allow importing FrenchVocab without external deps ----
 
@@ -49,7 +51,6 @@ sys.modules['llm_client'] = llm_client_stub
 
 
 # Now we can import the module under test
-import types as _types
 
 # Stub for rich.* modules
 rich_console = _types.ModuleType('rich.console')
@@ -106,7 +107,12 @@ rich_panel.Panel = _Panel
 sys.modules['rich.panel'] = rich_panel
 
 rich_text = _types.ModuleType('rich.text')
-class _Text: pass
+
+
+class _Text:
+    pass
+
+
 rich_text.Text = _Text
 sys.modules['rich.text'] = rich_text
 
@@ -119,7 +125,7 @@ sys.modules['keyring'] = keyring_stub
 sys.modules['keyring.errors'] = _types.ModuleType('keyring.errors')
 setattr(sys.modules['keyring.errors'], 'KeyringError', _KeyringErrors.KeyringError)
 
-import FrenchVocab
+import FrenchVocab  # noqa: E402
 
 
 class TestFormatLatexEntry(unittest.TestCase):

@@ -11,7 +11,7 @@ from typing import Iterable, List, Sequence, Tuple
 
 import genanki
 
-from languages.base import AnkiConfig, AnkiCardTemplate
+from languages.base import AnkiConfig
 
 
 # Public API -----------------------------------------------------------------

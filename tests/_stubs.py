@@ -71,7 +71,10 @@ def install_basic_stubs():
         sys.modules['rich.panel'] = rpa
 
         rtx = types.ModuleType('rich.text')
-        class _Text: pass
+
+        class _Text:
+            pass
+
         rtx.Text = _Text
         sys.modules['rich.text'] = rtx
     _install_rich()
@@ -82,7 +85,10 @@ def install_basic_stubs():
         sys.modules['keyring'] = keyring_stub
     if 'keyring.errors' not in sys.modules:
         ke = types.ModuleType('keyring.errors')
-        class KeyringError(Exception): pass
+
+        class KeyringError(Exception):
+            pass
+
         setattr(ke, 'KeyringError', KeyringError)
         sys.modules['keyring.errors'] = ke
 
