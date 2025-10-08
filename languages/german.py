@@ -54,15 +54,17 @@ _UI_STRINGS: Dict[str, str] = {
     "menu.anki_reconcile": "Reconcile Anki exports (German -> English)",
 }
 
-GERMAN_ENG_TO_DE_PROMPT = """Translate the following English text accurately and naturally into German. Provide only the German translation, without any introductory phrases, explanations, or quotation marks.
+GERMAN_ENG_TO_DE_PROMPT = """Translate the following English text into idiomatic, context-appropriate German. Preserve the original register (formal vs. informal), sentence emphasis, and expressive punctuation (quotes, dashes, ellipses). Maintain paragraph and line breaks. Detect idioms, figurative turns of phrase, and collocations: when the source is idiomatic, choose an equally idiomatic German expression at the same register; use a faithful literal phrasing only if no natural idiom exists, while keeping the imagery intact. Prefer natural German syntax over word-for-word calques, and retain proper nouns and technical terms untouched. Output only the German translation—no commentary, no quotation marks.
 
-English Text: "{english_text}"
+English Text:
+"{english_text}"
 
 German Translation:"""
 
-GERMAN_DE_TO_ENG_PROMPT = """Translate the following German text accurately and naturally into English. Provide only the English translation, without any introductory phrases, explanations, or quotation marks.
+GERMAN_DE_TO_ENG_PROMPT = """Translate the following German text into idiomatic, context-appropriate English. Preserve register, tone, and rhetorical devices (questions, exclamations, dashes) while keeping paragraph and line breaks. Detect idioms, figurative language, and fixed expressions: when the source is idiomatic, deliver an equally idiomatic English expression at the same register; switch to a faithful literal rendering only when an idiomatic counterpart would distort meaning, keeping notable imagery intact. Favour fluent English phrasing over word-for-word translations, yet retain proper nouns and culture-specific terms when no natural equivalent exists. Produce only the English translation—no commentary, no quotation marks.
 
-German: "{german_text}"
+German Text:
+"{german_text}"
 
 English Translation:"""
 
