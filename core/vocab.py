@@ -25,7 +25,7 @@ from models import normalize_word_key
 from languages import LanguageConfig, TranslatorConfig, default_language_code, get_language_config
 
 from .translator import TranslatorCLI
-from ui_helper import UIHelper
+from ui_helper import UIHelper, read_line
 
 console = Console()
 
@@ -44,6 +44,15 @@ WELCOME_ASCII_ART = r"""
       '---"            \   \  / |  ,     .-./    \  /  `--`----'     ---`-' |  ,     .-./         :  \  \        `--''          '---'       '--'      |  ,   /  
                         `----'   `--`---'   `-'----'                         `--`---'              \  ' ;                                              ---`-'   
                                                                                                     `--`
+"""
+
+WELCOME_ASCII_ART_COMPACT = r"""
+  ______      _                _           _ _ _           
+ |  ____|    | |              | |         | (_) |          
+ | |__  __  _| |_ ___ _ __ ___| |__   __ _| |_| | ___ _ __ 
+ |  __| \ \/ / __/ _ \ '__/ __| '_ \ / _` | | | |/ _ \ '__|
+ | |____ >  <| ||  __/ | | (__| | | | (_| | | | |  __/ |   
+ |______/_/\_\\__\___|_|  \___|_| |_|\__,_|_|_|_|\___|_|   
 """
 
 
@@ -118,6 +127,7 @@ class FrenchVocabBuilder:
         # Allow longer phrases before triggering the length check
         self.max_word_length = 1000  # default max characters (overridable)
         self.max_words: Optional[int] = None  # unlimited by default; overridable
+        self._entry_count_snapshot: Optional[tuple[float, int, int]] = None  # (mtime, size, count)
         self.allow_sentence_punctuation: bool = True  # allow punctuation by default
         self.route_sentences: bool = True  # default: route sentences to Fr->En translator
         self.sentence_examples_in_vocab: bool = False  # default: omit examples for sentences
@@ -463,16 +473,31 @@ class FrenchVocabBuilder:
 
     def count_entries(self) -> int:
         try:
-            with self.latex_file.open("r", encoding="utf-8") as file:
-                content = file.read()
-            cmd_pattern = re.escape(self._entry_command()) + r"\{"
-            return len(re.findall(cmd_pattern, content))
+            stat = self.latex_file.stat()
         except FileNotFoundError:
             self.ui.error(f"File not found - {self.latex_file}")
+            self._entry_count_snapshot = None
             return 0
-        except Exception as e:
-            self.ui.error(f"Error reading file: {e}")
+
+        signature = (stat.st_mtime, stat.st_size)
+        if (
+            self._entry_count_snapshot is not None
+            and self._entry_count_snapshot[0] == signature[0]
+            and self._entry_count_snapshot[1] == signature[1]
+        ):
+            return self._entry_count_snapshot[2]
+
+        try:
+            with self.latex_file.open("r", encoding="utf-8") as file:
+                content = file.read()
+        except Exception as exc:
+            self.ui.error(f"Error reading file: {exc}")
             return 0
+
+        cmd_pattern = re.escape(self._entry_command()) + r"\{"
+        count = len(re.findall(cmd_pattern, content))
+        self._entry_count_snapshot = (signature[0], signature[1], count)
+        return count
 
 
 
@@ -710,10 +735,26 @@ class FrenchVocabBuilder:
             elif isinstance(self.client, GeminiClient):
                 provider_name = f"Google Gemini ({self.client.MODEL_NAME})"
         else:
-            provider_name = self.client.__class__.__name__
+            provider_name = "No LLM configured"
 
-        art_text = Text(WELCOME_ASCII_ART, no_wrap=True)
-        self.console.print(art_text, overflow="crop", soft_wrap=False)
+        terminal_width = self.console.size.width
+        art_to_render = ""
+        overflow_mode = "crop"
+        soft_wrap = False
+        if terminal_width >= 96:
+            art_to_render = WELCOME_ASCII_ART
+            overflow_mode = "crop"
+            soft_wrap = False
+        elif terminal_width >= 48:
+            art_to_render = WELCOME_ASCII_ART_COMPACT
+            overflow_mode = "fold"
+            soft_wrap = False
+        else:
+            art_to_render = ""
+
+        if art_to_render:
+            art_text = Text(art_to_render, no_wrap=True)
+            self.console.print(art_text, overflow=overflow_mode, soft_wrap=soft_wrap)
 
         language_name = self.language_config.display_name
         app_title = self._ui_text("app.title", f"{language_name} Vocabulary LaTeX Builder")
@@ -832,7 +873,7 @@ class FrenchVocabBuilder:
                     if first
                     else continuation_prompt
                 )
-                line = input(prompt)
+                line = read_line(prompt)
             except EOFError:
                 break
 
@@ -1449,7 +1490,7 @@ class FrenchVocabBuilder:
             quit_tokens = {"q", "quit"}
             while True:
                 try:
-                    choice = input("Your choice [y/n/q] (y): ").strip()
+                    choice = read_line("Your choice [y/n/q] (y): ").strip()
                 except EOFError:
                     choice = ''
                 normalized = choice.casefold()

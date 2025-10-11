@@ -16,22 +16,7 @@ from rich.text import Text
 
 from languages import TranslatorConfig
 from llm_client import LLMClient
-
-try:  # Optional enhanced CLI input (arrow keys, history)
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.history import InMemoryHistory
-    from prompt_toolkit.patch_stdout import patch_stdout
-except ImportError:  # pragma: no cover - optional dependency
-    PromptSession = None  # type: ignore[assignment]
-    InMemoryHistory = None  # type: ignore[assignment]
-    patch_stdout = None  # type: ignore[assignment]
-
-if PromptSession and InMemoryHistory:
-    _PROMPT_HISTORY = InMemoryHistory()
-    _PROMPT_SESSION = PromptSession(history=_PROMPT_HISTORY)
-else:  # pragma: no cover - executed when prompt_toolkit is unavailable
-    _PROMPT_HISTORY = None  # type: ignore[assignment]
-    _PROMPT_SESSION = None  # type: ignore[assignment]
+from ui_helper import read_line
 
 
 class TranslatorCLI:
@@ -170,57 +155,48 @@ class TranslatorCLI:
         )
         self.console.print(Panel(panel_content, title="Duplicate Found", border_style="yellow", expand=False))
 
-    @staticmethod
-    def _read_line(prompt: str) -> str:
-        """Collect a single line of user input with best available UX."""
-        if _PROMPT_SESSION is not None and patch_stdout is not None:
-            with patch_stdout(raw=True):
-                return _PROMPT_SESSION.prompt(prompt)
-        return input(prompt)
-
     def _collect_multiline_input(self, language_label: str) -> Optional[str]:
         instructions = (
             f"[cyan]Enter {language_label} text to translate.[/cyan]\n"
-            "[dim]- Paste or type your text. Press Enter on an empty line to submit.\n"
+            "[dim]- Type or paste your text.\n"
             "- Enter 'q' on the first line to cancel.\n"
-            "- After each line, the current text will be echoed so you can simply press Enter to finish.[/dim]"
+            "- Press Enter on an empty line to finish.[/dim]"
         )
         self.console.print(Panel(instructions, border_style="blue", expand=False))
 
-        lines = []
-        first = True
-        try:
-            while True:
-                prompt = (
-                    f"\nEnter {language_label} text (or 'q' to cancel): "
-                    if first
-                    else "Enter additional text (leave blank to finish): "
-                )
-                line = self._read_line(prompt)
+        lines: list[str] = []
 
-                if first and line.strip().lower() == "q":
+        while True:
+            prompt = (
+                f"{language_label} text (or 'q' to cancel): "
+                if not lines
+                else "Add more text (press Enter to finish): "
+            )
+
+            try:
+                line = read_line(prompt)
+            except EOFError:
+                break
+
+            if not lines:
+                stripped = line.strip()
+                if stripped.lower() == "q":
                     self.console.print("[yellow]Translation cancelled.[/yellow]")
                     return None
-
-                if not line and not first:
+                if not stripped:
+                    self.console.print("[bold yellow]Please enter at least one line (or 'q' to cancel).[/bold yellow]")
+                    continue
+            else:
+                if line == "":
                     break
 
-                lines.append(line)
-                first = False
+            lines.append(line.rstrip("\n"))
+            plural = "line" if len(lines) == 1 else "lines"
+            self.console.print(f"[dim]Captured {len(lines)} {plural}. Blank line to finish.[/dim]")
 
-                current_text = "\n".join(lines).strip()
-                display = Text()
-                display.append(f"Captured so far ({len(lines)} line(s)):\n", style="dim")
-                display.append(current_text if current_text else "[empty]")
-                self.console.print(
-                    Panel(
-                        display,
-                        border_style="dim",
-                        expand=False,
-                    )
-                )
-        except EOFError:
-            pass
+        if not lines:
+            self.console.print("[yellow]Translation cancelled.[/yellow]")
+            return None
 
         text = "\n".join(lines).strip()
         if not text:
@@ -457,4 +433,4 @@ class TranslatorCLI:
             table.add_row(str(index), entry["source"], entry["target"])
 
         self.console.print(table)
-        self.console.input("\nPress Enter to return...")
+        read_line("\nPress Enter to return...")

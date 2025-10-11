@@ -1,8 +1,48 @@
+import sys
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from typing import List, Dict, Any, Optional, Tuple, Sequence
 from enum import Enum
+
+try:  # Optional enhanced CLI input (shared across the app)
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.history import InMemoryHistory
+    from prompt_toolkit.patch_stdout import patch_stdout
+except ImportError:  # pragma: no cover - optional dependency
+    PromptSession = None  # type: ignore[assignment]
+    InMemoryHistory = None  # type: ignore[assignment]
+    patch_stdout = None  # type: ignore[assignment]
+
+if PromptSession and InMemoryHistory:
+    _PROMPT_HISTORY = InMemoryHistory()
+    _PROMPT_SESSION = PromptSession(history=_PROMPT_HISTORY)
+else:  # pragma: no cover - executed when prompt_toolkit is unavailable
+    _PROMPT_HISTORY = None  # type: ignore[assignment]
+    _PROMPT_SESSION = None  # type: ignore[assignment]
+
+
+def read_line(prompt: str = "", *, console: Optional[Console] = None) -> str:
+    """Return a single line of user input with shared history & arrow support."""
+    use_prompt_toolkit = (
+        _PROMPT_SESSION is not None
+        and patch_stdout is not None
+        and sys.stdin.isatty()
+    )
+    if use_prompt_toolkit:
+        try:
+            with patch_stdout(raw=True):
+                return _PROMPT_SESSION.prompt(prompt)
+        except EOFError:
+            pass
+
+    if console is not None:
+        console_input = getattr(console, "input", None)
+        if callable(console_input):
+            return console_input(prompt)
+
+    return input(prompt)
 
 class MessageType(Enum):
     """Enum for consistent message styling"""
@@ -60,8 +100,14 @@ class UIHelper:
     
     # ========== Panel Methods ==========
     
-    def panel(self, content: str, title: str = "", border_style: str = "blue", 
-              expand: bool = False, **kwargs) -> None:
+    def panel(
+        self,
+        content: str,
+        title: str = "",
+        border_style: str = "blue",
+        expand: bool = True,
+        **kwargs,
+    ) -> None:
         """Display content in a styled panel"""
         self.console.print(Panel(
             content, 
@@ -209,4 +255,13 @@ class UIHelper:
     def input_with_style(self, prompt: str, style: str = "bold cyan") -> str:
         """Get input with styled prompt"""
         self.console.print(f"[{style}]{prompt}[/{style}]", end="")
-        return input() 
+        return read_line()
+
+    def prompt(self, prompt: str = "", *, style: Optional[str] = None) -> str:
+        """Prompt for input using shared input helper."""
+        if style and prompt:
+            self.console.print(f"[{style}]{prompt}[/{style}]", end="")
+            prompt_text = ""
+        else:
+            prompt_text = prompt
+        return read_line(prompt_text)

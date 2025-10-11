@@ -6,8 +6,22 @@ import sys
 from contextlib import contextmanager
 from typing import IO, Any, Sequence, Tuple
 
+from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
+
+try:
+    from rich.live import Live
+except ImportError:  # pragma: no cover - used when Rich stubs are installed
+    from contextlib import contextmanager
+
+    @contextmanager
+    def Live(*_args, **_kwargs):
+        class _NoOpLive:
+            def update(self, *_a, **_k) -> None:
+                pass
+
+        yield _NoOpLive()
 
 MenuOption = Tuple[str, str]
 
@@ -44,12 +58,13 @@ def interactive_select(
     instructions = instructions or _INSTRUCTION_DEFAULT
     index = 0
 
-    with console.screen() as screen:
-        console.show_cursor(False)
-        try:
-            with _raw_mode(sys.stdin):
-                _update_screen(screen, title, options, index, instructions, show_keys=show_keys)
-
+    console.show_cursor(False)
+    try:
+        with _raw_mode(sys.stdin):
+            renderable = _menu_renderable(
+                console, title, options, index, instructions, show_keys=show_keys
+            )
+            with Live(renderable, console=console, refresh_per_second=24, transient=True) as live:
                 while True:
                     key = _read_key()
                     previous_index = index
@@ -64,9 +79,18 @@ def interactive_select(
                         raise KeyboardInterrupt
 
                     if index != previous_index:
-                        _update_screen(screen, title, options, index, instructions, show_keys=show_keys)
-        finally:
-            console.show_cursor(True)
+                        live.update(
+                            _menu_renderable(
+                                console,
+                                title,
+                                options,
+                                index,
+                                instructions,
+                                show_keys=show_keys,
+                            )
+                        )
+    finally:
+        console.show_cursor(True)
 
 
 def _render_menu(
@@ -91,28 +115,27 @@ def _render_menu(
     return lines
 
 
-def _update_screen(
-    screen: Any,
+def _menu_renderable(
+    console: Console,
     title: str,
     options: Sequence[MenuOption],
     index: int,
     instructions: str,
     *,
     show_keys: bool,
-) -> None:
-    """Render the current menu state without triggering a full terminal clear."""
+) -> Any:
     lines = _render_menu(options, index, instructions, show_keys=show_keys)
     content = "\n".join(lines)
-    panel_height = len(lines) + 2  # borders add 2 rows
-    screen.update(
-        Panel(
-            content,
-            title=title,
-            border_style="blue",
-            expand=False,
-            height=panel_height,
-        )
+    max_width = max(32, min(console.size.width - 6, 96))
+    panel = Panel(
+        content,
+        title=title,
+        border_style="blue",
+        expand=False,
+        width=max_width,
+        padding=(1, 2),
     )
+    return Align.center(panel, vertical="middle")
 
 
 @contextmanager

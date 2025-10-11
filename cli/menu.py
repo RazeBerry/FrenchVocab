@@ -48,4 +48,4 @@ def main_menu_loop(app: "FrenchVocabBuilder") -> None:
             pause_required = False
 
         if pause_required:
-            input("\nPress Enter to continue...")
+            app.ui.prompt("\nPress Enter to continue...")
