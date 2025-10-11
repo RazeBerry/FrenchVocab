@@ -21,28 +21,31 @@ def main_menu_loop(app: "FrenchVocabBuilder") -> None:
         choice = app.show_menu()
         pause_required = True
 
-        if choice == "1":
+        if choice == "add":
             app.handle_new_word_entry()
-        elif choice == "2":
+        elif choice == "eng_to_target":
             if app.eng_to_fr_translator:
                 app.eng_to_fr_translator.run()
             else:
                 title = app._translator_title(app.language_config.eng_to_target)
                 app.ui.error(f"{title} is not available (initialization failed).")
-        elif choice == "3":
+        elif choice == "target_to_eng":
             if app.fr_to_eng_translator:
                 app.fr_to_eng_translator.run()
             else:
                 title = app._translator_title(app.language_config.target_to_eng)
                 app.ui.error(f"{title} is not available (initialization failed).")
-        elif choice == "4":
+        elif choice == "anki_tools":
             pause_required = app.handle_anki_tools()
-        elif choice == "5":
+        elif choice == "display_vocab":
             app.display_all_vocabulary()
-        elif choice == "q":
+        elif choice == "exit":
             app.exit_screen()
             pause_required = False
             break
+        else:
+            app.ui.warning("Unrecognized menu option. Please try again.")
+            pause_required = False
 
         if pause_required:
             input("\nPress Enter to continue...")

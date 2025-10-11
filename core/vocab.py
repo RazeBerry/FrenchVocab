@@ -642,20 +642,26 @@ class FrenchVocabBuilder:
 
         # Create options for the menu
         options = [
-            ("s", "Skip: Don't add this word and return to the main menu."),
-            ("v", "View: Display the existing entry and return to the main menu."),
-            ("m", "Merge: Append AI definitions/examples into the existing entry."),
-            ("f", "Force add as a variant entry (will create a new entry)."),
+            ("skip", "Skip — do not add this word."),
+            ("view", "View the existing entry and return to the menu."),
+            ("merge", "Merge new AI details into the existing entry."),
+            ("force", "Force-add as a variant entry."),
         ]
 
-        self.ui.display_menu("Please choose an action", options, show_numbers=False)
+        try:
+            choice = self.ui.interactive_menu(
+                "Duplicate Resolution",
+                options,
+                "Use ↑ and ↓ to choose how to handle the duplicate. Esc cancels.",
+            )
+        except KeyboardInterrupt:
+            self.ui.warning("Duplicate handling cancelled. Returning to main menu.")
+            return False
 
-        choice = Prompt.ask("Your choice", choices=["s", "v", "m", "f"], default="s")
-
-        if choice == "s":
+        if choice == "skip":
             self.ui.panel("Skipping this word. Returning to main menu.", border_style="green")
             return False
-        elif choice == "v":
+        elif choice == "view":
             self.ui.panel(f"Displaying existing entry for '{actual_existing_word}':", border_style="cyan")
             # Ensure you use the correct key to retrieve the entry
             self.display_existing_entry(actual_existing_word.lower()) # Use the lowercase version which should be the key
@@ -663,12 +669,12 @@ class FrenchVocabBuilder:
             # Changed: Don't make a recursive call, just return to main menu
             self.ui.panel("Displayed existing entry. Returning to main menu.", border_style="blue")
             return False # Return False, indicating not to add the word
-        elif choice == "m":
+        elif choice == "merge":
             # Defer merging until after AI response is parsed
             self.duplicate_resolution = {"mode": "merge", "existing": actual_existing_word}
             self.ui.info("Will merge new AI content into the existing entry after parsing.")
             return True
-        elif choice == "f":
+        elif choice == "force":
             # Proceed to add; may need to create a unique variant label later
             self.duplicate_resolution = {"mode": "force", "existing": actual_existing_word}
             self.ui.info("Will force-add as a new variant entry.")
@@ -751,19 +757,22 @@ class FrenchVocabBuilder:
         display_all_label = self._ui_text("menu.display_all", f"Display all {language_name} words")
 
         options = [
-            ("1", f"{add_word_label} [dim]({self.entry_count} entries)[/dim]"),
-            ("2", f"{eng_to_target_label} [dim]({eng_fr_count} pairs)[/dim]"),
-            ("3", f"{target_to_eng_label} [dim]({fr_eng_count} pairs)[/dim]"),
-            ("4", f"Anki tools [dim]({exported_count} tracked exports)[/dim]"),
-            ("5", display_all_label),
-            ("q", "[bold yellow]Exit[/bold yellow]")
+            ("add", f"{add_word_label} [dim]({self.entry_count} entries)[/dim]"),
+            ("eng_to_target", f"{eng_to_target_label} [dim]({eng_fr_count} pairs)[/dim]"),
+            ("target_to_eng", f"{target_to_eng_label} [dim]({fr_eng_count} pairs)[/dim]"),
+            ("anki_tools", f"Anki tools [dim]({exported_count} tracked exports)[/dim]"),
+            ("display_vocab", display_all_label),
+            ("exit", "[bold yellow]Exit[/bold yellow]"),
         ]
 
-        self.ui.display_menu("Menu", options)
-
-        # Update choices to include 'q'
-        choice = Prompt.ask("Choose an option", choices=["1", "2", "3", "4", "5", "q"], default="1")
-        return choice
+        try:
+            return self.ui.interactive_menu(
+                "Main Menu",
+                options,
+                "Use ↑ and ↓ to navigate. Press Enter to choose. Esc exits.",
+            )
+        except KeyboardInterrupt:
+            return "exit"
 
     def show_anki_menu(self) -> str:
         """Display the nested Anki submenu and return the selected option."""
@@ -775,17 +784,19 @@ class FrenchVocabBuilder:
             f"Reconcile Anki exports ({self.language_config.target_to_eng.source_label} -> {self.language_config.target_to_eng.target_label})",
         )
         options = [
-            ("1", f"{export_label} [dim](pending: {len(in_latex_not_exported)})[/dim]"),
-            ("2", f"{reconcile_label} [dim](extra: {len(in_exports_not_latex)})[/dim]"),
-            ("b", "[bold yellow]Back to main menu[/bold yellow]")
+            ("export", f"{export_label} [dim](pending: {len(in_latex_not_exported)})[/dim]"),
+            ("reconcile", f"{reconcile_label} [dim](extra: {len(in_exports_not_latex)})[/dim]"),
+            ("back", "[bold yellow]Back to main menu[/bold yellow]"),
         ]
 
-        self.ui.display_menu("Anki Tools", options)
-        return Prompt.ask(
-            "Choose an Anki option",
-            choices=["1", "2", "b"],
-            default="1"
-        )
+        try:
+            return self.ui.interactive_menu(
+                "Anki Tools",
+                options,
+                "Use ↑ and ↓ to navigate. Press Enter to select. Esc returns.",
+            )
+        except KeyboardInterrupt:
+            return "back"
 
     def handle_anki_tools(self) -> bool:
         """Route to the requested Anki workflow.
@@ -793,10 +804,10 @@ class FrenchVocabBuilder:
         Returns True if an action was executed (so we pause afterwards), False if user went back.
         """
         choice = self.show_anki_menu()
-        if choice == "1":
+        if choice == "export":
             self.handle_anki_export()
             return True
-        if choice == "2":
+        if choice == "reconcile":
             self.reconcile_menu_option()
             return True
         self.ui.info("Returning to main menu without running Anki actions.")

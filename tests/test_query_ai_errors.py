@@ -42,6 +42,8 @@ class _CaptureUI:
         pass
     def display_menu(self, *_args, **_kwargs):
         pass
+    def interactive_menu(self, _title, options, *_args, **_kwargs):
+        return options[0][0] if options else ""
     def quick_table(self, *_args, **_kwargs):
         pass
     def dict_to_table(self, *_args, **_kwargs):

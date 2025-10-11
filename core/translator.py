@@ -17,6 +17,22 @@ from rich.text import Text
 from languages import TranslatorConfig
 from llm_client import LLMClient
 
+try:  # Optional enhanced CLI input (arrow keys, history)
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.history import InMemoryHistory
+    from prompt_toolkit.patch_stdout import patch_stdout
+except ImportError:  # pragma: no cover - optional dependency
+    PromptSession = None  # type: ignore[assignment]
+    InMemoryHistory = None  # type: ignore[assignment]
+    patch_stdout = None  # type: ignore[assignment]
+
+if PromptSession and InMemoryHistory:
+    _PROMPT_HISTORY = InMemoryHistory()
+    _PROMPT_SESSION = PromptSession(history=_PROMPT_HISTORY)
+else:  # pragma: no cover - executed when prompt_toolkit is unavailable
+    _PROMPT_HISTORY = None  # type: ignore[assignment]
+    _PROMPT_SESSION = None  # type: ignore[assignment]
+
 
 class TranslatorCLI:
     """Generic CLI translator parameterised by language configuration."""
@@ -154,6 +170,14 @@ class TranslatorCLI:
         )
         self.console.print(Panel(panel_content, title="Duplicate Found", border_style="yellow", expand=False))
 
+    @staticmethod
+    def _read_line(prompt: str) -> str:
+        """Collect a single line of user input with best available UX."""
+        if _PROMPT_SESSION is not None and patch_stdout is not None:
+            with patch_stdout(raw=True):
+                return _PROMPT_SESSION.prompt(prompt)
+        return input(prompt)
+
     def _collect_multiline_input(self, language_label: str) -> Optional[str]:
         instructions = (
             f"[cyan]Enter {language_label} text to translate.[/cyan]\n"
@@ -172,7 +196,7 @@ class TranslatorCLI:
                     if first
                     else "Enter additional text (leave blank to finish): "
                 )
-                line = input(prompt)
+                line = self._read_line(prompt)
 
                 if first and line.strip().lower() == "q":
                     self.console.print("[yellow]Translation cancelled.[/yellow]")
@@ -263,7 +287,12 @@ class TranslatorCLI:
         no_tokens = {"n", "no", "nein", "non", "0", "false"}
 
         while True:
-            response = self.console.input(prompt_text)
+            response = Prompt.ask(
+                prompt_text,
+                console=self.console,
+                default=default_choice,
+                show_default=False,
+            )
             if response is None:
                 response = ""
             normalized = response.strip() or default_choice

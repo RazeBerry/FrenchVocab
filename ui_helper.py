@@ -1,7 +1,7 @@
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, Sequence
 from enum import Enum
 
 class MessageType(Enum):
@@ -128,6 +128,28 @@ class UIHelper:
                 table.add_row(f"[{key}]", description)
         
         self.panel(table, title=title, border_style="blue", expand=False)
+
+    def interactive_menu(
+        self,
+        title: str,
+        options: Sequence[Tuple[str, str]],
+        instructions: str | None = None,
+        *,
+        show_keys: bool = False,
+    ) -> str:
+        """Display an interactive menu navigated via arrow keys.
+
+        Returns the key associated with the selected option.
+        """
+        from cli.navigation import interactive_select
+
+        return interactive_select(
+            self.console,
+            title,
+            options,
+            instructions,
+            show_keys=show_keys,
+        )
     
     # ========== Input Methods ==========
     
