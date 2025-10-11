@@ -1,9 +1,9 @@
 """Legacy entry point for the vocabulary CLI."""
 
-from cli.bootstrap import build_app, parse_args, run_cli
+from cli.bootstrap import build_app, run_cli
 from core import FrenchVocabBuilder
 
-__all__ = ["FrenchVocabBuilder", "build_app", "parse_args", "run_cli", "main"]
+__all__ = ["FrenchVocabBuilder", "build_app", "run_cli", "main"]
 
 
 def main() -> None:

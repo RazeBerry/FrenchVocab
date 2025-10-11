@@ -38,10 +38,18 @@ FINAL_ENG_FR_TEX_CONTENT = r"""
 # This is the template for the prompt we send to the Anthropic AI.
 # We ask it specifically to translate the given English text to French
 # and provide *only* the translation to keep the response clean.
-AI_TRANSLATION_PROMPT_TEMPLATE = """Translate the following English text accurately and naturally into French. Provide only the French translation, without any introductory phrases, explanations, or quotation marks.
+AI_TRANSLATION_PROMPT_TEMPLATE = """You are an experienced English->French translator who handles literary, technical, and marketing discourse with equal ease. Infer the text's domain, intended audience, formality, and tone directly from the source and mirror them naturally in French. Preserve the author's intent, emotional hue, rhythm, and voice. Adapt idioms, cultural references, humor, and wordplay so they resonate with contemporary Francophone readers while remaining faithful to meaning.
 
-English: {english_text}
+Before translating, observe any punctuation, typography, markdown, inline code, mathematical notation, HTML tags, or placeholders. Retain this scaffolding exactly unless idiomatic French demands a minimal adjustment; never invent new structure. Keep product names, terminology, and proper nouns unchanged unless a widely accepted French variant exists, and respect capitalization, honorifics, and dialogue formatting. When regional cues are present, follow the implied French variant; otherwise default to neutral international French.
 
-French Translation:"""
+Output only:
+French translation: <single cohesive translation matching the source's format and line breaks>
+Notes (optional): <use only to flag genuine ambiguities, justify a substantial adaptation, or offer a concise alternative phrasing>
+
+If the source allows multiple plausible readings, choose the interpretation that best fits the surrounding context and mention the alternative briefly in Notes. Do not apologize or explain process details; focus on delivering a polished translation.
+
+English source:
+{english_text}
+"""
 
 # --- End of eng_to_fr_latex_templates.py --- 

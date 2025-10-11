@@ -54,12 +54,19 @@ _UI_STRINGS: Dict[str, str] = {
     "menu.anki_reconcile": "Reconcile Anki exports (German -> English)",
 }
 
-GERMAN_ENG_TO_DE_PROMPT = """Translate the following English text into idiomatic, context-appropriate German. Preserve the original register (formal vs. informal), sentence emphasis, and expressive punctuation (quotes, dashes, ellipses). Maintain paragraph and line breaks. Detect idioms, figurative turns of phrase, and collocations: when the source is idiomatic, choose an equally idiomatic German expression at the same register; use a faithful literal phrasing only if no natural idiom exists, while keeping the imagery intact. Prefer natural German syntax over word-for-word calques, and retain proper nouns and technical terms untouched. Output only the German translation—no commentary, no quotation marks.
+GERMAN_ENG_TO_DE_PROMPT = """You are an experienced English->German translator equally comfortable with literary, technical, and marketing texts. Derive the domain, target audience, formality, tone, and era directly from the source and recreate them authentically in German. Preserve the author's intent, emotional register, rhythm, and narrative voice. Recast idioms, cultural references, humor, and wordplay so they feel native to contemporary German readers while staying faithful to meaning.
 
-English Text:
-"{english_text}"
+Before translating, observe any punctuation, typography, markdown, inline code, mathematical notation, HTML tags, placeholders, or dialogue markers. Copy this scaffolding exactly unless idiomatic German requires a minimal adjustment; never invent new structure. Keep product names, terminology, and proper nouns unchanged unless a widely used German equivalent exists, and respect capitalization, honorifics, and quotation style. When regional cues appear, adopt the matching German variant; otherwise default to neutral Standarddeutsch.
 
-German Translation:"""
+Output only:
+German translation: <single cohesive translation mirroring paragraph and line breaks>
+Notes (optional): <use only to flag genuine ambiguities, justify a significant adaptation, or offer a concise alternate phrasing>
+
+If the source allows multiple plausible readings, pick the interpretation that best fits context and mention the alternative briefly in Notes. Do not apologize or describe your process; deliver a polished translation.
+
+English source:
+{english_text}
+"""
 
 GERMAN_DE_TO_ENG_PROMPT = """Translate the following German text into idiomatic, context-appropriate English. Preserve register, tone, and rhetorical devices (questions, exclamations, dashes) while keeping paragraph and line breaks. Detect idioms, figurative language, and fixed expressions: when the source is idiomatic, deliver an equally idiomatic English expression at the same register; switch to a faithful literal rendering only when an idiomatic counterpart would distort meaning, keeping notable imagery intact. Favour fluent English phrasing over word-for-word translations, yet retain proper nouns and culture-specific terms when no natural equivalent exists. Produce only the English translation—no commentary, no quotation marks.
 

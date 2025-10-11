@@ -1,11 +1,10 @@
-import argparse
 import tempfile
 from pathlib import Path
 
 import pytest
 
 import FrenchVocab
-from cli.bootstrap import build_app, parse_args
+from cli.bootstrap import build_app
 from languages import available_language_codes, get_language_config
 
 
@@ -32,24 +31,16 @@ def test_available_language_codes_include_german():
     assert "de" in codes
 
 
-def test_parse_args_respects_defaults(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "x" * 40)
-    args = parse_args([])
-    assert isinstance(args, argparse.Namespace)
-    assert args.language == FrenchVocab.FrenchVocabBuilder.DEFAULT_LANGUAGE_CODE
-
-
 @pytest.mark.parametrize("language_code", ["fr", "de"])
 def test_build_app_sets_language(monkeypatch, language_code, tmp_path):
     monkeypatch.setenv("GEMINI_API_KEY", "x" * 40)
     latex_path = tmp_path / f"{language_code}_cli.tex"
-    args = argparse.Namespace(
+    builder = build_app(
+        language_code,
         latex_file=str(latex_path),
         provider="gemini",
         verbose=False,
-        language=language_code,
     )
-    builder = build_app(args)
     assert builder.language_code == language_code
     assert builder.latex_file.exists()
 

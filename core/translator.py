@@ -258,14 +258,14 @@ class TranslatorCLI:
     # ------------------------------------------------------------------
     def _confirm_yes_no(self, message: str, default: bool = True) -> bool:
         default_choice = "y" if default else "n"
-        prompt_text = f"{message} [y/n]"
+        prompt_text = f"{message} [y/n]: "
         yes_tokens = {"y", "yes", "ja", "j", "oui", "o", "1", "true"}
         no_tokens = {"n", "no", "nein", "non", "0", "false"}
 
         while True:
-            response = Prompt.ask(prompt_text, default=default_choice)
+            response = self.console.input(prompt_text)
             if response is None:
-                response = default_choice
+                response = ""
             normalized = response.strip() or default_choice
             normalized = normalized.casefold()
             if normalized in yes_tokens:
@@ -283,7 +283,7 @@ class TranslatorCLI:
 
         self.console.print(Panel(table, border_style="blue", expand=False))
         return self._confirm_yes_no(
-            f"Save this {self.source_label.lower()} → {self.target_label.lower()} translation?",
+            f"Save this {self.source_label} → {self.target_label} translation?",
             default=True,
         )
 
