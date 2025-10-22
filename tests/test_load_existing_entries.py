@@ -34,6 +34,34 @@ SIMPLE_TEX = r"""\documentclass{article}
 \end{document}
 """
 
+MISSING_TEX = r"""\documentclass{article}
+\usepackage[utf8]{inputenc}
+\newcommand{\entry}[4]{\item \textbf{#1} (#2)\begin{enumerate}#3\end{enumerate}\begin{itemize}#4\end{itemize}}
+\begin{document}
+\begin{itemize}[leftmargin=*]
+\entry{iPhone}{noun}
+      {
+        \item Smart device
+      }
+      {
+        \item C'est cher \\ (It is expensive)
+      }
+\entry{NoExample}{noun}
+      {
+        \item Definition
+      }
+      {
+      }
+\entry{NoDefinition}{noun}
+      {
+      }
+      {
+        \item Phrase \\ (Sentence)
+      }
+\end{itemize}
+\end{document}
+"""
+
 
 class TestLoadExistingEntries(unittest.TestCase):
     def setUp(self):
@@ -59,6 +87,35 @@ class TestLoadExistingEntries(unittest.TestCase):
             # normalized entries map accent-free key to canonical key
             norm_key = app.normalize_word('Abîmer')
             self.assertEqual(app.normalized_entries[norm_key], 'abîmer')
+
+    def test_loader_preserves_case_and_missing_sections(self):
+        class _StubClient:
+            def stream(self, prompt):
+                yield ""
+            def model_label(self):
+                return "Stub"
+
+        with tempfile.TemporaryDirectory() as td:
+            tex_path = Path(td) / 'Custom.tex'
+            tex_path.write_text(MISSING_TEX, encoding='utf-8')
+
+            app = FrenchVocab.FrenchVocabBuilder(
+                str(tex_path),
+                provider='gemini',
+                verbose=False,
+                client=_StubClient(),
+            )
+
+            self.assertIn('iphone', app.word_entries)
+            self.assertEqual(app.word_entries['iphone']['word'], 'iPhone')
+
+            self.assertIn('noexample', app.word_entries)
+            self.assertEqual(app.word_entries['noexample']['examples_list'], [])
+
+            self.assertIn('nodefinition', app.word_entries)
+            self.assertEqual(app.word_entries['nodefinition']['definitions_list'], [])
+
+            self.assertEqual(app.exported_words_file.parent, tex_path.parent)
 
 
 if __name__ == '__main__':

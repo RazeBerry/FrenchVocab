@@ -2,6 +2,7 @@ import sys
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from typing import List, Dict, Any, Optional, Tuple, Sequence
 from enum import Enum
@@ -254,14 +255,56 @@ class UIHelper:
     
     def input_with_style(self, prompt: str, style: str = "bold cyan") -> str:
         """Get input with styled prompt"""
-        self.console.print(f"[{style}]{prompt}[/{style}]", end="")
+        self.console.print(f"[{style}]{prompt}[/]", end="")
         return read_line()
 
-    def prompt(self, prompt: str = "", *, style: Optional[str] = None) -> str:
+    def prompt(
+        self,
+        prompt: str = "",
+        *,
+        style: Optional[str] = None,
+        default: Optional[str] = None,
+    ) -> str:
         """Prompt for input using shared input helper."""
+        suffix = f" [{default}]" if default else ""
+        label = f"{prompt}{suffix}".strip()
         if style and prompt:
-            self.console.print(f"[{style}]{prompt}[/{style}]", end="")
+            self.console.print(f"[{style}]{label}[/]", end=": ")
             prompt_text = ""
         else:
-            prompt_text = prompt
-        return read_line(prompt_text)
+            prompt_text = f"{label}: " if label else ""
+
+        try:
+            response = read_line(prompt_text, console=self.console)
+        except (EOFError, OSError):
+            return Prompt.ask(
+                prompt or "",
+                default=default,
+                console=self.console,
+                show_default=default is not None,
+            )
+
+        response = response.strip()
+        if not response and default is not None:
+            return default
+        return response
+
+    def confirm(self, message: str, *, default: bool = True) -> bool:
+        """Prompt user for a yes/no confirmation with shared input helper."""
+        yes_tokens = {"y", "yes", "ja", "j", "oui", "o", "1", "true"}
+        no_tokens = {"n", "no", "nein", "non", "0", "false"}
+        default_choice = "y" if default else "n"
+        suffix = "[Y/n]" if default else "[y/N]"
+
+        while True:
+            try:
+                response = read_line(f"{message} {suffix} ", console=self.console)
+            except (EOFError, OSError):
+                return Confirm.ask(message, default=default, console=self.console)
+
+            normalized = response.strip().casefold() or default_choice
+            if normalized in yes_tokens:
+                return True
+            if normalized in no_tokens:
+                return False
+            self.warning("Please enter Y or N.")

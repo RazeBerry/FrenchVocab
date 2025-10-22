@@ -79,8 +79,6 @@ class GeminiClient(LLMClient):
                 ttft = t_first - t0
                 print("[Warning] Model returned no tokens.")
                 return dict(ttft=ttft, tps=0.0, tokens_out=0)
-            pass
-
         finally:
             t_last = perf_counter()
             full_text = "".join(pieces)
@@ -88,11 +86,17 @@ class GeminiClient(LLMClient):
             out_tokens = 0
             if full_text:
                 try:
+                    token_payload = [
+                        types.Content(
+                            role="user",
+                            parts=[types.Part.from_text(text=full_text)],
+                        )
+                    ]
                     token_info = client.models.count_tokens(
                         model=model_name,
-                        contents=full_text
+                        contents=token_payload,
                     )
-                    out_tokens = token_info.total_tokens
+                    out_tokens = getattr(token_info, "total_tokens", 0)
                 except Exception as e:
                     print(f"[Error] Failed to count tokens: {e}")
 

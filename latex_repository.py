@@ -96,7 +96,7 @@ class LatexRepository:
                     examples.append((payload, ''))
 
             entry = WordEntry(
-                word=word_raw.capitalize(),
+                word=word_raw.strip(),
                 type=type_raw,
                 definitions=[d for d in definitions if d],
                 examples=examples,

@@ -170,7 +170,7 @@ class FrenchVocabBuilder:
         self.load_existing_entries()
         load_entries_end = time.time()
         
-        self.exported_words_file = self._resolve_exported_words_path(project_root)
+        self.exported_words_file = self._resolve_exported_words_path(project_root, self.latex_file.parent)
         self.exported_words = self.load_exported_words()
         self.entry_count = self.count_entries()
         
@@ -215,23 +215,32 @@ class FrenchVocabBuilder:
         target = getattr(config, "target_label", "Target")
         return f"{source} → {target} Translator"
 
-    def _resolve_exported_words_path(self, base_dir: Path) -> Path:
+    def _resolve_exported_words_path(self, project_root: Path, target_dir: Path) -> Path:
+        """Resolve the exported words tracker, preferring the LaTeX file's directory."""
         lang_code = self.language_code
-        candidate = base_dir / f"exported_words_{lang_code}.json"
-        if lang_code == self.DEFAULT_LANGUAGE_CODE:
-            legacy = base_dir / "exported_words.json"
-            if legacy.exists() and not candidate.exists():
-                try:
-                    legacy.rename(candidate)
-                except OSError:
-                    try:
-                        shutil.copyfile(legacy, candidate)
-                    except OSError:
-                        return legacy
+        candidate = target_dir / f"exported_words_{lang_code}.json"
+        if candidate.exists():
+            return candidate
+
+        def _fallback_candidates() -> List[Path]:
+            paths: List[Path] = []
+            paths.append(project_root / f"exported_words_{lang_code}.json")
+            if lang_code == self.DEFAULT_LANGUAGE_CODE:
+                paths.append(project_root / "exported_words.json")
+            return paths
+
+        for legacy_path in _fallback_candidates():
+            if not legacy_path.exists():
+                continue
+            if legacy_path.parent == target_dir:
+                return legacy_path
+            try:
+                target_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(legacy_path, candidate)
                 return candidate
-            if candidate.exists():
-                return candidate
-            return candidate if not legacy.exists() else legacy
+            except OSError:
+                return legacy_path
+
         return candidate
 
     def _entry_command(self) -> str:
@@ -448,7 +457,7 @@ class FrenchVocabBuilder:
                     return api_key
                 except KeyringError as e:
                     self.ui.error(f"Error saving to keyring: {e}")
-                    if Confirm.ask("Do you want to continue without saving to keyring?"):
+                    if self.ui.confirm("Do you want to continue without saving to keyring?", default=False):
                         return api_key
             else:
                 self.ui.error("Invalid API key. Please try again.")
@@ -508,19 +517,28 @@ class FrenchVocabBuilder:
         entries = self.repo.load_entries()
         key_collisions: Dict[str, List[str]] = {}
         for e in entries:
-            if not e.word.strip() or not e.type or not e.definitions or not e.examples:
+            word = (e.word or "").strip()
+            if not word:
                 self.ui.warning(f"Skipping entry due to content: '{e.word or '[EMPTY WORD]'}'")
                 continue
-            key = e.word.strip().lower()
+
+            if not e.definitions:
+                self.ui.warning(f"Entry '{word}' is missing definitions; keeping it with an empty definition list.")
+            if not e.examples:
+                self.ui.warning(f"Entry '{word}' is missing examples; keeping it with an empty example list.")
+
+            key = word.lower()
             if key in self.word_entries:
                 key_collisions.setdefault(key, [self.word_entries[key]['word']]).append(e.word)
+            definitions = list(e.definitions or [])
+            examples = list(e.examples or [])
             self.word_entries[key] = {
-                'word': e.word,
-                'type': e.type,
-                'definitions': "; ".join(e.definitions),
-                'examples': "; ".join([f"{fr} ({en})" if en else fr for fr, en in e.examples]),
-                'definitions_list': e.definitions,
-                'examples_list': e.examples,
+                'word': word,
+                'type': e.type or "",
+                'definitions': "; ".join(definitions),
+                'examples': "; ".join([f"{fr} ({en})" if en else fr for fr, en in examples]),
+                'definitions_list': definitions,
+                'examples_list': examples,
             }
             norm = self.normalize_word(key)
             self.normalized_entries[norm] = key
@@ -1230,14 +1248,11 @@ class FrenchVocabBuilder:
 
         # Optional intelligent routing: send sentences to Fr->En translator
         if detected_type == 'sentence' and getattr(self, 'route_sentences', True):
-            try:
-                target_filename = self.language_config.target_to_eng.default_filename
-                route = Confirm.ask(
-                    f"This looks like a full sentence. Translate and save in {target_filename} instead?",
-                    default=True,
-                )
-            except Exception:
-                route = True
+            target_filename = self.language_config.target_to_eng.default_filename
+            route = self.ui.confirm(
+                f"This looks like a full sentence. Translate and save in {target_filename} instead?",
+                default=True,
+            )
             if route:
                 if not self.fr_to_eng_translator:
                     title = self._translator_title(self.language_config.target_to_eng)
@@ -1288,14 +1303,11 @@ class FrenchVocabBuilder:
         # Post-parse routing opportunity if AI identified as sentence
         if (word_type and isinstance(word_type, list) and word_type[0].lower() == 'sentence' and
             getattr(self, 'route_sentences', True)):
-            try:
-                title = self._translator_title(self.language_config.target_to_eng)
-                route2 = Confirm.ask(
-                    f"AI identified this as a sentence. Route to {title} instead?",
-                    default=True,
-                )
-            except Exception:
-                route2 = True
+            title = self._translator_title(self.language_config.target_to_eng)
+            route2 = self.ui.confirm(
+                f"AI identified this as a sentence. Route to {title} instead?",
+                default=True,
+            )
             if route2:
                 if not self.fr_to_eng_translator:
                     alt_title = self._translator_title(self.language_config.target_to_eng)
@@ -1525,7 +1537,7 @@ class FrenchVocabBuilder:
 
     def handle_anki_export(self):
         default_deck = self.language_config.anki.default_deck_name
-        deck_name = Prompt.ask("Enter a name for your Anki deck", default=default_deck)
+        deck_name = self.ui.prompt("Enter a name for your Anki deck", default=default_deck)
         self.export_to_anki(deck_name)
     
     def display_parsed_info(
@@ -1580,12 +1592,12 @@ class FrenchVocabBuilder:
         in_latex_not_exported, in_exports_not_latex = self.compare_entries_and_exports()
         # Export missing LaTeX words to Anki
         if in_latex_not_exported:
-            if Confirm.ask(f"Export {len(in_latex_not_exported)} word(s) missing in Anki now?", default=True):
-                deck_name = Prompt.ask("Enter deck name", default=self.language_config.anki.default_deck_name)
+            if self.ui.confirm(f"Export {len(in_latex_not_exported)} word(s) missing in Anki now?", default=True):
+                deck_name = self.ui.prompt("Enter deck name", default=self.language_config.anki.default_deck_name)
                 self.export_to_anki(deck_name)
         # Remove extra exported words not present in LaTeX
         if in_exports_not_latex:
-            if Confirm.ask(f"Remove {len(in_exports_not_latex)} stale exported word(s) from tracking?", default=False):
+            if self.ui.confirm(f"Remove {len(in_exports_not_latex)} stale exported word(s) from tracking?", default=False):
                 self.exported_words.difference_update(in_exports_not_latex)
                 self.save_exported_words()
                 self.ui.success("Updated exported words; removed stale entries.")
@@ -1624,12 +1636,12 @@ class FrenchVocabBuilder:
         self.ui.quick_table(f"[bold blue]All Vocabulary Entries ({len(self.word_entries)} words)[/bold blue]", headers, rows)
         
         # Add filter/search option
-        if Confirm.ask("Would you like to search for a specific word?", default=False):
+        if self.ui.confirm("Would you like to search for a specific word?", default=False):
             self.search_vocabulary()
 
     def search_vocabulary(self):
         """Allows searching for specific vocabulary entries by keyword."""
-        search_term = Prompt.ask("Enter search term").lower()
+        search_term = self.ui.prompt("Enter search term").strip().lower()
         
         results = {}
         for word, entry in self.word_entries.items():
@@ -1662,8 +1674,8 @@ class FrenchVocabBuilder:
         self.ui.quick_table(f"[bold blue]Search Results for '{search_term}' ({len(results)} matches)[/bold blue]", headers, rows)
         
         # Offer to display full entry for a selected word
-        if Confirm.ask("Would you like to see the full entry for any of these words?", default=False):
-            word_to_view = Prompt.ask("Enter the word to view")
+        if self.ui.confirm("Would you like to see the full entry for any of these words?", default=False):
+            word_to_view = self.ui.prompt("Enter the word to view").strip()
             word_to_view_lower = word_to_view.lower()
             if word_to_view_lower in self.word_entries:
                 self.display_existing_entry(word_to_view_lower)

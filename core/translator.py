@@ -244,7 +244,7 @@ class TranslatorCLI:
                     "[bold yellow]Warning: AI response might be empty or suspicious:[/bold yellow]"
                 )
                 self.console.print(f"> {translation}")
-                if not Confirm.ask("Accept this response anyway?", default=False):
+                if not self._confirm_yes_no("Accept this response anyway?", default=False):
                     return None
 
             return translation
@@ -258,17 +258,19 @@ class TranslatorCLI:
     # ------------------------------------------------------------------
     def _confirm_yes_no(self, message: str, default: bool = True) -> bool:
         default_choice = "y" if default else "n"
-        prompt_text = f"{message} [y/n]: "
         yes_tokens = {"y", "yes", "ja", "j", "oui", "o", "1", "true"}
         no_tokens = {"n", "no", "nein", "non", "0", "false"}
 
         while True:
-            response = Prompt.ask(
-                prompt_text,
-                console=self.console,
-                default=default_choice,
-                show_default=False,
-            )
+            try:
+                response = read_line(f"{message} [y/n] ", console=self.console)
+            except (EOFError, OSError):
+                response = Prompt.ask(
+                    f"{message} [y/n]",
+                    console=self.console,
+                    default=default_choice,
+                    show_default=False,
+                )
             if response is None:
                 response = ""
             normalized = response.strip() or default_choice

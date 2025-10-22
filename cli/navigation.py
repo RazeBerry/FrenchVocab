@@ -55,6 +55,16 @@ def interactive_select(
     if not options:
         raise ValueError("interactive_select requires at least one option.")
 
+    if not getattr(sys.stdin, "isatty", lambda: False)():
+        instructions = instructions or _INSTRUCTION_DEFAULT
+        return _fallback_interactive_select(
+            console,
+            title,
+            options,
+            instructions,
+            show_keys=show_keys,
+        )
+
     instructions = instructions or _INSTRUCTION_DEFAULT
     index = 0
 
@@ -91,6 +101,38 @@ def interactive_select(
                         )
     finally:
         console.show_cursor(True)
+
+
+def _fallback_interactive_select(
+    console: Console,
+    title: str,
+    options: Sequence[MenuOption],
+    instructions: str,
+    *,
+    show_keys: bool,
+) -> str:
+    console.print(Panel(instructions, title=title, border_style="blue", expand=False))
+
+    for idx, (key, label) in enumerate(options, start=1):
+        suffix = f" [dim]({key})[/dim]" if show_keys and key and key not in label else ""
+        console.print(f"{idx}. {label}{suffix}")
+
+    prompt = "Select an option by number"
+    if options:
+        prompt += f" [1-{len(options)}]"
+    prompt += " (Enter for 1): "
+
+    while True:
+        console_input = getattr(console, "input", None)
+        raw = console_input(prompt) if callable(console_input) else input(prompt)
+        choice = raw.strip()
+        if not choice and options:
+            return options[0][0]
+        if choice.isdigit():
+            idx = int(choice)
+            if 1 <= idx <= len(options):
+                return options[idx - 1][0]
+        console.print("[bold red]Invalid selection. Please enter a valid option number.[/bold red]")
 
 
 def _render_menu(
