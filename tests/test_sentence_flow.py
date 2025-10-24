@@ -73,7 +73,7 @@ class TestSentenceFlow(unittest.TestCase):
             __builtins__['input'] = orig_input
         self.assertEqual(out, "Première ligne\nDeuxième ligne")
 
-    def test_check_spelling_cancel_on_n(self):
+    def test_check_spelling_cancel_on_q(self):
         b = self._builder(client=_FakeLLMClient())
         ai_resp = (
             "Spelling Check: typo\n"
@@ -86,8 +86,8 @@ class TestSentenceFlow(unittest.TestCase):
             "2. fr\n(en)\n"
             "3. fr\n(en)\n"
         )
-        # Provide 'n' to cancel
-        seq = iter(["n"])  # reject correction
+        # Provide 'q' to cancel
+        seq = iter(["q"])  # abandon correction flow
         orig_input = __builtins__['input']
         try:
             __builtins__['input'] = lambda prompt='': next(seq)
@@ -95,6 +95,28 @@ class TestSentenceFlow(unittest.TestCase):
         finally:
             __builtins__['input'] = orig_input
         self.assertIsNone(res)
+
+    def test_check_spelling_keep_original_on_n(self):
+        b = self._builder(client=_FakeLLMClient())
+        ai_resp = (
+            "Spelling Check: typo\n"
+            "Correctly Spelt Word: correction\n"
+            "Word Type: noun\n"
+            "Definitions:\n"
+            "a. d1\n"
+            "Examples:\n"
+            "1. fr\n(en)\n"
+            "2. fr\n(en)\n"
+            "3. fr\n(en)\n"
+        )
+        seq = iter(["n"])  # keep original spelling
+        orig_input = __builtins__['input']
+        try:
+            __builtins__['input'] = lambda prompt='': next(seq)
+            res = b.check_spelling("orig", ai_resp)
+        finally:
+            __builtins__['input'] = orig_input
+        self.assertEqual(res, "orig")
 
     def test_format_latex_entry_preserves_sentence_casing(self):
         latex = FrenchVocab.FrenchVocabBuilder.format_latex_entry(

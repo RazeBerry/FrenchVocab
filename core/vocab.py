@@ -909,8 +909,13 @@ class FrenchVocabBuilder:
 
         word = "\n".join(lines).strip()
 
-        # Normalize apostrophes: convert curly quotes to straight apostrophes
+        # Normalize common typography quirks before validation
+        word = unicodedata.normalize("NFC", word)
         word = word.replace("’", "'").replace("‘", "'")
+        zero_width_chars = ("\u00AD", "\u200B", "\u200C", "\u200D", "\u2060", "\ufeff")
+        for ch in zero_width_chars:
+            if ch in word:
+                word = word.replace(ch, "")
 
         # Basic validations
         if not word:
@@ -1492,14 +1497,25 @@ class FrenchVocabBuilder:
                 return word
             
             # Valid correction found that's different from input
-            self.console.print(f"Did you mean '{corrected_spelling}' instead of '{word}'?")
+            suggestion_panel = (
+                "[bold]Original:[/bold] "
+                f"[bold red]{word}[/bold red]\n"
+                "[bold]Suggested:[/bold] "
+                f"[bold green]{corrected_spelling}[/bold green]"
+            )
+            self.ui.panel(
+                suggestion_panel,
+                title="Spelling Suggestion",
+                border_style="yellow",
+                expand=False,
+            )
             self.console.print("y: Yes, use the corrected spelling")
-            self.console.print("n: No, cancel this entry")
+            self.console.print("n: No, keep my original spelling")
             self.console.print("q: Quit and abandon this edit")
             # Robust input loop to avoid issues with leftover buffered lines
             yes_tokens = {"y", "yes", "ja", "j", ""}
-            no_tokens = {"n", "no", "nein"}
-            quit_tokens = {"q", "quit"}
+            keep_tokens = {"n", "no", "nein", "k", "keep", "o", "original"}
+            quit_tokens = {"q", "quit", "c", "cancel"}
             while True:
                 try:
                     choice = read_line("Your choice [y/n/q] (y): ").strip()
@@ -1508,9 +1524,9 @@ class FrenchVocabBuilder:
                 normalized = choice.casefold()
                 if normalized in yes_tokens:
                     return corrected_spelling
-                if normalized in no_tokens:
-                    self.ui.warning("Correction rejected. Entry cancelled.")
-                    return None
+                if normalized in keep_tokens:
+                    self.ui.info("Keeping original spelling.")
+                    return word
                 if normalized in quit_tokens:
                     self.ui.warning("Abandoning edit. Returning to main menu.")
                     return None
