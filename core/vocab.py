@@ -1357,8 +1357,18 @@ class FrenchVocabBuilder:
             self.ui.error("Generated LaTeX entry is empty or invalid. Aborting process.")
             return
 
-        # --- Display LaTeX Entry & Insert ---
+        # --- Display LaTeX Entry & Confirm ---
         self.display_latex_entry(latex_entry)
+
+        if not self.ui.confirm(
+            f"Add this entry for '{insert_word}' to your vocabulary file?",
+            default=True,
+        ):
+            self.ui.warning(f"Entry for '{insert_word}' discarded. Nothing saved.")
+            self.duplicate_resolution = None
+            return
+
+        # --- Insert ---
         self.insert_entry_alphabetically(latex_entry, insert_word) # Insert using the (possibly variant) word
 
         # --- Update In-Memory Dictionaries ---

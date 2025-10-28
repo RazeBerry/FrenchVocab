@@ -172,6 +172,44 @@ class TestSentenceFlow(unittest.TestCase):
         # Should not contain example \item content since examples were dropped
         self.assertNotIn("FR ex \\\\ (EN ex)", captured.get('entry', ''))
 
+    def test_decline_preview_confirmation_skips_save(self):
+        fake_client = _FakeLLMClient()
+        b = self._builder(client=fake_client)
+
+        b.get_word_input = lambda: "nein"
+        b.query_ai = lambda _word: "stubbed"
+        b.check_spelling = lambda word, _resp: word
+        b.parse_ai_response = lambda _resp: (
+            ['verb'],
+            ['to refuse politely'],
+            [('FR sample', 'EN sample')],
+        )
+        b.check_duplicate = lambda _w: None
+        b.is_valid_latex_entry = lambda _entry: True
+        b.display_parsed_info = lambda *args, **kwargs: None
+        b.display_latex_entry = lambda *args, **kwargs: None
+
+        b.ui.confirm = lambda *args, **kwargs: False
+
+        insert_called = {'value': False}
+        def _record_insert(_entry, _word):
+            insert_called['value'] = True
+        b.insert_entry_alphabetically = _record_insert
+
+        added_count = {'value': 0}
+        def _record_add(*args, **kwargs):
+            added_count['value'] += 1
+        b.add_word_to_entries = _record_add
+
+        def _fail_alphabetize():
+            raise AssertionError("alphabetize_entries should not run when confirmation is declined")
+        b.alphabetize_entries = _fail_alphabetize
+
+        b.handle_new_word_entry()
+
+        self.assertFalse(insert_called['value'])
+        self.assertEqual(added_count['value'], 0)
+
 
 if __name__ == '__main__':
     unittest.main()
