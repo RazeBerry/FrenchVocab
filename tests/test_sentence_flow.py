@@ -73,7 +73,7 @@ class TestSentenceFlow(unittest.TestCase):
             __builtins__['input'] = orig_input
         self.assertEqual(out, "Première ligne\nDeuxième ligne")
 
-    def test_check_spelling_cancel_on_q(self):
+    def test_check_spelling_records_suggestion(self):
         b = self._builder(client=_FakeLLMClient())
         ai_resp = (
             "Spelling Check: typo\n"
@@ -86,37 +86,27 @@ class TestSentenceFlow(unittest.TestCase):
             "2. fr\n(en)\n"
             "3. fr\n(en)\n"
         )
-        # Provide 'q' to cancel
-        seq = iter(["q"])  # abandon correction flow
-        orig_input = __builtins__['input']
-        try:
-            __builtins__['input'] = lambda prompt='': next(seq)
-            res = b.check_spelling("orig", ai_resp)
-        finally:
-            __builtins__['input'] = orig_input
-        self.assertIsNone(res)
+        res = b.check_spelling("orig", ai_resp)
+        self.assertEqual(res, "correction")
+        self.assertEqual(
+            b.pending_spelling_suggestion,
+            {"original": "orig", "suggested": "correction"},
+        )
 
-    def test_check_spelling_keep_original_on_n(self):
+    def test_check_spelling_returns_input_when_no_change(self):
         b = self._builder(client=_FakeLLMClient())
         ai_resp = (
-            "Spelling Check: typo\n"
-            "Correctly Spelt Word: correction\n"
+            "Spelling Check: OK\n"
+            "Correctly Spelt Word: orig\n"
             "Word Type: noun\n"
             "Definitions:\n"
             "a. d1\n"
             "Examples:\n"
             "1. fr\n(en)\n"
-            "2. fr\n(en)\n"
-            "3. fr\n(en)\n"
         )
-        seq = iter(["n"])  # keep original spelling
-        orig_input = __builtins__['input']
-        try:
-            __builtins__['input'] = lambda prompt='': next(seq)
-            res = b.check_spelling("orig", ai_resp)
-        finally:
-            __builtins__['input'] = orig_input
+        res = b.check_spelling("orig", ai_resp)
         self.assertEqual(res, "orig")
+        self.assertIsNone(b.pending_spelling_suggestion)
 
     def test_format_latex_entry_preserves_sentence_casing(self):
         latex = FrenchVocab.FrenchVocabBuilder.format_latex_entry(
@@ -209,6 +199,59 @@ class TestSentenceFlow(unittest.TestCase):
 
         self.assertFalse(insert_called['value'])
         self.assertEqual(added_count['value'], 0)
+
+    def test_revert_to_original_spelling_still_saves(self):
+        fake_client = _FakeLLMClient()
+        b = self._builder(client=fake_client)
+
+        ai_resp = (
+            "Spelling Check: typo\n"
+            "Correctly Spelt Word: correction\n"
+            "Word Type: verb\n"
+            "Definitions:\n"
+            "a. def1\n"
+            "Examples:\n"
+            "1. fr\n(en)\n"
+        )
+
+        b.get_word_input = lambda: "orig"
+        b.query_ai = lambda _word: ai_resp
+        b.parse_ai_response = lambda _resp: (
+            ['verb'],
+            ['meaning'],
+            [('FR sample', 'EN sample')],
+        )
+        b.check_duplicate = lambda _w: None
+        b.is_valid_latex_entry = lambda _entry: True
+        b.display_parsed_info = lambda *args, **kwargs: None
+
+        displayed_entries = []
+        b.display_latex_entry = lambda entry: displayed_entries.append(entry)
+
+        def _confirm(message, *args, **kwargs):
+            if "Use corrected spelling" in message:
+                return False
+            if "Add this entry" in message:
+                return True
+            return True
+        b.ui.confirm = _confirm
+
+        inserted = {}
+        def _record_insert(entry, word):
+            inserted['entry'] = entry
+            inserted['word'] = word
+        b.insert_entry_alphabetically = _record_insert
+
+        added_words = []
+        b.add_word_to_entries = lambda word, *_args: added_words.append(word)
+        b.alphabetize_entries = lambda: None
+
+        b.handle_new_word_entry()
+
+        self.assertGreaterEqual(len(displayed_entries), 2)
+        self.assertIn("\\entry{Orig}{verb}", displayed_entries[-1])
+        self.assertEqual(inserted.get('word'), "orig")
+        self.assertEqual(added_words, ["orig"])
 
 
 if __name__ == '__main__':

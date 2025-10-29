@@ -145,6 +145,7 @@ class FrenchVocabBuilder:
         self.eng_to_fr_translator: Optional[TranslatorCLI] = None
         self.fr_to_eng_translator: Optional[TranslatorCLI] = None
         self.duplicate_resolution: Optional[Dict[str, str]] = None  # stores {'mode': 'merge'|'force', 'existing': <word>}
+        self.pending_spelling_suggestion: Optional[Dict[str, str]] = None
 
         # Determine provider early and set verbosity before key bootstrapping
         if provider is None:
@@ -1237,6 +1238,7 @@ class FrenchVocabBuilder:
     def handle_new_word_entry(self):
         # Reset duplicate resolution per new flow
         self.duplicate_resolution = None
+        self.pending_spelling_suggestion = None
         original_word = self.get_word_input()
         if not original_word:
             return # User cancelled input
@@ -1357,9 +1359,36 @@ class FrenchVocabBuilder:
             self.ui.error("Generated LaTeX entry is empty or invalid. Aborting process.")
             return
 
-        # --- Display LaTeX Entry & Confirm ---
+        # --- Display LaTeX Entry ---
         self.display_latex_entry(latex_entry)
 
+        if self.pending_spelling_suggestion:
+            original_word = self.pending_spelling_suggestion["original"]
+            suggested_word = self.pending_spelling_suggestion["suggested"]
+            use_corrected = self.ui.confirm(
+                f"Use corrected spelling '{suggested_word}' instead of original '{original_word}'?",
+                default=True,
+            )
+            if not use_corrected:
+                self.ui.info(f"Reverting to original spelling '{original_word}'.")
+                final_word = original_word
+                insert_word = original_word
+                if self.duplicate_resolution and self.duplicate_resolution.get('mode') == 'force':
+                    if self.check_duplicate(insert_word):
+                        insert_word = self.create_unique_variant(insert_word)
+                latex_entry = self.format_latex_entry(
+                    insert_word,
+                    word_type[0],
+                    definitions,
+                    examples,
+                    entry_command=self.entry_command,
+                )
+                self.display_latex_entry(latex_entry)
+            else:
+                final_word = suggested_word
+            self.pending_spelling_suggestion = None
+
+        # --- Confirm Save ---
         if not self.ui.confirm(
             f"Add this entry for '{insert_word}' to your vocabulary file?",
             default=True,
@@ -1367,6 +1396,8 @@ class FrenchVocabBuilder:
             self.ui.warning(f"Entry for '{insert_word}' discarded. Nothing saved.")
             self.duplicate_resolution = None
             return
+
+        final_word = insert_word
 
         # --- Insert ---
         self.insert_entry_alphabetically(latex_entry, insert_word) # Insert using the (possibly variant) word
@@ -1519,28 +1550,12 @@ class FrenchVocabBuilder:
                 border_style="yellow",
                 expand=False,
             )
-            self.console.print("y: Yes, use the corrected spelling")
-            self.console.print("n: No, keep my original spelling")
-            self.console.print("q: Quit and abandon this edit")
-            # Robust input loop to avoid issues with leftover buffered lines
-            yes_tokens = {"y", "yes", "ja", "j", ""}
-            keep_tokens = {"n", "no", "nein", "k", "keep", "o", "original"}
-            quit_tokens = {"q", "quit", "c", "cancel"}
-            while True:
-                try:
-                    choice = read_line("Your choice [y/n/q] (y): ").strip()
-                except EOFError:
-                    choice = ''
-                normalized = choice.casefold()
-                if normalized in yes_tokens:
-                    return corrected_spelling
-                if normalized in keep_tokens:
-                    self.ui.info("Keeping original spelling.")
-                    return word
-                if normalized in quit_tokens:
-                    self.ui.warning("Abandoning edit. Returning to main menu.")
-                    return None
-                self.ui.error("Please select one of: y, n, q.")
+            self.pending_spelling_suggestion = {
+                "original": word,
+                "suggested": corrected_spelling,
+            }
+            self.ui.info("Using suggested spelling for now; you can revert after the preview.")
+            return corrected_spelling
         
         return word
 
