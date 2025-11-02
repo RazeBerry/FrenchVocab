@@ -40,7 +40,7 @@ class _FakeLLMClient:
 
 class TestSentenceFlow(unittest.TestCase):
     def setUp(self):
-        os.environ['GEMINI_API_KEY'] = 'x'*40
+        os.environ['GEMINI_API_KEY'] = 'AIza' + 'x'*36
 
     def _builder(self, client=None, tex_path=None):
         if tex_path is None:

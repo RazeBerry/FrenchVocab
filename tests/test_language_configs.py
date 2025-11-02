@@ -12,7 +12,7 @@ from languages.anki_shared_styles import get_anki_css
 
 @pytest.mark.parametrize("language_code", ["fr", "de"])
 def test_builder_initializes_for_language(language_code, monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "x" * 40)
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
     with tempfile.TemporaryDirectory() as tmpdir:
         tex_path = Path(tmpdir) / f"{language_code}_vocab.tex"
         builder = FrenchVocab.FrenchVocabBuilder(
@@ -35,7 +35,7 @@ def test_available_language_codes_include_german():
 
 @pytest.mark.parametrize("language_code", ["fr", "de"])
 def test_build_app_sets_language(monkeypatch, language_code, tmp_path):
-    monkeypatch.setenv("GEMINI_API_KEY", "x" * 40)
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
     latex_path = tmp_path / f"{language_code}_cli.tex"
     builder = build_app(
         language_code,

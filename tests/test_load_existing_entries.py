@@ -65,7 +65,7 @@ MISSING_TEX = r"""\documentclass{article}
 
 class TestLoadExistingEntries(unittest.TestCase):
     def setUp(self):
-        os.environ['GEMINI_API_KEY'] = 'x'*40  # pass basic length check
+        os.environ['GEMINI_API_KEY'] = 'AIza' + 'x'*36  # pass basic format check
 
     def test_load_parses_basic_entries_and_normalizes_type(self):
         with tempfile.TemporaryDirectory() as td:

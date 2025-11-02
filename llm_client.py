@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from time import perf_counter
 import os
 # Fix the imports for Google Generative AI
@@ -15,6 +16,10 @@ class LLMClient(ABC):
     def model_label(self) -> str:
         """Return a human-readable provider/model label."""
         return self.__class__.__name__
+
+    def verify_credentials(self, timeout: float = 5.0) -> None:  # pragma: no cover - optional override
+        """Validate credentials; subclasses may override for richer checks."""
+        return None
 
 class GeminiClient(LLMClient):
     MODEL_NAME = "gemini-flash-latest"
@@ -113,6 +118,26 @@ class GeminiClient(LLMClient):
     def model_label(self) -> str:
         return f"Google Gemini ({self.MODEL_NAME})"
 
+    def verify_credentials(self, timeout: float = 5.0) -> None:
+        def _probe() -> None:
+            payload = [
+                types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(text="credential-check")],
+                )
+            ]
+            self._client.models.count_tokens(model=self.MODEL_NAME, contents=payload)
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(_probe)
+        try:
+            future.result(timeout=timeout)
+        except FuturesTimeoutError as exc:
+            future.cancel()
+            raise TimeoutError("Gemini validation timed out") from exc
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
 # Optional Claude client implementation for backward compatibility
 # To restore Claude support, users can simply switch to this client
 try:
@@ -144,6 +169,20 @@ try:
 
         def model_label(self) -> str:
             return f"Anthropic Claude ({self.MODEL_NAME})"
+
+        def verify_credentials(self, timeout: float = 5.0) -> None:
+            def _probe() -> None:
+                self._client.models.list()
+
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(_probe)
+            try:
+                future.result(timeout=timeout)
+            except FuturesTimeoutError as exc:
+                future.cancel()
+                raise TimeoutError("Claude validation timed out") from exc
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
 except ImportError:
     # If anthropic is not installed, provide a stub that raises an informative error
     class ClaudeClient(LLMClient):
@@ -158,6 +197,12 @@ except ImportError:
 
         def model_label(self) -> str:
             return "Anthropic Claude (unavailable)"
+
+        def verify_credentials(self, timeout: float = 5.0) -> None:  # noqa: ARG002
+            raise ImportError(
+                "The anthropic package is not installed. "
+                "Install it with: pip install anthropic"
+            )
 
 class ProviderFactory:
     """Factory to create different LLM client implementations."""

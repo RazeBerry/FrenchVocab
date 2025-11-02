@@ -90,7 +90,7 @@ def _restore_google_stub(saved):
 
 
 def test_gemini_client_uses_structured_token_payload(tmp_path):
-    os.environ["GEMINI_API_KEY"] = "x" * 40
+    os.environ["GEMINI_API_KEY"] = "AIza" + "x" * 36
     saved = _install_google_stub()
     try:
         module_path = Path(__file__).resolve().parent.parent / "llm_client.py"

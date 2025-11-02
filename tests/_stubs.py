@@ -91,6 +91,22 @@ def install_basic_stubs():
     if 'keyring' not in sys.modules:
         keyring_stub = types.ModuleType('keyring')
         sys.modules['keyring'] = keyring_stub
+    keyring_stub = sys.modules['keyring']
+    if not hasattr(keyring_stub, '_store'):
+        keyring_stub._store = {}
+
+    def _kr_get_password(service, name):
+        return keyring_stub._store.get((service, name))
+
+    def _kr_set_password(service, name, value):
+        keyring_stub._store[(service, name)] = value
+
+    def _kr_delete_password(service, name):
+        keyring_stub._store.pop((service, name), None)
+
+    keyring_stub.get_password = _kr_get_password
+    keyring_stub.set_password = _kr_set_password
+    keyring_stub.delete_password = _kr_delete_password
     if 'keyring.errors' not in sys.modules:
         ke = types.ModuleType('keyring.errors')
 
@@ -108,6 +124,8 @@ def install_basic_stubs():
                 yield ""
             def model_label(self) -> str:
                 return "Stub LLM"
+            def verify_credentials(self, timeout: float = 5.0):  # noqa: ARG002 - stubbed signature
+                return True
         class _GeminiClient(_LLMClient):
             pass
         class _ProviderFactory:

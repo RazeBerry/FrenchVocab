@@ -26,7 +26,7 @@ GERMAN_ENTRY_TEMPLATE = r"""\entry{{{word}}}{{noun}}
 
 class TestGermanAlphabetization(unittest.TestCase):
     def setUp(self):
-        os.environ["GEMINI_API_KEY"] = "x" * 40
+        os.environ["GEMINI_API_KEY"] = "AIza" + "x" * 36
 
     def _create_tex(self, words, directory: Path) -> Path:
         entries = "\n\n".join(GERMAN_ENTRY_TEMPLATE.format(word=w) for w in words)
