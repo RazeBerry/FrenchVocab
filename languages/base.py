@@ -47,6 +47,7 @@ class AnkiConfig:
     model_name: str
     field_names: Sequence[str]
     card_templates: Sequence[AnkiCardTemplate]
+    card_css: str = ""
 
 
 @dataclass(frozen=True)

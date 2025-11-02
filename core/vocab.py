@@ -9,7 +9,6 @@ import genanki
 from rich.console import Console
 from rich.progress import Progress
 from rich.prompt import Prompt, Confirm
-from rich.text import Text
 from enum import Enum, auto
 from cli.menu import main_menu_loop
 from anki_exporter import AnkiExporter, AnkiExportEntry, latex_to_anki_format as latex_to_anki_html
@@ -28,32 +27,6 @@ from .translator import TranslatorCLI
 from ui_helper import UIHelper, read_line
 
 console = Console()
-
-WELCOME_ASCII_ART = r"""
-,--,                                          ,---,                         ,-.           
-       ,---.                                  ,---,                 ,--.'|                                         '  .' \                    ,--/ /|   ,--,    
-      /__./|   ,---.                        ,---.'|            ,--, |  | :                __  ,-.                 /  ;    '.          ,---, ,--. :/ | ,--.'|    
- ,---.;  ; |  '   ,'\                       |   | :          ,'_ /| :  : '              ,' ,'/ /|                :  :       \     ,-+-. /  |:  : ' /  |  |,     
-/___/ \  | | /   /   |   ,---.     ,--.--.  :   : :     .--. |  | : |  ' |     ,--.--.  '  | |' |   .--,         :  |   /\   \   ,--.'|'   ||  '  /   `--'_     
-\   ;  \ ' |.   ; ,. :  /     \   /       \ :     |,-.,'_ /| :  . | '  | |    /       \ |  |   ,' /_ ./|         |  :  ' ;.   : |   |  ,"' |'  |  :   ,' ,'|    
- \   \  \: |'   | |: : /    / '  .--.  .-. ||   : '  ||  ' | |  | | '  | :   .--.  .-. |'  :  /, ' , ' :         |  |  ;/  \   \|   | /  | ||  |   \  '  | |    
-  ;   \  ' .'   | .; :.    ' /    \__\/: . .|   |  / :|  | ' |  | | '  : |__  \__\/: . .|  | '/___/ \: |         '  :  | \  \ ,'|   | |  | |'  : |. \ |  | :    
-   \   \   '|   :    |'   ; :__   ," .--.; |'   : |: |:  | : ;  ; | |  | '.'| ," .--.; |;  : | .  \  ' |         |  |  '  '--'  |   | |--'  |  | ' \ \'  : |__  
-    \   `  ; \   \  / '   | '.'| /  /  ,.  ||   | '/ :'  :  `--'   \;  :    ;/  /  ,.  ||  , ;  \  ;   :         |  :  :        |   |/      '  : |--' |  | '.'| 
-     :   \ |  `----'  |   :    :;  :   .'   \   :    |:  ,      .-./|  ,   /;  :   .'   \---'    \  \  ;         |  | ,'        |   |       ;  |,'    ;  :    ; 
-      '---"            \   \  / |  ,     .-./    \  /  `--`----'     ---`-' |  ,     .-./         :  \  \        `--''          '---'       '--'      |  ,   /  
-                        `----'   `--`---'   `-'----'                         `--`---'              \  ' ;                                              ---`-'   
-                                                                                                    `--`
-"""
-
-WELCOME_ASCII_ART_COMPACT = r"""
-  ______      _                _           _ _ _           
- |  ____|    | |              | |         | (_) |          
- | |__  __  _| |_ ___ _ __ ___| |__   __ _| |_| | ___ _ __ 
- |  __| \ \/ / __/ _ \ '__/ __| '_ \ / _` | | | |/ _ \ '__|
- | |____ >  <| ||  __/ | | (__| | | | (_| | | | |  __/ |   
- |______/_/\_\\__\___|_|  \___|_| |_|\__,_|_|_|_|\___|_|   
-"""
 
 
 class WordType(Enum):
@@ -631,7 +604,13 @@ class FrenchVocabBuilder:
         deck = exporter.build_deck([item[2] for item in entries_for_export])
 
         # Write the deck to a .apkg file
-        genanki.Package(deck).write_to_file(f'{deck_name}.apkg')
+        output_path = Path(f"{deck_name}.apkg")
+        if not output_path.is_absolute():
+            output_path = output_path.resolve()
+        export_directory = output_path.parent
+        export_directory.mkdir(parents=True, exist_ok=True)
+        self.ui.info(f"Anki deck export directory: {export_directory}")
+        genanki.Package(deck).write_to_file(str(output_path))
 
         newly_added_words_normalized = set()
         newly_added_display = set()
@@ -648,6 +627,8 @@ class FrenchVocabBuilder:
         # Prepare the feedback message for the user
         feedback = f"""
         [bold green]Anki deck '{deck_name}.apkg' created successfully![/bold green]
+        [bold magenta]Deck file saved to: {output_path}[/bold magenta]
+        [bold yellow]Export directory: {export_directory}[/bold yellow]
 
         [bold blue]Total words in deck: {len(all_exported_words)}[/bold blue]
         [bold cyan]Newly added words in this export: {len(newly_added_words_normalized)}[/bold cyan]
@@ -755,25 +736,6 @@ class FrenchVocabBuilder:
                 provider_name = f"Google Gemini ({self.client.MODEL_NAME})"
         else:
             provider_name = "No LLM configured"
-
-        terminal_width = self.console.size.width
-        art_to_render = ""
-        overflow_mode = "crop"
-        soft_wrap = False
-        if terminal_width >= 96:
-            art_to_render = WELCOME_ASCII_ART
-            overflow_mode = "crop"
-            soft_wrap = False
-        elif terminal_width >= 48:
-            art_to_render = WELCOME_ASCII_ART_COMPACT
-            overflow_mode = "fold"
-            soft_wrap = False
-        else:
-            art_to_render = ""
-
-        if art_to_render:
-            art_text = Text(art_to_render, no_wrap=True)
-            self.console.print(art_text, overflow=overflow_mode, soft_wrap=soft_wrap)
 
         language_name = self.language_config.display_name
         app_title = self._ui_text("app.title", f"{language_name} Vocabulary LaTeX Builder")

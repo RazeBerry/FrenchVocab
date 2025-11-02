@@ -6,6 +6,7 @@ import pytest
 import FrenchVocab
 from cli.bootstrap import build_app
 from languages import available_language_codes, get_language_config
+from languages.anki_shared_styles import get_anki_css
 
 
 @pytest.mark.parametrize("language_code", ["fr", "de"])
@@ -53,3 +54,13 @@ def test_german_translator_config_has_dedicated_macros():
     assert "deeng" in cfg.target_to_eng.latex_commands
     assert "English to German" in cfg.eng_to_target.initial_tex_content
     assert "German to English" in cfg.target_to_eng.initial_tex_content
+
+
+def test_french_config_uses_shared_css():
+    cfg = get_language_config("fr")
+    assert cfg.anki.card_css == get_anki_css("fr")
+
+
+def test_german_config_uses_shared_css():
+    cfg = get_language_config("de")
+    assert cfg.anki.card_css == get_anki_css("de")

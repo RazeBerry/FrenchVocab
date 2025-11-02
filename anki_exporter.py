@@ -19,6 +19,9 @@ from languages.base import AnkiConfig
 
 def latex_to_anki_format(text: str) -> str:
     """Convert LaTeX formatted text into an Anki-friendly HTML string."""
+    # Normalize literal escape sequences into actual newlines for consistent handling
+    text = text.replace("\\n", "\n")
+
     # Remove LaTeX item markers
     text = re.sub(r"\\item\s*", "", text)
 
@@ -42,11 +45,13 @@ def latex_to_anki_format(text: str) -> str:
     # Unescape simple LaTeX escape sequences (e.g., \% -> %)
     text = text.replace("\\%", "%").replace("\\#", "#").replace("\\$", "$")
 
-    # Split the text into individual items and add bullet points
+    # Split lines into individual entries suitable for list rendering
     items = [item.strip() for item in text.split("\n") if item.strip()]
-    formatted_items = [f"• {item}" for item in items]
+    if not items:
+        return ""
 
-    formatted_text = "<br>".join(formatted_items)
+    list_items = "".join(f"<li>{item}</li>" for item in items)
+    formatted_text = f"<ul class=\"entry-list\">{list_items}</ul>"
     return formatted_text.strip()
 
 
@@ -119,6 +124,7 @@ class AnkiExporter:
             self.config.model_name,
             fields=field_defs,
             templates=templates,
+            css=self.config.card_css or None,
         )
 
     def _build_note(self, entry: AnkiExportEntry, model: genanki.Model) -> genanki.Note:

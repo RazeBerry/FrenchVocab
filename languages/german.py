@@ -18,6 +18,7 @@ from .german_tex import (
     INITIAL_DE_ENG_TEX_CONTENT,
     FINAL_DE_ENG_TEX_CONTENT,
 )
+from .anki_shared_styles import get_anki_css
 
 
 def _validate_german_text(text: str, allow_sentences: bool) -> bool:
@@ -124,10 +125,37 @@ GERMAN_CONFIG = LanguageConfig(
         card_templates=(
             AnkiCardTemplate(
                 name="Card 1",
-                question_format="{{German}}<br>{{Type}}",
-                answer_format="{{FrontSide}}<hr id=\"answer\">{{English}}<br><br>Example:<br>{{Example}}",
+                question_format="""
+<div class="entry-card entry-card--front">
+  <div class="entry-header">
+    <div class="entry-word">{{German}}</div>
+    {{#Type}}<div class="entry-pos">{{.}}</div>{{/Type}}
+  </div>
+</div>
+""".strip(),
+                answer_format="""
+<div class="entry-card entry-card--back">
+  <div class="entry-header">
+    <div class="entry-word">{{German}}</div>
+    {{#Type}}<div class="entry-pos">{{.}}</div>{{/Type}}
+  </div>
+  {{#English}}
+  <div class="entry-section">
+    <div class="entry-section-title">Definitions</div>
+    <div class="entry-content">{{{.}}}</div>
+  </div>
+  {{/English}}
+  {{#Example}}
+  <div class="entry-section">
+    <div class="entry-section-title">Examples</div>
+    <div class="entry-content">{{{.}}}</div>
+  </div>
+  {{/Example}}
+</div>
+                """.strip(),
             ),
         ),
+        card_css=get_anki_css("de"),
     ),
     aliases=("de-de", "german"),
 )

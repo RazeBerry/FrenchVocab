@@ -1,3 +1,4 @@
+import re
 import unittest
 
 import sys
@@ -20,9 +21,11 @@ class TestLatexToAnki(unittest.TestCase):
             "Texte en \\textbf{gras} avec une ligne\\\\ et encore.\n"
         )
         out = FrenchVocab.FrenchVocabBuilder.latex_to_anki_format(self.builder, text)
-        # Items stripped and bullets added, LaTeX commands removed, newlines -> <br>
-        self.assertIn('• Premier point', out)
-        # Depending on LaTeX cleanup, additional items may be concatenated; ensure basic bullet exists
+        # Items stripped and wrapped in semantic list markup, LaTeX commands removed, newlines -> <br>
+        self.assertIn('<ul class="entry-list">', out)
+        items = re.findall(r"<li>(.*?)</li>", out)
+        self.assertIn('Premier point', items)
+        self.assertIn('Deuxième point', items)
         self.assertNotIn('textbf', out)
         self.assertIn('<br>', out)
 
@@ -33,7 +36,8 @@ class TestLatexToAnki(unittest.TestCase):
     def test_latex_to_anki_preserves_macro_content(self):
         text = "\\item Texte en \\textbf{gras} et \\emph{italique}"
         out = FrenchVocab.FrenchVocabBuilder.latex_to_anki_format(self.builder, text)
-        self.assertIn('• Texte en gras et italique', out)
+        items = re.findall(r"<li>(.*?)</li>", out)
+        self.assertEqual(items, ['Texte en gras et italique'])
 
 
 if __name__ == '__main__':

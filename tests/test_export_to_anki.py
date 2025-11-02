@@ -122,8 +122,8 @@ class TestExportToAnki(unittest.TestCase):
         note = deck.notes[0]
         self.assertEqual(note.fields[0], 'Bonjour')
         self.assertEqual(note.fields[1], 'noun')
-        self.assertEqual(note.fields[2], '• Salut amical<br>• Forme polie')
-        self.assertEqual(note.fields[3], '• Bonjour tout le monde (Hello everyone)')
+        self.assertEqual(note.fields[2], '<ul class=\"entry-list\"><li>Salut amical</li><li>Forme polie</li></ul>')
+        self.assertEqual(note.fields[3], '<ul class=\"entry-list\"><li>Bonjour tout le monde (Hello everyone)</li></ul>')
 
         self.assertIn('bonjour', builder.exported_words)
         self.assertIn('salut', builder.exported_words)
