@@ -47,6 +47,7 @@ def latex_to_anki_format(text: str) -> str:
 
     # Split lines into individual entries suitable for list rendering
     items = [item.strip() for item in text.split("\n") if item.strip()]
+    items = [item for item in items if item not in {"}", "{"}]
     if not items:
         return ""
 
