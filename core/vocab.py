@@ -22,12 +22,10 @@ from llm_client import GeminiClient, ProviderFactory
 from latex_repository import LatexRepository
 from models import normalize_word_key
 from languages import LanguageConfig, TranslatorConfig, default_language_code, get_language_config
+from languages.anki_shared_styles import compute_template_hash
 
 from .translator import TranslatorCLI
 from ui_helper import UIHelper, read_line
-
-console = Console()
-
 
 class WordType(Enum):
     NOUN = auto()
@@ -145,7 +143,7 @@ class FrenchVocabBuilder:
         load_entries_end = time.time()
         
         self.exported_words_file = self._resolve_exported_words_path(project_root, self.latex_file.parent)
-        self.exported_words = self.load_exported_words()
+        self.exported_words, self.exported_deck_version = self.load_exported_words()
         self.entry_count = self.count_entries()
         
         # Initialize the Eng->Fr translator 
@@ -439,12 +437,18 @@ class FrenchVocabBuilder:
     def get_llm_client(self):
         return self.client
 
-    def load_exported_words(self):
+    def load_exported_words(self) -> Tuple[Set[str], Optional[str]]:
         path = self.exported_words_file
         if path.exists():
             with path.open('r', encoding='utf-8') as f:
-                return set(json.load(f))
-        return set()
+                data = json.load(f)
+            if isinstance(data, dict):
+                words = set(data.get("words", []))
+                version = data.get("deck_version")
+                return words, version
+            if isinstance(data, list):
+                return set(data), None
+        return set(), None
     def save_exported_words(self):
         path = self.exported_words_file
         try:
@@ -452,7 +456,11 @@ class FrenchVocabBuilder:
         except FileExistsError:
             pass
         with path.open('w', encoding='utf-8') as f:
-            json.dump(list(self.exported_words), f)
+            payload = {
+                "words": sorted(self.exported_words),
+                "deck_version": self.exported_deck_version,
+            }
+            json.dump(payload, f, ensure_ascii=False, indent=2)
 
     def count_entries(self) -> int:
         try:
@@ -546,35 +554,71 @@ class FrenchVocabBuilder:
         """Delegate to the shared LaTeX→HTML conversion helper."""
         return latex_to_anki_html(text)
 
-    def export_to_anki(self, deck_name: Optional[str] = None, include_exported_words: bool = False):
+    def export_to_anki(
+        self,
+        deck_name: Optional[str] = None,
+        include_exported_words: bool = False,
+        *,
+        selected_words: Optional[Set[str]] = None,
+        auto_retry_on_empty: bool = True,
+    ):
         """Exports the vocabulary entries to an Anki deck.
 
         This method creates an Anki deck using the genanki library by iterating over
         the current vocabulary entries, formatting each entry into an Anki note, and
         adding it to the deck. By default it only includes words that have not been
         exported before to avoid duplicates, but this behaviour can be overridden when
-        rebuilding a deck from scratch.
+        rebuilding a deck from scratch or exporting a specific subset.
 
         Args:
             deck_name (str, optional): The name of the Anki deck to be created.
                 Defaults to the deck name defined by the active language configuration.
             include_exported_words (bool): When True, previously exported words are
                 also packaged into the deck (useful for rebuilding or migrating decks).
+            selected_words (Optional[Set[str]]): Lower-case words to export exclusively.
+            auto_retry_on_empty (bool): Internal flag to prevent infinite recursion when
+                auto-retrying an export that produced zero cards.
 
         Raises:
             IOError: If there's an error writing the Anki package file.
         """
         deck_name = deck_name or self.language_config.anki.default_deck_name
-        exporter = AnkiExporter(deck_name, self.language_config.anki)
+        anki_config = self.language_config.anki
+        template_version = getattr(anki_config, "version_id", None)
+        if not template_version:
+            template_version = compute_template_hash(
+                [
+                    {"name": tpl.name, "qfmt": tpl.question_format, "afmt": tpl.answer_format}
+                    for tpl in anki_config.card_templates
+                ],
+                anki_config.card_css or "",
+            )
+
+        exporter = AnkiExporter(deck_name, anki_config)
         latex_words = set(self.word_entries.keys())
         all_exported_words = set(self.exported_words)
+        include_all = include_exported_words
+        auto_due_to_version = False
+
+        if (
+            selected_words is None
+            and not include_all
+            and template_version
+            and self.exported_deck_version
+            and template_version != self.exported_deck_version
+        ):
+            include_all = True
+            auto_due_to_version = True
 
         entries_for_export: List[Tuple[str, str, AnkiExportEntry, bool]] = []
 
         for key, entry in self.word_entries.items():
             normalized_word = key.strip().lower()
             already_exported = normalized_word in all_exported_words
-            if already_exported and not include_exported_words:
+            if selected_words is not None:
+                if key not in selected_words:
+                    continue
+            elif already_exported and not include_all:
                 continue
 
             word_type = ', '.join(entry['type']) if isinstance(entry['type'], list) else entry['type']
@@ -606,8 +650,25 @@ class FrenchVocabBuilder:
             entries_for_export.append((normalized_word, entry['word'], export_entry, already_exported))
 
         if not entries_for_export:
-            self.ui.warning(
-                "No vocabulary entries qualified for Anki export. The generated deck will not contain any cards."
+            if selected_words is not None:
+                self.ui.warning("None of the selected words were found or eligible for export.")
+                return
+            if not self.word_entries:
+                self.ui.warning("No vocabulary entries available to export.")
+                return
+            if include_all or not auto_retry_on_empty:
+                self.ui.warning(
+                    "No vocabulary entries qualified for Anki export. The generated deck will not contain any cards."
+                )
+                return
+            self.ui.info(
+                "No new words detected for export. Rebuilding deck with all tracked entries instead."
+            )
+            return self.export_to_anki(
+                deck_name,
+                include_exported_words=True,
+                selected_words=selected_words,
+                auto_retry_on_empty=False,
             )
 
         deck = exporter.build_deck([item[2] for item in entries_for_export])
@@ -624,6 +685,8 @@ class FrenchVocabBuilder:
         newly_added_words_normalized = set()
         newly_added_display = set()
 
+        packaged_count = len(entries_for_export)
+
         for normalized_word, display_word, _, already_exported in entries_for_export:
             all_exported_words.add(normalized_word)
             if not already_exported:
@@ -632,6 +695,7 @@ class FrenchVocabBuilder:
 
         # Update the exported_words set and save it
         self.exported_words = all_exported_words
+        self.exported_deck_version = template_version
         self.save_exported_words()
 
         # Prepare the feedback message for the user
@@ -642,11 +706,20 @@ class FrenchVocabBuilder:
 
         [bold blue]Total words in deck: {len(all_exported_words)}[/bold blue]
         [bold cyan]Newly added words in this export: {len(newly_added_words_normalized)}[/bold cyan]
-        [bold cyan]Words packaged in deck: {len(entries_for_export)}[/bold cyan]
+        [bold cyan]Words packaged in deck: {packaged_count}[/bold cyan]
+        [bold cyan]Deck template version: {template_version or 'unknown'}[/bold cyan]
 
         New words added:
         {', '.join(sorted(newly_added_display, key=str.lower)) if newly_added_display else 'No new words added in this export.'}
         """
+
+        if auto_due_to_version:
+            feedback += (
+                "\n[bold yellow]Detected template changes since the last export. "
+                "A full deck rebuild was performed automatically.[/bold yellow]"
+            )
+        if selected_words is not None:
+            feedback += "\n[bold yellow]Export limited to your selected vocabulary entries.[/bold yellow]"
 
         # Compare LaTeX words with all exported words
         missing_from_anki = latex_words - all_exported_words
@@ -1551,12 +1624,42 @@ class FrenchVocabBuilder:
 
     def handle_anki_export(self):
         default_deck = self.language_config.anki.default_deck_name
+        mode_options = [
+            ("incremental", "Incremental (new words only)"),
+            ("rebuild", "Full rebuild (all words)"),
+            ("selected", "Selected words"),
+        ]
+        try:
+            export_mode = self.ui.interactive_menu(
+                "Anki Export Mode",
+                mode_options,
+                "Choose how you want to export your vocabulary.",
+            )
+        except KeyboardInterrupt:
+            self.ui.warning("Anki export cancelled.")
+            return
+        except Exception:
+            export_mode = "incremental"
+
         deck_name = self.ui.prompt("Enter a name for your Anki deck", default=default_deck)
-        include_exported = self.ui.confirm(
-            "Include words that have already been exported? (Use this if you need to rebuild the deck)",
-            default=False,
+
+        selected_words: Optional[Set[str]] = None
+        include_exported = False
+
+        if export_mode == "rebuild":
+            include_exported = True
+        elif export_mode == "selected":
+            selected_words = self._prompt_selected_words()
+            if not selected_words:
+                self.ui.warning("No matching words selected. Export cancelled.")
+                return
+            include_exported = True  # Ensure chosen entries are exported regardless of prior state.
+
+        self.export_to_anki(
+            deck_name,
+            include_exported_words=include_exported,
+            selected_words=selected_words,
         )
-        self.export_to_anki(deck_name, include_exported_words=include_exported)
     
     def display_parsed_info(
             self,
@@ -1567,6 +1670,52 @@ class FrenchVocabBuilder:
     ):
         word_type_str = ", ".join(word_type)
         self.ui.display_word_entry(word, word_type_str, definitions, examples)
+
+    def _prompt_selected_words(self) -> Optional[Set[str]]:
+        """Prompt the user to choose specific words for Anki export."""
+        if not self.word_entries:
+            self.ui.warning("No vocabulary entries available to select.")
+            return None
+
+        prompt_text = (
+            "Enter the words you want to export separated by commas\n"
+            "(matching is case-insensitive; leave blank to cancel)"
+        )
+        raw_input = self.ui.prompt(prompt_text).strip()
+        if not raw_input:
+            return None
+
+        tokens = [token.strip() for token in raw_input.split(",")]
+        selected_keys: Set[str] = set()
+        missing: List[str] = []
+
+        for token in tokens:
+            if not token:
+                continue
+            lower_token = token.lower()
+            if lower_token in self.word_entries:
+                selected_keys.add(lower_token)
+                continue
+
+            normalized = self.normalize_word(lower_token)
+            match = next(
+                (key for key, entry in self.word_entries.items() if self.normalize_word(key) == normalized),
+                None,
+            )
+            if match:
+                selected_keys.add(match)
+            else:
+                missing.append(token)
+
+        if missing:
+            self.ui.warning(
+                "The following words were not found and will be skipped: "
+                + ", ".join(sorted(missing))
+            )
+
+        if not selected_keys:
+            return None
+        return selected_keys
 
     def display_latex_entry(self, latex_entry: str):
         self.ui.display_latex_entry(latex_entry)

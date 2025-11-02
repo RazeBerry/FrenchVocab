@@ -21,7 +21,7 @@ from .base import (
     AnkiConfig,
     AnkiCardTemplate,
 )
-from .anki_shared_styles import get_anki_css
+from .anki_shared_styles import get_anki_css, compute_template_hash
 
 
 def _validate_french_text(text: str, allow_sentences: bool) -> bool:
@@ -55,6 +55,53 @@ _UI_STRINGS: Dict[str, str] = {
     "menu.eng_to_target": "Translate English -> French",
     "menu.target_to_eng": "Translate French -> English",
 }
+
+_CARD_FRONT_TEMPLATE = """
+<div class="entry-card entry-card--front">
+  <div class="entry-header">
+    <div class="entry-word">{{French}}</div>
+    {{#Type}}<div class="entry-pos">{{Type}}</div>{{/Type}}
+  </div>
+</div>
+""".strip()
+
+_CARD_BACK_TEMPLATE = """
+<div class="entry-card entry-card--back">
+  <div class="entry-header">
+    <div class="entry-word">{{French}}</div>
+    {{#Type}}<div class="entry-pos">{{Type}}</div>{{/Type}}
+  </div>
+  {{#English}}
+  <div class="entry-section">
+    <div class="entry-section-title">Definitions</div>
+    <div class="entry-content">{{{English}}}</div>
+  </div>
+  {{/English}}
+  {{#Example}}
+  <div class="entry-section">
+    <div class="entry-section-title">Examples</div>
+    <div class="entry-content">{{{Example}}}</div>
+  </div>
+  {{/Example}}
+</div>
+""".strip()
+
+FRENCH_CARD_TEMPLATES = (
+    AnkiCardTemplate(
+        name="Card 1",
+        question_format=_CARD_FRONT_TEMPLATE,
+        answer_format=_CARD_BACK_TEMPLATE,
+    ),
+)
+FRENCH_CARD_CSS = get_anki_css("fr")
+FRENCH_CARD_VERSION = compute_template_hash(
+    [
+        {"name": tpl.name, "qfmt": tpl.question_format, "afmt": tpl.answer_format}
+        for tpl in FRENCH_CARD_TEMPLATES
+    ],
+    FRENCH_CARD_CSS,
+)
+
 
 FRENCH_CONFIG = LanguageConfig(
     code="fr",
@@ -102,40 +149,9 @@ FRENCH_CONFIG = LanguageConfig(
         model_seed="FrenchVocabModel/v1",
         model_name="French Vocab Model v1",
         field_names=("French", "Type", "English", "Example"),
-        card_templates=(
-            AnkiCardTemplate(
-                name="Card 1",
-                question_format="""
-<div class="entry-card entry-card--front">
-  <div class="entry-header">
-    <div class="entry-word">{{French}}</div>
-    {{#Type}}<div class="entry-pos">{{Type}}</div>{{/Type}}
-  </div>
-</div>
-""".strip(),
-                answer_format="""
-<div class="entry-card entry-card--back">
-  <div class="entry-header">
-    <div class="entry-word">{{French}}</div>
-    {{#Type}}<div class="entry-pos">{{Type}}</div>{{/Type}}
-  </div>
-  {{#English}}
-  <div class="entry-section">
-    <div class="entry-section-title">Definitions</div>
-    <div class="entry-content">{{{English}}}</div>
-  </div>
-  {{/English}}
-  {{#Example}}
-  <div class="entry-section">
-    <div class="entry-section-title">Examples</div>
-    <div class="entry-content">{{{Example}}}</div>
-  </div>
-  {{/Example}}
-</div>
-""".strip(),
-            ),
-        ),
-        card_css=get_anki_css("fr"),
+        card_templates=FRENCH_CARD_TEMPLATES,
+        card_css=FRENCH_CARD_CSS,
+        version_id=FRENCH_CARD_VERSION,
     ),
     aliases=("fr-fr", "france"),
 )

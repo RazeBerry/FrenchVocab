@@ -48,6 +48,7 @@ class AnkiConfig:
     field_names: Sequence[str]
     card_templates: Sequence[AnkiCardTemplate]
     card_css: str = ""
+    version_id: str | None = None
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Callable
+import hashlib
+import json
+from typing import Callable, Sequence
 
 BASE_ANKI_CARD_CSS = """
 .card {
@@ -157,4 +159,17 @@ def get_anki_css(language_code: str = "default") -> str:
     return BASE_ANKI_CARD_CSS
 
 
-__all__ = ["BASE_ANKI_CARD_CSS", "get_anki_css"]
+def compute_template_hash(card_templates: Sequence[dict[str, str]], css: str) -> str:
+    """Return a stable hash representing the template structure and styling."""
+    payload = {
+        "templates": [
+            {"name": tpl.get("name"), "qfmt": tpl.get("qfmt"), "afmt": tpl.get("afmt")}
+            for tpl in card_templates
+        ],
+        "css": css,
+    }
+    digest = hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8"))
+    return digest.hexdigest()
+
+
+__all__ = ["BASE_ANKI_CARD_CSS", "get_anki_css", "compute_template_hash"]

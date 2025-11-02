@@ -10,6 +10,7 @@ install_basic_stubs()
 
 import FrenchVocab  # noqa: E402
 import genanki  # noqa: E402
+from languages.french import FRENCH_CONFIG  # noqa: E402
 
 
 class _StubUI:
@@ -105,6 +106,7 @@ class TestExportToAnki(unittest.TestCase):
             },
         }
         builder.exported_words = {'salut'}
+        builder.exported_deck_version = None
         builder.save_exported_words = lambda: None
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -127,7 +129,42 @@ class TestExportToAnki(unittest.TestCase):
 
         self.assertIn('bonjour', builder.exported_words)
         self.assertIn('salut', builder.exported_words)
+        self.assertEqual(builder.exported_deck_version, FRENCH_CONFIG.anki.version_id)
 
+    def test_export_selected_words_only(self):
+        builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
+        builder.ui = _StubUI()
+        builder.console = types.SimpleNamespace()
+        builder.word_entries = {
+            'bonjour': {
+                'word': 'Bonjour',
+                'type': 'noun',
+                'definitions': 'Salut amical; Forme polie',
+                'definitions_list': ['Salut amical', 'Forme polie'],
+                'examples': 'Bonjour tout le monde (Hello everyone)',
+                'examples_list': [('Bonjour tout le monde', 'Hello everyone')],
+            },
+            'salut': {
+                'word': 'Salut',
+                'type': 'noun',
+                'definitions': 'Informel',
+                'definitions_list': ['Informel'],
+                'examples': 'Salut ! (Hi!)',
+                'examples_list': [('Salut !', 'Hi!')],
+            },
+        }
+        builder.exported_words = set()
+        builder.exported_deck_version = None
+        builder.save_exported_words = lambda: None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            builder.exported_words_file = os.path.join(tmp, 'exported_words.json')
+            builder.export_to_anki('Test Deck', include_exported_words=True, selected_words={'salut'})
+
+        deck = self.package_cls.last_deck
+        self.assertEqual(len(deck.notes), 1)
+        self.assertEqual(deck.notes[0].fields[0], 'Salut')
+        self.assertIn('salut', builder.exported_words)
     def test_export_to_anki_can_include_already_exported_words(self):
         builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
         builder.ui = _StubUI()
@@ -151,6 +188,7 @@ class TestExportToAnki(unittest.TestCase):
             },
         }
         builder.exported_words = {'bonjour', 'salut'}
+        builder.exported_deck_version = None
         builder.save_exported_words = lambda: None
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -169,6 +207,42 @@ class TestExportToAnki(unittest.TestCase):
             ('Salut', 'noun', '<ul class="entry-list"><li>Informel</li></ul>', '<ul class="entry-list"><li>Salut ! (Hi!)</li></ul>'),
             exported_fields,
         )
+        self.assertEqual(builder.exported_deck_version, FRENCH_CONFIG.anki.version_id)
+
+    def test_export_auto_rebuilds_when_template_version_changes(self):
+        builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
+        builder.ui = _StubUI()
+        builder.console = types.SimpleNamespace()
+        builder.word_entries = {
+            'bonjour': {
+                'word': 'Bonjour',
+                'type': 'noun',
+                'definitions': 'Salut amical; Forme polie',
+                'definitions_list': ['Salut amical', 'Forme polie'],
+                'examples': 'Bonjour tout le monde (Hello everyone)',
+                'examples_list': [('Bonjour tout le monde', 'Hello everyone')],
+            },
+            'salut': {
+                'word': 'Salut',
+                'type': 'noun',
+                'definitions': 'Informel',
+                'definitions_list': ['Informel'],
+                'examples': 'Salut ! (Hi!)',
+                'examples_list': [('Salut !', 'Hi!')],
+            },
+        }
+        builder.exported_words = {'bonjour', 'salut'}
+        builder.exported_deck_version = "legacy-version"
+        builder.save_exported_words = lambda: None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            builder.exported_words_file = os.path.join(tmp, 'exported_words.json')
+            builder.export_to_anki('Test Deck')
+
+        deck = self.package_cls.last_deck
+        self.assertEqual(deck.name, 'Test Deck')
+        self.assertEqual(len(deck.notes), 2)
+        self.assertEqual(builder.exported_deck_version, FRENCH_CONFIG.anki.version_id)
 
 
 if __name__ == '__main__':
