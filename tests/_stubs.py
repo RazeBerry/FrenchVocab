@@ -32,6 +32,7 @@ def install_basic_stubs():
                 return _Ctx()
             def input(self, *args, **kwargs): return ""
         rc.Console = _Console
+        rc.RenderableType = object
         sys.modules['rich.console'] = rc
 
         rp = types.ModuleType('rich.progress')
@@ -77,6 +78,13 @@ def install_basic_stubs():
 
         rtx.Text = _Text
         sys.modules['rich.text'] = rtx
+
+        rs = types.ModuleType('rich.syntax')
+        class _Syntax:
+            def __init__(self, *args, **kwargs):
+                pass
+        rs.Syntax = _Syntax
+        sys.modules['rich.syntax'] = rs
     _install_rich()
 
     # Stub keyring

@@ -9,13 +9,19 @@ from typing import Callable, Sequence
 BASE_ANKI_CARD_CSS = """
 .card {
     font-family: 'Palatino Linotype', 'Palatino', 'Book Antiqua', Georgia, Cambria, serif;
-    font-size: 22px;
-    color: #231f20;
-    background-color: #fefbf5;
+    font-size: 12pt;
+    color: var(--card-fg, #1f1f1f);
+    background-color: transparent;
     line-height: 1.48;
     padding: 26px 28px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+
+.nightMode .card,
+body.nightMode .card,
+body.night_mode .card {
+    color: var(--night-card-fg, #f6f2ed);
 }
 
 .entry-card {
@@ -25,13 +31,13 @@ BASE_ANKI_CARD_CSS = """
 }
 
 .entry-header {
-    border-bottom: 1px solid #d8cfc0;
+    border-bottom: 1px solid currentColor;
     padding-bottom: 0.6em;
     margin-bottom: 1.2em;
 }
 
 .entry-word {
-    font-size: 1.8em;
+    font-size: 1.6em;
     font-weight: 600;
     letter-spacing: 0.03em;
 }
@@ -41,7 +47,8 @@ BASE_ANKI_CARD_CSS = """
     letter-spacing: 0.12em;
     font-size: 0.72em;
     margin-top: 0.4em;
-    color: #8a6f47;
+    color: inherit;
+    opacity: 0.75;
 }
 
 .entry-section {
@@ -50,14 +57,15 @@ BASE_ANKI_CARD_CSS = """
 
 .entry-section-title {
     font-variant: small-caps;
-    color: #7b6640;
     letter-spacing: 0.12em;
-    font-size: 0.85em;
+    font-size: 0.9em;
     margin-bottom: 0.35em;
+    color: inherit;
+    opacity: 0.75;
 }
 
 .entry-content {
-    color: #2c2726;
+    color: inherit;
 }
 
 .entry-list {
@@ -70,7 +78,7 @@ BASE_ANKI_CARD_CSS = """
 }
 
 .entry-list li::marker {
-    color: #a89575;
+    color: currentColor;
 }
 
 .entry-card--front {
@@ -87,12 +95,12 @@ BASE_ANKI_CARD_CSS = """
 /* Responsive Design - Mobile */
 @media (max-width: 640px) {
     .card {
-        font-size: 20px;
+        font-size: 11pt;
         padding: 20px 18px;
     }
 
     .entry-word {
-        font-size: 1.6em;
+        font-size: 1.5em;
     }
 
     .entry-card--front {
@@ -103,12 +111,12 @@ BASE_ANKI_CARD_CSS = """
 /* Responsive Design - Small Mobile */
 @media (max-width: 480px) {
     .card {
-        font-size: 18px;
+        font-size: 10.5pt;
         padding: 16px 14px;
     }
 
     .entry-word {
-        font-size: 1.5em;
+        font-size: 1.45em;
     }
 
     .entry-pos {
@@ -129,12 +137,13 @@ BASE_ANKI_CARD_CSS = """
 @media print {
     .card {
         background-color: white;
+        color: #000;
         padding: 12px;
         font-size: 12pt;
     }
 
     .entry-header {
-        border-bottom: 1pt solid #000;
+        border-bottom: 1pt solid currentColor;
     }
 }
 """.strip()
