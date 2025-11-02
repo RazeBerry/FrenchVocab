@@ -85,6 +85,7 @@ _CARD_FRONT_TEMPLATE = """
 </div>
 """.strip()
 
+# Use double braces so Anki escapes HTML; exporter supplies sanitized text.
 _CARD_BACK_TEMPLATE = """
 <div class="entry-card entry-card--back">
   <div class="entry-header">
@@ -94,13 +95,13 @@ _CARD_BACK_TEMPLATE = """
   {{#English}}
   <div class="entry-section">
     <div class="entry-section-title">Definitions</div>
-    <div class="entry-content">{{{English}}}</div>
+    <div class="entry-content">{{English}}</div>
   </div>
   {{/English}}
   {{#Example}}
   <div class="entry-section">
     <div class="entry-section-title">Examples</div>
-    <div class="entry-content">{{{Example}}}</div>
+    <div class="entry-content">{{Example}}</div>
   </div>
   {{/Example}}
 </div>

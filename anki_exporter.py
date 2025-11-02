@@ -28,26 +28,106 @@ def latex_to_anki_format(text: str) -> str:
     # Convert LaTeX line breaks ("\\") to HTML line breaks
     text = re.sub(r"\\\\\s*", "<br>", text)
 
-    # Preserve command arguments while stripping command names (e.g., \textbf{mot} -> mot)
-    command_pattern = re.compile(r"\\[a-zA-Z]+\*?(?P<opt>\[[^\]]*\])?(?P<brace>\{[^{}]*\})?")
+    def _parse_group(source: str, start: int, opener: str, closer: str) -> tuple[str, int]:
+        """Return (group_content_without_delimiters, next_index) starting at opener."""
+        if start >= len(source) or source[start] != opener:
+            raise ValueError("Expected group opener")
+        depth = 0
+        i = start
+        collected: list[str] = []
+        while i < len(source):
+            ch = source[i]
+            if ch == opener:
+                depth += 1
+                if depth > 1:
+                    collected.append(ch)
+            elif ch == closer:
+                depth -= 1
+                if depth == 0:
+                    return "".join(collected), i + 1
+                collected.append(ch)
+            else:
+                collected.append(ch)
+            i += 1
+        raise ValueError("Unbalanced group encountered")
 
-    def _strip_command(match: re.Match) -> str:
-        brace = match.group("brace")
-        if brace:
-            return brace[1:-1]
-        opt = match.group("opt")
-        if opt:
-            return opt[1:-1]
-        return ""
+    def _strip_latex_commands(source: str) -> str:
+        """Remove LaTeX command wrappers while keeping their inner text."""
+        result: list[str] = []
+        i = 0
+        length = len(source)
 
-    text = command_pattern.sub(_strip_command, text)
+        while i < length:
+            ch = source[i]
+            if ch != "\\":
+                result.append(ch)
+                i += 1
+                continue
+
+            # Handle escaped characters like \%, \{, etc. by leaving them for later replacement.
+            if i + 1 >= length or not source[i + 1].isalpha():
+                result.append(ch)
+                i += 1
+                continue
+
+            j = i + 1
+            while j < length and (source[j].isalpha() or source[j] == "*"):
+                j += 1
+            idx = j
+            # Skip whitespace between command and its arguments, preserving a single space if present.
+            whitespace_buffer: list[str] = []
+            while idx < length and source[idx].isspace():
+                whitespace_buffer.append(source[idx])
+                idx += 1
+
+            content_emitted = False
+
+            # Consume optional arguments in square brackets (discarding their content).
+            while idx < length and source[idx] == "[":
+                try:
+                    _, idx = _parse_group(source, idx, "[", "]")
+                except ValueError:
+                    # On malformed input, fall back to treating the command literally.
+                    result.append(source[i])
+                    i += 1
+                    break
+            else:
+                # Consume one or more braced groups, appending their stripped content.
+                while idx < length and source[idx] == "{":
+                    try:
+                        inner, idx = _parse_group(source, idx, "{", "}")
+                    except ValueError:
+                        result.append(source[i])
+                        i += 1
+                        break
+                    result.append(_strip_latex_commands(inner))
+                    content_emitted = True
+                else:
+                    if not content_emitted:
+                        # Command without braced arguments – drop the command but keep a single space if present.
+                        if whitespace_buffer:
+                            result.append(" ")
+
+                i = idx
+                continue
+
+            # If we hit the break above due to malformed input, continue loop from updated i.
+            continue
+
+        return "".join(result)
+
+    text = _strip_latex_commands(text)
 
     # Unescape simple LaTeX escape sequences (e.g., \% -> %)
     text = text.replace("\\%", "%").replace("\\#", "#").replace("\\$", "$")
 
     # Split lines into individual entries suitable for list rendering
-    items = [item.strip() for item in text.split("\n") if item.strip()]
-    items = [item for item in items if item not in {"}", "{"}]
+    items = []
+    for raw in text.split("\n"):
+        cleaned = raw.strip()
+        if not cleaned or cleaned in {"{", "}"}:
+            continue
+        items.append(cleaned)
     if not items:
         return ""
 

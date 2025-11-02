@@ -39,6 +39,20 @@ class TestLatexToAnki(unittest.TestCase):
         items = re.findall(r"<li>(.*?)</li>", out)
         self.assertEqual(items, ['Texte en gras et italique'])
 
+    def test_latex_to_anki_filters_brace_lines(self):
+        text = "\\item to menace\n\\item }\n\\item to imperil"
+        out = FrenchVocab.FrenchVocabBuilder.latex_to_anki_format(self.builder, text)
+        items = re.findall(r"<li>(.*?)</li>", out)
+        self.assertNotIn('}', items)
+        self.assertEqual(items, ['to menace', 'to imperil'])
+
+    def test_latex_to_anki_strips_nested_commands(self):
+        text = "\\item Example with \\textbf{outer \\emph{inner} emphasis}"
+        out = FrenchVocab.FrenchVocabBuilder.latex_to_anki_format(self.builder, text)
+        items = re.findall(r"<li>(.*?)</li>", out)
+        self.assertEqual(items, ['Example with outer inner emphasis'])
+        self.assertNotIn('}', out)
+
 
 if __name__ == '__main__':
     unittest.main()

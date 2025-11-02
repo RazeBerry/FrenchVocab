@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+- NEVER use `git checkout <file>` or restore files without explicit approval.
+
 ## Project Structure & Module Organization
 - `FrenchVocab.py` bootstraps the Rich-based CLI, wiring language configs, routing, and persistence.
 - `core/` houses reusable workflows (vocab ingestion, translators, Anki export, LaTeX repository helpers).

@@ -2,6 +2,7 @@ import json
 import os
 import re
 import shutil
+import string
 import unicodedata
 from typing import List, Tuple, Optional, Dict, Set
 import sys
@@ -627,6 +628,7 @@ class FrenchVocabBuilder:
             if not definitions_list:
                 definitions_source = entry.get('definitions', '')
                 definitions_list = [d.strip() for d in re.split(r';\s*', definitions_source) if d.strip()]
+            definitions_list = [d for d in definitions_list if d not in {'{', '}'}]
 
             examples_list = entry.get('examples_list')
             if not examples_list:
@@ -640,6 +642,17 @@ class FrenchVocabBuilder:
                         examples_list.append((fr, en[:-1]))
                     else:
                         examples_list.append((example, ''))
+            cleaned_examples: List[Tuple[str, str]] = []
+            for fr, en in examples_list:
+                fr_clean = (fr or '').strip()
+                en_clean = (en or '').strip()
+                if fr_clean in {'{', '}'} and not en_clean:
+                    continue
+                if en_clean in {'{', '}'} and not fr_clean:
+                    en_clean = ''
+                if fr_clean or en_clean:
+                    cleaned_examples.append((fr_clean, en_clean))
+            examples_list = cleaned_examples
 
             export_entry = AnkiExportEntry(
                 word=entry['word'],
@@ -1561,6 +1574,12 @@ class FrenchVocabBuilder:
         entry_cmd = self._entry_command()
         return bool(latex_entry.strip()) and entry_cmd in latex_entry
 
+    def _strip_trailing_punctuation(self, text: str) -> str:
+        """Normalize by removing trailing punctuation and surrounding whitespace."""
+        if not text:
+            return text
+        return text.rstrip(string.punctuation + " \t\r\n")
+
     def check_spelling(self, word, ai_response):
         # More specific regex that stops at the next field and handles multiline content
         # Extract the spelling check section (value not used)
@@ -1569,7 +1588,10 @@ class FrenchVocabBuilder:
 
         corrected_spelling_match = re.search(r'Correctly Spelt Word:\s*(.*?)(?=\nWord Type:|$)', ai_response, re.DOTALL)
         corrected_spelling = corrected_spelling_match.group(1).strip() if corrected_spelling_match else None
-        
+
+        trimmed_original = word.strip()
+        trimmed_corrected = corrected_spelling.strip() if corrected_spelling else None
+
         # Debug: Print what was extracted (can be removed later)
         if corrected_spelling is not None:
             self.ui.debug(f"Extracted corrected spelling: '{corrected_spelling}'")
@@ -1582,6 +1604,13 @@ class FrenchVocabBuilder:
                corrected_spelling.lower().strip() == word.lower().strip():
                 # Either placeholder text, empty, or same as input - no correction needed
                 return word
+
+            normalized_original = self._strip_trailing_punctuation(trimmed_original)
+            normalized_corrected = self._strip_trailing_punctuation(trimmed_corrected)
+
+            if normalized_original.lower() == normalized_corrected.lower():
+                # Case-only or trailing punctuation differences—trust cleaned suggestion silently
+                return normalized_corrected or corrected_spelling
             
             # Valid correction found that's different from input
             suggestion_panel = (

@@ -165,6 +165,40 @@ class TestExportToAnki(unittest.TestCase):
         self.assertEqual(len(deck.notes), 1)
         self.assertEqual(deck.notes[0].fields[0], 'Salut')
         self.assertIn('salut', builder.exported_words)
+
+    def test_export_strips_brace_artifacts(self):
+        builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
+        builder.ui = _StubUI()
+        builder.console = types.SimpleNamespace()
+        builder.word_entries = {
+            'bedrohen': {
+                'word': 'Bedrohen',
+                'type': 'verb',
+                'definitions': 'to threaten; to imperil; }',
+                'definitions_list': [
+                    'to threaten, menace',
+                    'to imperil',
+                    '}',
+                ],
+                'examples': 'Der Klimawandel bedroht die Zukunft kleiner Inselstaaten. (Climate change threatens the future of small island nations.); }',
+                'examples_list': [
+                    ('Der Klimawandel bedroht die Zukunft kleiner Inselstaaten.', 'Climate change threatens the future of small island nations.'),
+                    ('}', ''),
+                ],
+            }
+        }
+        builder.exported_words = set()
+        builder.exported_deck_version = None
+        builder.save_exported_words = lambda: None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            builder.exported_words_file = os.path.join(tmp, 'exported_words.json')
+            builder.export_to_anki('Test Deck')
+
+        deck = self.package_cls.last_deck
+        self.assertEqual(deck.notes[0].fields[0], 'Bedrohen')
+        self.assertNotIn('}', deck.notes[0].fields[2])
+        self.assertNotIn('}', deck.notes[0].fields[3])
     def test_export_to_anki_can_include_already_exported_words(self):
         builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
         builder.ui = _StubUI()

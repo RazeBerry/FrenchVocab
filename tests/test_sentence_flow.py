@@ -108,6 +108,17 @@ class TestSentenceFlow(unittest.TestCase):
         self.assertEqual(res, "orig")
         self.assertIsNone(b.pending_spelling_suggestion)
 
+    def test_check_spelling_ignores_trailing_punctuation(self):
+        b = self._builder(client=_FakeLLMClient())
+        ai_resp = (
+            "Spelling Check: punctuation\n"
+            "Correctly Spelt Word: exploit d'huissier\n"
+            "Word Type: expression\n"
+        )
+        res = b.check_spelling("exploit d'huissier,", ai_resp)
+        self.assertEqual(res, "exploit d'huissier")
+        self.assertIsNone(b.pending_spelling_suggestion)
+
     def test_format_latex_entry_preserves_sentence_casing(self):
         latex = FrenchVocab.FrenchVocabBuilder.format_latex_entry(
             "“Mais le devoir…”,", "sentence", ["t"], [("fr", "en")]
