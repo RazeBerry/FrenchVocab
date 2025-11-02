@@ -546,17 +546,20 @@ class FrenchVocabBuilder:
         """Delegate to the shared LaTeX→HTML conversion helper."""
         return latex_to_anki_html(text)
 
-    def export_to_anki(self, deck_name: Optional[str] = None):
+    def export_to_anki(self, deck_name: Optional[str] = None, include_exported_words: bool = False):
         """Exports the vocabulary entries to an Anki deck.
 
         This method creates an Anki deck using the genanki library by iterating over
         the current vocabulary entries, formatting each entry into an Anki note, and
-        adding it to the deck. Only words that have not been exported before are
-        included to avoid duplicates.
+        adding it to the deck. By default it only includes words that have not been
+        exported before to avoid duplicates, but this behaviour can be overridden when
+        rebuilding a deck from scratch.
 
         Args:
             deck_name (str, optional): The name of the Anki deck to be created.
                 Defaults to the deck name defined by the active language configuration.
+            include_exported_words (bool): When True, previously exported words are
+                also packaged into the deck (useful for rebuilding or migrating decks).
 
         Raises:
             IOError: If there's an error writing the Anki package file.
@@ -566,11 +569,12 @@ class FrenchVocabBuilder:
         latex_words = set(self.word_entries.keys())
         all_exported_words = set(self.exported_words)
 
-        entries_for_export: List[Tuple[str, str, AnkiExportEntry]] = []
+        entries_for_export: List[Tuple[str, str, AnkiExportEntry, bool]] = []
 
         for key, entry in self.word_entries.items():
             normalized_word = key.strip().lower()
-            if normalized_word in all_exported_words:
+            already_exported = normalized_word in all_exported_words
+            if already_exported and not include_exported_words:
                 continue
 
             word_type = ', '.join(entry['type']) if isinstance(entry['type'], list) else entry['type']
@@ -599,7 +603,12 @@ class FrenchVocabBuilder:
                 definitions=definitions_list,
                 examples=examples_list,
             )
-            entries_for_export.append((normalized_word, entry['word'], export_entry))
+            entries_for_export.append((normalized_word, entry['word'], export_entry, already_exported))
+
+        if not entries_for_export:
+            self.ui.warning(
+                "No vocabulary entries qualified for Anki export. The generated deck will not contain any cards."
+            )
 
         deck = exporter.build_deck([item[2] for item in entries_for_export])
 
@@ -615,10 +624,11 @@ class FrenchVocabBuilder:
         newly_added_words_normalized = set()
         newly_added_display = set()
 
-        for normalized_word, display_word, _ in entries_for_export:
+        for normalized_word, display_word, _, already_exported in entries_for_export:
             all_exported_words.add(normalized_word)
-            newly_added_words_normalized.add(normalized_word)
-            newly_added_display.add(display_word)
+            if not already_exported:
+                newly_added_words_normalized.add(normalized_word)
+                newly_added_display.add(display_word)
 
         # Update the exported_words set and save it
         self.exported_words = all_exported_words
@@ -632,6 +642,7 @@ class FrenchVocabBuilder:
 
         [bold blue]Total words in deck: {len(all_exported_words)}[/bold blue]
         [bold cyan]Newly added words in this export: {len(newly_added_words_normalized)}[/bold cyan]
+        [bold cyan]Words packaged in deck: {len(entries_for_export)}[/bold cyan]
 
         New words added:
         {', '.join(sorted(newly_added_display, key=str.lower)) if newly_added_display else 'No new words added in this export.'}
@@ -1541,7 +1552,11 @@ class FrenchVocabBuilder:
     def handle_anki_export(self):
         default_deck = self.language_config.anki.default_deck_name
         deck_name = self.ui.prompt("Enter a name for your Anki deck", default=default_deck)
-        self.export_to_anki(deck_name)
+        include_exported = self.ui.confirm(
+            "Include words that have already been exported? (Use this if you need to rebuild the deck)",
+            default=False,
+        )
+        self.export_to_anki(deck_name, include_exported_words=include_exported)
     
     def display_parsed_info(
             self,

@@ -128,6 +128,48 @@ class TestExportToAnki(unittest.TestCase):
         self.assertIn('bonjour', builder.exported_words)
         self.assertIn('salut', builder.exported_words)
 
+    def test_export_to_anki_can_include_already_exported_words(self):
+        builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
+        builder.ui = _StubUI()
+        builder.console = types.SimpleNamespace()
+        builder.word_entries = {
+            'bonjour': {
+                'word': 'Bonjour',
+                'type': 'noun',
+                'definitions': 'Salut amical; Forme polie',
+                'definitions_list': ['Salut amical', 'Forme polie'],
+                'examples': 'Bonjour tout le monde (Hello everyone)',
+                'examples_list': [('Bonjour tout le monde', 'Hello everyone')],
+            },
+            'salut': {
+                'word': 'Salut',
+                'type': 'noun',
+                'definitions': 'Informel',
+                'definitions_list': ['Informel'],
+                'examples': 'Salut ! (Hi!)',
+                'examples_list': [('Salut !', 'Hi!')],
+            },
+        }
+        builder.exported_words = {'bonjour', 'salut'}
+        builder.save_exported_words = lambda: None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            builder.exported_words_file = os.path.join(tmp, 'exported_words.json')
+            builder.export_to_anki('Test Deck', include_exported_words=True)
+
+        package = self.package_cls
+        deck = package.last_deck
+        self.assertEqual(len(deck.notes), 2)
+        exported_fields = {tuple(note.fields) for note in deck.notes}
+        self.assertIn(
+            ('Bonjour', 'noun', '<ul class="entry-list"><li>Salut amical</li><li>Forme polie</li></ul>', '<ul class="entry-list"><li>Bonjour tout le monde (Hello everyone)</li></ul>'),
+            exported_fields,
+        )
+        self.assertIn(
+            ('Salut', 'noun', '<ul class="entry-list"><li>Informel</li></ul>', '<ul class="entry-list"><li>Salut ! (Hi!)</li></ul>'),
+            exported_fields,
+        )
+
 
 if __name__ == '__main__':
     unittest.main()
