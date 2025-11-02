@@ -109,7 +109,7 @@ FRENCH_CONFIG = LanguageConfig(
 <div class="entry-card entry-card--front">
   <div class="entry-header">
     <div class="entry-word">{{French}}</div>
-    {{#Type}}<div class="entry-pos">{{.}}</div>{{/Type}}
+    {{#Type}}<div class="entry-pos">{{Type}}</div>{{/Type}}
   </div>
 </div>
 """.strip(),
@@ -117,22 +117,22 @@ FRENCH_CONFIG = LanguageConfig(
 <div class="entry-card entry-card--back">
   <div class="entry-header">
     <div class="entry-word">{{French}}</div>
-    {{#Type}}<div class="entry-pos">{{.}}</div>{{/Type}}
+    {{#Type}}<div class="entry-pos">{{Type}}</div>{{/Type}}
   </div>
   {{#English}}
   <div class="entry-section">
     <div class="entry-section-title">Definitions</div>
-    <div class="entry-content">{{{.}}}</div>
+    <div class="entry-content">{{{English}}}</div>
   </div>
   {{/English}}
   {{#Example}}
   <div class="entry-section">
     <div class="entry-section-title">Examples</div>
-    <div class="entry-content">{{{.}}}</div>
+    <div class="entry-content">{{{Example}}}</div>
   </div>
   {{/Example}}
 </div>
-                """.strip(),
+""".strip(),
             ),
         ),
         card_css=get_anki_css("fr"),
