@@ -1,91 +1,120 @@
-# VocabForge 2.0
+# FrenchVocab
 
-An AI-assisted CLI for building bilingual vocabulary libraries, exporting polished LaTeX, and generating Anki decks—now with per-language configuration and German support.
-
----
-
-## Highlights
-- **Multilingual engine** – switch languages with `--language` (French `fr` and German `de` out of the box). Each language ships with its own prompts, LaTeX scaffolding, translator labels, and Anki deck metadata.
-- **Smart intake** – paste words, expressions, or full sentences; the app detects the type, streams Gemini (or Claude) responses, and formats consistent definitions and examples.
-- **Bidirectional translators** – jump straight into English→Target or Target→English modes, capture multiline input without retyping, confirm results with localized labels, and save to dedicated `.tex` glossaries.
-- **Structure-first output** – LaTeX entries stay alphabetized and brace-balanced; Anki export produces deterministic GUIDs and language-specific decks, with tracking files kept per language (`exported_words_<code>.json`).
-- **Rich UX** – colorized menus, duplicate resolution (skip/view/merge/force), sentence routing, and searchable vocab tables make CLI work approachable.
+An AI-assisted command line companion for growing bilingual vocabulary lists, producing tidy LaTeX, and exporting Anki decks. The current release focuses on a smooth first-run experience so you can get productive within minutes.
 
 ---
 
-## Quick Start
+## What You Get
+- **Multi-language vocab builder** – swap languages with `--language` (French `fr` and German `de` included) and keep each glossary in its own LaTeX file.
+- **Rich CLI UX** – colour panels, guided prompts, and smart duplicate detection make the terminal feel welcoming.
+- **Bidirectional translators** – jump between English→Target and Target→English flows with sentence-aware routing.
+- **Deterministic exports** – LaTeX remains brace-balanced; Anki decks use language-specific metadata with stable note IDs.
+
+---
+
+## Requirements
+- Python 3.11
+- `pip install -r requirements.txt`
+- Internet access for the selected AI provider (Google Gemini or Anthropic Claude)
+
+---
+
+## Quick Start (Interactive Wizard)
 ```bash
 git clone https://github.com/RazeBerry/FrenchVocab.git
 cd FrenchVocab
 pip install -r requirements.txt
-
-# first run – prompts for (and stores) provider API key if absent
-python FrenchVocab.py [path/to/vocab.tex] \
-    --language fr \
-    --provider gemini \
-    --verbose
+python FrenchVocab.py --language fr
 ```
+What happens next:
+1. **Provider choice.** The wizard lets you pick Google Gemini (recommended) or Anthropic Claude. Each option links to the provider’s signup page.
+2. **Key entry.** Paste your API key; the input is hidden. The app validates the key format and performs a live connection test (5 s timeout) before accepting it.
+3. **Storage decision.** After a successful validation you choose where to store the key:
+   - **System keyring (default).** Saved securely via your OS keychain.
+   - **Project `.env` file.** Writes or updates `.env` in the repository root.
+   - **Session only.** Sets an environment variable for the current process and reminds you that future runs will prompt again.
+4. **Run the CLI.** Once stored, the key is placed in `os.environ` for immediate use and the vocabulary menu appears.
 
-Environment variables bypass the key prompt:
-```bash
-export GEMINI_API_KEY=your_key_here
-# or
-export ANTHROPIC_API_KEY=your_claude_key
-```
+Tips:
+- If the keyring backend is unavailable, the wizard automatically falls back and asks you to choose another storage option.
+- Keys saved to `.env` are auto-loaded on future runs—even when you launch the CLI from a different directory.
 
 ---
 
-## Everyday Tasks
-- **Add vocab**  
-  `python FrenchVocab.py --language de` → choose option `1`
-- **Run translators**  
-  Option `2`: English → target language  
-  Option `3`: Target language → English
-- **Export to Anki**  
-  Option `4` → export pending entries to a language-specific `.apkg`
-- **Search / review**  
-  Option `5` shows a sortable table; duplicate warnings let you inspect, merge, or add variants.
+## Non-Interactive Credential Setup
+Need to script or automate? Provide the key before starting the CLI and the wizard is skipped.
 
-All commands accept `--language` (defaults to French) and `--provider` (`gemini` or `claude`). Verbose mode surfaces timing and stream diagnostics.
+### Option 1 — Environment Variable (highest priority)
+```bash
+export GEMINI_API_KEY="AIza…"
+# or
+export ANTHROPIC_API_KEY="sk-ant-…"
+python FrenchVocab.py --language fr
+```
+
+### Option 2 — System Keyring Entry
+```bash
+python - <<'PY'
+import keyring
+keyring.set_password("french_vocab_builder", "gemini_api_key", "AIza…")
+PY
+python FrenchVocab.py --language fr
+```
+
+### Option 3 — Manually Maintain `.env`
+Create or update `.env` in the repository root:
+```
+GEMINI_API_KEY=AIza...
+# or
+ANTHROPIC_API_KEY=sk-ant-...
+```
+The file is picked up automatically during startup.
+
+Current resolution order on startup:
+1. Environment variable (`GEMINI_API_KEY` / `ANTHROPIC_API_KEY`)
+2. Project `.env` file (auto-loaded from the repo root)
+3. System keyring entry (service `french_vocab_builder`)
+4. Interactive wizard
+
+Invalid values are ignored with an on-screen warning, after which the next source is tried.
+
+---
+
+## Everyday CLI Actions
+- `python FrenchVocab.py --language de` → add new vocab entries (default menu option 1).
+- Translator modes (options 2 and 3) capture multi-line input and preview results before saving.
+- Export queued entries to Anki via menu option 4.
+- View and search saved vocab using option 5.
+
+Pass `--verbose` for timing details, or `--provider claude` to select Anthropic directly.
 
 ---
 
 ## Project Layout
 | Path | Purpose |
 | --- | --- |
-| `FrenchVocab.py` | Main CLI orchestrator, routing, and language-aware configuration |
-| `languages/` | Config definitions (`french.py`, `german.py`) plus shared schemas (`base.py`) |
-| `ai_prompts.py` | Prompt templates for vocab generation per language |
-| `core/translator.py` | Shared translator workflow (config-injected labels/templates) |
-| `latex_repository.py` | Brace-safe parsing of `\entry{}` structures |
-| `anki_exporter.py` | Deterministic deck/model builder parameterized by language metadata |
-| `tests/` | Pytest suite; `test_language_configs.py` ensures every registered language initializes cleanly |
+| `FrenchVocab.py` | CLI entry point |
+| `core/` | Shared workflows (setup wizard, translators, exporting) |
+| `cli/` | Menu helpers and bootstrap logic |
+| `languages/` | Per-language configs, prompts, and LaTeX templates |
+| `tests/` | Pytest suite covering language configs, exporters, and onboarding flows |
 
 ---
 
-## Advanced Usage
-- **Custom language** – copy `languages/german.py`, adjust prompts, LaTeX templates, translator metadata, and register it in `languages/__init__.py`.
-- **Sentence routing** – long inputs auto-route to the target→English translator; accept or decline on the fly.
-- **Multiline paste** – translators echo captured text after every line; press Enter on a blank line to submit.
-- **Separate tracking** – exported vocab lists are tracked in `exported_words_<language>.json`, avoiding cross-language collisions.
-
----
-
-## Development
+## Development Workflow
 ```bash
 pip install -r requirements.txt
-pytest -q
+pytest
 ```
-
-The repo avoids storing API keys or generated `.tex/.apkg` artifacts. Keys are kept via `keyring` (service name `french_vocab_builder`); environment variables take precedence over stored values.
-
----
-
-## Roadmap
-- Expand language configs (additional templates, grammar-aware validators)
-- Add localized example tense rules per language
-- Parameterize test fixtures for language-specific LaTeX exports
+The test suite uses stubs for external services; no real API calls are made.
 
 ---
 
-Machine-crafted vocabulary, human-readable output—now fluent in more than one language. Enjoy VocabForge 2.0!
+## Troubleshooting Checklist
+- **"No API key found"** – run `python FrenchVocab.py --language fr` and walk through the wizard, or export the key via `export GEMINI_API_KEY=…`.
+- **Keyring errors** – your OS keychain may be locked or unsupported; choose the `.env` or session option when prompted.
+- **Timeout during validation** – indicates provider connectivity issues. Verify the key is active and try again.
+
+---
+
+Machine-crafted vocabulary, human-readable output. Enjoy building your language decks!

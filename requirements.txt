@@ -4,3 +4,4 @@ rich~=13.7.1
 keyring~=24.1.0
 google-genai>=0.2.0
 prompt_toolkit>=3.0,<4.0
+python-dotenv>=1.0.0

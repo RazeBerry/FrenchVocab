@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import sys
 
@@ -36,6 +37,9 @@ class _StubUI:
     def panel(self, *_args, **_kwargs):  # pragma: no cover - unused in tests
         pass
 
+    def confirm(self, _message, default=False):  # noqa: ARG002
+        return default
+
 
 def _make_builder(tmp_path: Path):
     builder = object.__new__(vocab_module.FrenchVocabBuilder)
@@ -56,8 +60,8 @@ def test_store_api_key_writes_env_file(tmp_path):
     assert env_path.exists()
     content = env_path.read_text(encoding="utf-8")
     assert "GEMINI_API_KEY=AIza" in content
-    warnings = builder.ui.messages["warning"]
-    assert any("Run FrenchVocab" in msg for msg in warnings)
+    info_messages = builder.ui.messages["info"]
+    assert any("Future runs will automatically reuse this key" in msg for msg in info_messages)
 
 
 def test_store_api_key_keyring_failure_falls_back(tmp_path, monkeypatch):
@@ -81,3 +85,25 @@ def test_store_api_key_keyring_failure_falls_back(tmp_path, monkeypatch):
     warnings = "\n".join(builder.ui.messages["warning"])
     assert "Keyring is not available" in warnings
     assert (tmp_path / ".env").exists()
+
+
+def test_load_config_reads_env_file(tmp_path, monkeypatch):
+    builder = _make_builder(tmp_path)
+    metadata = vocab_module._get_provider_metadata("gemini")
+    builder.provider_metadata = metadata
+    builder.provider = metadata.identifier
+    builder.client = None
+
+    env_value = "AIza" + "x" * 36
+    (tmp_path / ".env").write_text(f"{metadata.env_var}={env_value}\n", encoding="utf-8")
+
+    monkeypatch.delenv(metadata.env_var, raising=False)
+
+    vocab_module.FrenchVocabBuilder.load_config(builder)
+
+    assert os.environ[metadata.env_var] == env_value
+    info_messages = builder.ui.messages["info"]
+    assert any("Loaded environment variables" in msg for msg in info_messages)
+    success_messages = builder.ui.messages["success"]
+    assert any(metadata.display_name in msg for msg in success_messages)
+    monkeypatch.delenv(metadata.env_var, raising=False)

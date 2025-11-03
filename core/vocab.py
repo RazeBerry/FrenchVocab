@@ -21,12 +21,15 @@ import time
 import keyring
 import getpass
 from keyring.errors import KeyringError
-from pathlib import Path
 from llm_client import GeminiClient, ProviderFactory
 from latex_repository import LatexRepository
 from models import normalize_word_key
 from languages import LanguageConfig, TranslatorConfig, default_language_code, get_language_config
 from languages.anki_shared_styles import compute_template_hash
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - dependency should be present in runtime
+    load_dotenv = None  # type: ignore[misc,assignment]
 
 from .translator import TranslatorCLI
 from ui_helper import UIHelper, read_line
@@ -413,8 +416,35 @@ class FrenchVocabBuilder:
             self.sentence_examples_in_vocab = str(env_sent_ex).strip().lower() in ("1", "true", "yes", "y", "on")
 
     
+    def _load_env_file(self) -> Optional[Path]:
+        """Load persisted API keys from the project .env file, if available."""
+        env_path = Path(self.project_root) / ".env"
+        if load_dotenv is None:
+            if env_path.exists():
+                self.ui.warning(
+                    "python-dotenv is not installed; skipping automatic .env loading."
+                )
+            return None
+
+        if not env_path.exists():
+            return None
+
+        try:
+            loaded = load_dotenv(dotenv_path=env_path, override=False)
+        except Exception as exc:
+            self.ui.warning(f"Failed to load {env_path}: {exc}")
+            return None
+
+        if loaded:
+            self.ui.info(f"Loaded environment variables from {env_path}.")
+            return env_path
+        return None
+
     def load_config(self) -> None:
         """Load or capture the API key for the current provider."""
+        # Load persisted configuration before checking environment variables.
+        self._load_env_file()
+
         metadata = self.provider_metadata
         api_key, source = self._resolve_api_key(metadata)
 
@@ -702,20 +732,9 @@ class FrenchVocabBuilder:
             return None
 
         self.ui.success(f"Saved key to {env_path}.")
-        try:
-            current_dir = Path.cwd().resolve()
-        except OSError:
-            current_dir = Path.cwd()
-        project_root = Path(self.project_root).resolve()
-        if current_dir != project_root:
-            self.ui.warning(
-                "Run FrenchVocab from the project directory"
-                " so the .env file is loaded automatically."
-            )
-        else:
-            self.ui.info(
-                ".env detected: future runs from this directory will reuse the saved key."
-            )
+        self.ui.info(
+            "Future runs will automatically reuse this key from the project .env file."
+        )
         return f".env ({env_path})"
 
     def _display_validation_failure(self, metadata: ProviderMetadata, feedback: ValidationFeedback) -> None:
