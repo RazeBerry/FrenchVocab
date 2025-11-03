@@ -1,4 +1,6 @@
+import os
 import sys
+import tempfile
 from pathlib import Path
 
 # Ensure project root is importable as a module root
@@ -14,3 +16,5 @@ except ModuleNotFoundError:
 
 install_basic_stubs()
 
+_HISTORY_TMP = tempfile.mkdtemp(prefix="frenchvocab_history_")
+os.environ.setdefault("FRENCH_VOCAB_HISTORY_DIR", _HISTORY_TMP)

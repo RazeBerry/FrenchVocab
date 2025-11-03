@@ -6,8 +6,7 @@ import string
 import unicodedata
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple
-import sys
+from typing import Any, Dict, List, Optional, Set, Tuple
 import genanki
 from pathlib import Path
 from rich.console import Console
@@ -32,6 +31,7 @@ except ImportError:  # pragma: no cover - dependency should be present in runtim
     load_dotenv = None  # type: ignore[misc,assignment]
 
 from .translator import TranslatorCLI
+from .history_logger import TranslationLogger
 from ui_helper import UIHelper, read_line
 
 class WordType(Enum):
@@ -166,12 +166,17 @@ class FrenchVocabBuilder:
         self.word_entries: Dict[str, Dict] = {}
         self.normalized_entries: Dict[str, str] = {}
         self.config_file = "vocab_builder_config.json"
+        self._config_data: Dict[str, Any] = {}
+        self.history_logger: Optional[TranslationLogger] = None
         
         # Initialize the LLM client (allow injection)
         self.client = client
+        self.api_available = self.client is not None
+        self.api_error_reason: Optional[str] = None
         
         # Apply optional runtime settings (env/config overrides)
         self._load_input_limits()
+        self.history_logger = self._create_history_logger()
 
         # Initialize translator attribute
         self.eng_to_fr_translator: Optional[TranslatorCLI] = None
@@ -188,17 +193,15 @@ class FrenchVocabBuilder:
         # Load configuration + init client only if not injected
         load_config_start = time.time()
         if self.client is None:
-            self.load_config()
-            try:
-                self.client = ProviderFactory.create(self.provider)
-                self.ui.success(f"{self.provider.capitalize()} client initialized successfully!")
-            except Exception as e:
-                self.ui.error(f"Error initializing {self.provider} client: {e}")
-                sys.exit(1)
+            config_ready = self.load_config()
+            if config_ready:
+                self._initialize_llm_client()
+            else:
+                self._enter_degraded_mode(self.api_error_reason or "API setup skipped.")
+        else:
+            self.api_available = True
         load_config_end = time.time()
-        
-        # Removed duplicate load_config call
-        
+
         load_entries_start = time.time()
         self.load_existing_entries()
         load_entries_end = time.time()
@@ -207,26 +210,8 @@ class FrenchVocabBuilder:
         self.exported_words, self.exported_deck_version = self.load_exported_words()
         self.entry_count = self.count_entries()
         
-        # Initialize the Eng->Fr translator 
-        if self.client:
-             eng_to_target = self.language_config.eng_to_target
-             target_to_eng = self.language_config.target_to_eng
-
-             self.eng_to_fr_translator = TranslatorCLI(
-                 console=self.console,
-                 client=self.client,
-                 config=eng_to_target,
-                 latex_file_path=self.eng_to_fr_latex_file,
-             )
-             self.fr_to_eng_translator = TranslatorCLI(
-                 console=self.console,
-                 client=self.client,
-                 config=target_to_eng,
-                 latex_file_path=self.fr_to_eng_latex_file,
-             )
-        else:
-             self.ui.error("Could not initialize EnglishToFrenchTranslator due to missing LLM client.")
-             self.ui.error("Could not initialize FrenchToEnglishTranslator due to missing LLM client.")
+        # Initialize translators based on current client availability
+        self._init_translators()
 
         init_end = time.time()
         if self.verbose:
@@ -235,6 +220,113 @@ class FrenchVocabBuilder:
                 f"  Load config time: {load_config_end - load_config_start:.5f} seconds\n"
                 f"  Load entries time: {load_entries_end - load_entries_start:.5f} seconds"
             )
+
+    def _init_translators(self) -> None:
+        """Instantiate translator flows when an LLM client is available."""
+        if not self.client:
+            self.eng_to_fr_translator = None
+            self.fr_to_eng_translator = None
+            return
+
+        if (
+            self.eng_to_fr_translator
+            and self.fr_to_eng_translator
+            and self.eng_to_fr_translator.client is self.client
+            and self.fr_to_eng_translator.client is self.client
+        ):
+            return
+
+        eng_to_target = self.language_config.eng_to_target
+        target_to_eng = self.language_config.target_to_eng
+
+        self.eng_to_fr_translator = TranslatorCLI(
+            console=self.console,
+            client=self.client,
+            config=eng_to_target,
+            latex_file_path=self.eng_to_fr_latex_file,
+            direction="eng_to_target",
+            logger=self.history_logger,
+        )
+        self.fr_to_eng_translator = TranslatorCLI(
+            console=self.console,
+            client=self.client,
+            config=target_to_eng,
+            latex_file_path=self.fr_to_eng_latex_file,
+            direction="target_to_eng",
+            logger=self.history_logger,
+        )
+
+    def _initialize_llm_client(
+        self,
+        *,
+        announce: bool = True,
+        rebuild_translators: bool = False,
+    ) -> bool:
+        """Create the LLM client for the active provider."""
+        try:
+            self.client = ProviderFactory.create(self.provider)
+        except Exception as exc:
+            self._enter_degraded_mode(f"Error initializing {self.provider} client: {exc}")
+            return False
+
+        self.api_available = True
+        self.api_error_reason = None
+        if announce:
+            self.ui.success(f"{self.provider.capitalize()} client initialized successfully!")
+        if rebuild_translators:
+            self._init_translators()
+        return True
+
+    def _enter_degraded_mode(self, reason: str) -> None:
+        """Disable AI-dependent features while keeping the rest of the app usable."""
+        clean_reason = (reason or "").strip() or "No AI provider configured."
+        self.client = None
+        self.api_available = False
+        self.api_error_reason = clean_reason
+        self.eng_to_fr_translator = None
+        self.fr_to_eng_translator = None
+        self.ui.warning(f"AI features unavailable: {clean_reason}")
+        self.ui.info(
+            "Existing vocabulary and exports remain accessible. Retry provider setup when prompted to restore AI features."
+        )
+
+    def ensure_llm_ready(self) -> bool:
+        """Ensure the LLM client is available, prompting for reconfiguration if needed."""
+        if self.client:
+            return True
+
+        reason = self.api_error_reason or "No AI provider configured."
+        self.ui.warning(f"AI provider unavailable: {reason}")
+
+        options = [
+            ("retry", "Retry provider setup now"),
+            ("skip", "Return without AI features"),
+        ]
+
+        try:
+            choice = self.ui.interactive_menu(
+                "AI Provider Required",
+                options,
+                "AI-powered features (e.g., translations) need a configured provider.",
+                show_keys=False,
+            )
+        except KeyboardInterrupt:
+            return False
+
+        if choice == "retry":
+            if self.reconfigure_provider():
+                return True
+            self.ui.warning("Provider setup failed. Remaining in offline mode.")
+
+        return False
+
+    def reconfigure_provider(self) -> bool:
+        """Run provider setup again and rebuild dependent components."""
+        self.ui.info("Re-running provider setup...")
+        config_ready = self.load_config()
+        if not config_ready:
+            return False
+        return self._initialize_llm_client(rebuild_translators=True)
 
     def _ui_text(self, key: str, fallback: str) -> str:
         strings = getattr(self.language_config, "ui_strings", {}) or {}
@@ -333,6 +425,10 @@ class FrenchVocabBuilder:
             if cfg_path.exists():
                 with cfg_path.open('r', encoding='utf-8') as f:
                     data = json.load(f)
+                if isinstance(data, dict):
+                    self._config_data = data
+                else:
+                    self._config_data = {}
                 limits = (data or {}).get('input_limits', {})
                 if isinstance(limits, dict):
                     if 'max_chars' in limits:
@@ -415,7 +511,117 @@ class FrenchVocabBuilder:
         if env_sent_ex is not None:
             self.sentence_examples_in_vocab = str(env_sent_ex).strip().lower() in ("1", "true", "yes", "y", "on")
 
-    
+    def _create_history_logger(self) -> TranslationLogger:
+        config_section: Dict[str, Any] = {}
+        raw_config = self._config_data.get("history_logging") if isinstance(self._config_data, dict) else None
+        if isinstance(raw_config, dict):
+            config_section = raw_config
+
+        enabled = bool(config_section.get("enabled", True))
+        env_disabled = os.getenv("FRENCH_VOCAB_HISTORY_DISABLED")
+        if env_disabled and env_disabled.strip().lower() in ("1", "true", "yes", "y", "on"):
+            enabled = False
+        env_enabled = os.getenv("FRENCH_VOCAB_HISTORY_ENABLED")
+        if env_enabled and env_enabled.strip().lower() in ("1", "true", "yes", "y", "on"):
+            enabled = True
+
+        base_dir_override = os.getenv("FRENCH_VOCAB_HISTORY_DIR")
+        if base_dir_override:
+            base_dir = Path(base_dir_override)
+        else:
+            configured_dir = config_section.get("directory")
+            if configured_dir:
+                base_dir = Path(configured_dir)
+                if not base_dir.is_absolute():
+                    base_dir = (self.project_root / base_dir).resolve()
+            else:
+                base_dir = self.project_root / "data" / "history"
+
+        file_pattern = config_section.get("file_pattern", "{language}_translations.jsonl")
+
+        return TranslationLogger(
+            language_code=self.language_code,
+            base_dir=base_dir,
+            enabled=enabled,
+            file_pattern=file_pattern,
+            on_error=self._history_log_error,
+        )
+
+    def _history_log_error(self, message: str) -> None:
+        try:
+            self.ui.warning(message)
+        except Exception:
+            pass
+
+    def _provider_label(self) -> str:
+        label = self.provider.capitalize() if isinstance(self.provider, str) else "provider"
+        if self.client is not None:
+            getter = getattr(self.client, "model_label", None)
+            if callable(getter):
+                try:
+                    label = getter()
+                except Exception:
+                    label = self.client.__class__.__name__
+        return label
+
+    def _log_vocab_history(
+        self,
+        *,
+        action: str,
+        original_text: Optional[str],
+        saved_word: str,
+        word_type: str,
+        definitions: List[str],
+        examples: List[Tuple[str, str]],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        if not self.history_logger or not self.history_logger.enabled:
+            return
+        try:
+            self.history_logger.log_vocab_entry(
+                action=action,
+                word=saved_word,
+                word_type=word_type,
+                definitions=definitions,
+                examples=examples,
+                source_text=original_text,
+                normalized_key=self.normalize_word(saved_word),
+                provider=self._provider_label(),
+                latex_file=self.latex_file,
+                metadata=metadata,
+            )
+        except Exception:
+            # Errors are reported via the logger's error handler
+            pass
+
+    def _log_merge_history(
+        self,
+        *,
+        existing_word: str,
+        final_type: str,
+        merged_definitions: List[str],
+        merged_examples: List[Tuple[str, str]],
+        added_definitions: List[str],
+        added_examples: List[Tuple[str, str]],
+    ) -> None:
+        if not self.history_logger or not self.history_logger.enabled:
+            return
+        try:
+            self.history_logger.log_merge_entry(
+                word=existing_word,
+                final_type=final_type,
+                merged_definitions=merged_definitions,
+                merged_examples=merged_examples,
+                added_definitions=added_definitions,
+                added_examples=added_examples,
+                provider=self._provider_label(),
+                latex_file=self.latex_file,
+                normalized_key=self.normalize_word(existing_word),
+            )
+        except Exception:
+            pass
+
+
     def _load_env_file(self) -> Optional[Path]:
         """Load persisted API keys from the project .env file, if available."""
         env_path = Path(self.project_root) / ".env"
@@ -440,7 +646,7 @@ class FrenchVocabBuilder:
             return env_path
         return None
 
-    def load_config(self) -> None:
+    def load_config(self) -> bool:
         """Load or capture the API key for the current provider."""
         # Load persisted configuration before checking environment variables.
         self._load_env_file()
@@ -452,8 +658,10 @@ class FrenchVocabBuilder:
             try:
                 metadata, api_key = self._run_setup_wizard(metadata)
             except RuntimeError as exc:
-                self.ui.error(str(exc))
-                sys.exit(1)
+                message = str(exc) or "API setup aborted by user."
+                self.api_error_reason = message
+                self.ui.error(message)
+                return False
             source = "interactive setup"
 
         self.provider_metadata = metadata
@@ -463,6 +671,8 @@ class FrenchVocabBuilder:
         self.ui.success(
             f"{metadata.display_name} API key ready ({origin})."
         )
+        self.api_error_reason = None
+        return True
 
     def _resolve_api_key(self, metadata: ProviderMetadata) -> Tuple[Optional[str], Optional[str]]:
         """Attempt to locate an API key using existing configuration sources."""
@@ -493,10 +703,107 @@ class FrenchVocabBuilder:
         return None, None
 
     def _run_setup_wizard(self, default_metadata: ProviderMetadata) -> Tuple[ProviderMetadata, str]:
-        """Interactive onboarding wizard for first-run setup."""
+        """Interactive onboarding wizard - offers guided or advanced setup."""
         self.ui.panel(
-            "[bold blue]Welcome to FrenchVocab![/bold blue]\n\n"
-            "Let's configure an AI provider so translations just work.",
+            "[bold cyan]🚀 Welcome to FrenchVocab![/bold cyan]\n\n"
+            "To translate words, you need an AI provider.\n\n"
+            "[bold]Choose your setup experience:[/bold]",
+            title="First-Time Setup",
+            border_style="cyan",
+        )
+
+        options = [
+            ("guided", "[bold green]✨ Guided Setup[/bold green] [dim](Recommended for beginners)[/dim]\n   Quick 3-step setup with Google Gemini (free tier available)"),
+            ("advanced", "⚙️  Advanced Setup\n   Choose provider, storage method, and more options"),
+        ]
+
+        try:
+            choice = self.ui.interactive_menu(
+                "Setup Mode",
+                options,
+                "Use ↑ and ↓ to choose. Press Enter to continue.",
+                show_keys=False,
+            )
+        except KeyboardInterrupt as exc:
+            raise RuntimeError("API setup aborted by user.") from exc
+
+        if choice == "guided":
+            return self._run_guided_onboarding(default_metadata)
+        else:
+            return self._run_advanced_setup_wizard(default_metadata)
+
+    def _run_guided_onboarding(self, default_metadata: ProviderMetadata) -> Tuple[ProviderMetadata, str]:
+        """Opinionated happy-path wizard for beginners (Gemini + Keyring)."""
+        # Force Gemini as the provider
+        metadata = _get_provider_metadata("gemini")
+
+        # Step 1: Introduction
+        self.ui.panel(
+            "[bold]Step 1/3: Get Your Free API Key[/bold]\n\n"
+            "We'll use Google Gemini (free tier: 60 requests/minute).\n\n"
+            "[cyan]What you need to do:[/cyan]\n"
+            "1. Visit: [bold]https://ai.google.dev/[/bold]\n"
+            "2. Click [bold]\"Get API Key\"[/bold] or [bold]\"API Keys\"[/bold]\n"
+            "3. Sign in with your Google account\n"
+            "4. Click [bold]\"Create API Key\"[/bold]\n"
+            "5. Copy the key (starts with [bold]AIza...[/bold])\n\n"
+            "✨ [dim]Tip: The key is free and takes ~1 minute to generate![/dim]",
+            title="🔑 API Key Needed",
+            border_style="blue",
+        )
+
+        self.ui.prompt("\nPress Enter when you have your API key ready...")
+
+        # Step 2: Key entry with validation
+        while True:
+            self.ui.panel(
+                "[bold]Step 2/3: Enter Your API Key[/bold]\n\n"
+                "Paste your Gemini API key below.\n"
+                "[dim]Input is hidden for security.[/dim]",
+                title="🔐 Secure Input",
+                border_style="yellow",
+            )
+
+            api_key = self._prompt_for_api_key(metadata)
+            validation = self._validate_api_key(metadata, api_key, perform_connection_test=True)
+
+            if validation.valid:
+                break
+
+            self._display_validation_failure(metadata, validation)
+            if not self.ui.confirm("Try entering the key again?", default=True):
+                raise RuntimeError("API setup aborted by user.")
+
+        # Step 3: Automatic storage to keyring
+        self.ui.panel(
+            "[bold]Step 3/3: Saving Your Key[/bold]\n\n"
+            "Your API key will be securely stored in your system keychain.\n"
+            "[dim](Same secure storage used for your passwords)[/dim]",
+            title="💾 Secure Storage",
+            border_style="green",
+        )
+
+        storage = self._store_api_key_to_keyring(metadata, api_key)
+
+        # Success!
+        self.ui.panel(
+            "[bold green]✅ All Set![/bold green]\n\n"
+            "Your FrenchVocab is ready to use!\n\n"
+            "🎯 Provider: [bold]Google Gemini[/bold]\n"
+            "🔐 Storage: [bold]System Keychain[/bold]\n"
+            "📚 You can now add vocabulary and translate!\n\n"
+            "[dim]Tip: Your key is saved - you won't need to enter it again.[/dim]",
+            title="🎉 Setup Complete",
+            border_style="green",
+        )
+
+        return metadata, api_key
+
+    def _run_advanced_setup_wizard(self, default_metadata: ProviderMetadata) -> Tuple[ProviderMetadata, str]:
+        """Advanced onboarding wizard with full control (original wizard)."""
+        self.ui.panel(
+            "[bold blue]Advanced Setup Mode[/bold blue]\n\n"
+            "You'll be able to choose your AI provider and storage method.",
             title="API Setup",
             border_style="blue",
         )
@@ -649,6 +956,28 @@ class FrenchVocabBuilder:
 
         self.ui.success("✓ Connection successful!")
         return ValidationFeedback(True, "Key validated successfully!")
+
+    def _store_api_key_to_keyring(self, metadata: ProviderMetadata, api_key: str) -> str:
+        """Store API key directly to system keyring (no choice, guided onboarding default)."""
+        try:
+            keyring.set_password("french_vocab_builder", metadata.keyring_name, api_key)
+            self.ui.success("✓ API key securely saved to system keychain.")
+            return "system keyring"
+        except Exception as exc:
+            self.ui.warning(
+                f"Could not access system keychain: {exc}\n"
+                "Falling back to .env file storage."
+            )
+            # Fallback to .env if keyring fails
+            destination = self._write_env_file(metadata, api_key)
+            if destination:
+                return destination
+            # Last resort: session only
+            os.environ[metadata.env_var] = api_key
+            self.ui.warning(
+                "Stored key in current session only. You'll need to set it up again next time."
+            )
+            return "session environment"
 
     def _choose_storage_destination(self, metadata: ProviderMetadata, *, keyring_available: bool) -> str:
         """Display a menu for selecting key storage."""
@@ -1170,33 +1499,31 @@ class FrenchVocabBuilder:
         eng_fr_count = 0
         if self.eng_to_fr_translator:
             eng_fr_count = self.eng_to_fr_translator.entry_count
-        
+
         fr_eng_count = 0
         if self.fr_to_eng_translator:
             fr_eng_count = self.fr_to_eng_translator.entry_count
-            
+
         exported_count = len(getattr(self, "exported_words", []))
         language_name = self.language_config.display_name
         add_word_label = self._ui_text("menu.add_word", f"Add {language_name} word")
-        eng_to_cfg = self.language_config.eng_to_target
-        target_to_cfg = self.language_config.target_to_eng
-        eng_to_target_label = self._ui_text(
-            "menu.eng_to_target",
-            f"Translate {eng_to_cfg.source_label} -> {eng_to_cfg.target_label}",
-        )
-        target_to_eng_label = self._ui_text(
-            "menu.target_to_eng",
-            f"Translate {target_to_cfg.source_label} -> {target_to_cfg.target_label}",
-        )
+
+        # Consolidated translation menu
+        total_translation_pairs = eng_fr_count + fr_eng_count
+        translate_label = f"Translate [dim]({total_translation_pairs} total pairs)[/dim]"
 
         display_all_label = self._ui_text("menu.display_all", f"Display all {language_name} words")
 
+        # Show provider status indicator
+        provider_status = "[green]connected[/green]" if self.api_available else "[yellow]unavailable[/yellow]"
+        settings_label = f"Settings & Configuration [dim]({provider_status})[/dim]"
+
         options = [
             ("add", f"{add_word_label} [dim]({self.entry_count} entries)[/dim]"),
-            ("eng_to_target", f"{eng_to_target_label} [dim]({eng_fr_count} pairs)[/dim]"),
-            ("target_to_eng", f"{target_to_eng_label} [dim]({fr_eng_count} pairs)[/dim]"),
+            ("translate", translate_label),
             ("anki_tools", f"Anki tools [dim]({exported_count} tracked exports)[/dim]"),
             ("display_vocab", display_all_label),
+            ("settings", settings_label),
             ("exit", "[bold yellow]Exit[/bold yellow]"),
         ]
 
@@ -1208,6 +1535,35 @@ class FrenchVocabBuilder:
             )
         except KeyboardInterrupt:
             return "exit"
+
+    def show_translation_menu(self) -> str:
+        """Display translation direction submenu."""
+        eng_fr_count = 0
+        if self.eng_to_fr_translator:
+            eng_fr_count = self.eng_to_fr_translator.entry_count
+
+        fr_eng_count = 0
+        if self.fr_to_eng_translator:
+            fr_eng_count = self.fr_to_eng_translator.entry_count
+
+        eng_to_cfg = self.language_config.eng_to_target
+        target_to_cfg = self.language_config.target_to_eng
+
+        options = [
+            ("eng_to_target", f"{eng_to_cfg.source_label} -> {eng_to_cfg.target_label} [dim]({eng_fr_count} pairs)[/dim]"),
+            ("target_to_eng", f"{target_to_cfg.source_label} -> {target_to_cfg.target_label} [dim]({fr_eng_count} pairs)[/dim]"),
+            ("back", "Back to main menu"),
+        ]
+
+        try:
+            return self.ui.interactive_menu(
+                "Translation Direction",
+                options,
+                "Choose which direction to translate.",
+                show_keys=False,
+            )
+        except KeyboardInterrupt:
+            return "back"
 
     def show_anki_menu(self) -> str:
         """Display the nested Anki submenu and return the selected option."""
@@ -1325,7 +1681,10 @@ class FrenchVocabBuilder:
 
         client = self.get_llm_client()
         if not client:
-            return f"[bold red]Failed to initialize {provider_label} client. Please check your API key and try again.[/bold red]"
+            reason = self.api_error_reason or f"{provider_label} client is not configured."
+            self.ui.error(f"AI provider unavailable: {reason}")
+            self.ui.info("AI-powered suggestions are disabled. Retry provider setup to continue.")
+            return ""
         
         detected_type = self.detect_input_type(word)
         config = getattr(self, "language_config", self.DEFAULT_LANGUAGE_CONFIG)
@@ -1603,6 +1962,182 @@ class FrenchVocabBuilder:
             border_style="bold green"
         )
 
+    def show_settings_screen(self):
+        """Display current configuration and allow changes."""
+        # Gather current configuration info
+        provider_name = "Not configured"
+        provider_display = self.provider_metadata.display_name if self.provider_metadata else "Unknown"
+        connection_status = "[red]Disconnected[/red]"
+        key_source = "Unknown"
+
+        if self.api_available and self.client:
+            connection_status = "[green]Connected[/green]"
+            provider_name = provider_display
+
+            # Try to determine key source
+            env_var = self.provider_metadata.env_var
+            if os.environ.get(env_var):
+                # Check if it came from keyring
+                try:
+                    stored_key = keyring.get_password("french_vocab_builder", self.provider_metadata.keyring_name)
+                    if stored_key and stored_key == os.environ.get(env_var):
+                        key_source = "System keychain"
+                    else:
+                        key_source = "Environment variable"
+                except:
+                    key_source = "Environment variable"
+        elif not self.api_available:
+            connection_status = f"[yellow]Unavailable[/yellow]"
+            provider_name = f"{provider_display} (not connected)"
+            key_source = "Not configured"
+
+        # Build status display
+        status_text = (
+            f"[bold]AI Provider:[/bold]      {provider_name}\n"
+            f"[bold]Connection:[/bold]       {connection_status}\n"
+            f"[bold]Key Source:[/bold]       {key_source}\n"
+            f"[bold]Vocabulary File:[/bold]  {self.latex_file}\n"
+            f"[bold]Total Entries:[/bold]    {self.entry_count} words\n"
+        )
+
+        if not self.api_available and self.api_error_reason:
+            status_text += f"\n[yellow]Issue: {self.api_error_reason}[/yellow]"
+
+        self.ui.panel(status_text, title="Configuration Status", border_style="cyan")
+
+        # Settings menu
+        options = [
+            ("test", "Test AI connection"),
+            ("change_provider", "Change AI provider"),
+            ("update_key", "Update API key"),
+            ("view_files", "View file locations"),
+            ("back", "Back to main menu"),
+        ]
+
+        try:
+            choice = self.ui.interactive_menu(
+                "Settings Actions",
+                options,
+                "Select an action or go back to the main menu.",
+                show_keys=False,
+            )
+        except KeyboardInterrupt:
+            return
+
+        if choice == "test":
+            self._test_ai_connection()
+        elif choice == "change_provider":
+            self._change_provider_interactive()
+        elif choice == "update_key":
+            self._update_api_key_interactive()
+        elif choice == "view_files":
+            self._show_file_locations()
+        elif choice == "back":
+            return
+
+    def _test_ai_connection(self):
+        """Test the current AI provider connection."""
+        if not self.client:
+            self.ui.error("No AI provider configured. Set up a provider first.")
+            return
+
+        self.ui.info(f"Testing connection to {self.provider_metadata.display_name}...")
+
+        verifier = getattr(self.client, "verify_credentials", None)
+        if callable(verifier):
+            try:
+                verifier(timeout=5.0)
+                self.ui.success("Connection successful! Provider is working correctly.")
+            except Exception as exc:
+                self.ui.error(f"Connection failed: {exc}")
+                self.ui.info("Check your API key and internet connection.")
+        else:
+            self.ui.warning("Connection test not available for this provider.")
+
+    def _change_provider_interactive(self):
+        """Allow user to switch between providers."""
+        current = self.provider_metadata
+
+        # Show provider options
+        options = []
+        for identifier, metadata in _PROVIDER_REGISTRY.items():
+            label = metadata.display_name
+            if identifier == current.identifier:
+                label = f"{label} [dim](current)[/dim]"
+            options.append((identifier, label))
+        options.append(("cancel", "Cancel"))
+
+        try:
+            choice = self.ui.interactive_menu(
+                "Select Provider",
+                options,
+                "Choose a new AI provider.",
+                show_keys=False,
+            )
+        except KeyboardInterrupt:
+            return
+
+        if choice == "cancel" or choice == current.identifier:
+            return
+
+        # Switch provider
+        new_metadata = _get_provider_metadata(choice)
+        self.provider_metadata = new_metadata
+        self.provider = new_metadata.identifier
+
+        # Try to load existing key or run setup
+        api_key, source = self._resolve_api_key(new_metadata)
+        if not api_key:
+            self.ui.info(f"No existing key found for {new_metadata.display_name}. Starting setup...")
+            try:
+                new_metadata, api_key = self._run_setup_wizard(new_metadata)
+            except RuntimeError as exc:
+                self.ui.error(str(exc))
+                return
+
+        os.environ[new_metadata.env_var] = api_key
+        self._initialize_llm_client(announce=True, rebuild_translators=True)
+
+    def _update_api_key_interactive(self):
+        """Allow user to update their API key for the current provider."""
+        if not self.provider_metadata:
+            self.ui.error("No provider configured.")
+            return
+
+        metadata = self.provider_metadata
+        self.ui.panel(
+            f"Updating API key for [bold]{metadata.display_name}[/bold]\n\n"
+            f"Get a new key at: {metadata.doc_url}",
+            title="Update API Key",
+            border_style="yellow",
+        )
+
+        api_key = self._prompt_for_api_key(metadata)
+        validation = self._validate_api_key(metadata, api_key, perform_connection_test=True)
+
+        if not validation.valid:
+            self._display_validation_failure(metadata, validation)
+            return
+
+        # Store the new key
+        storage = self._store_api_key_to_keyring(metadata, api_key)
+        os.environ[metadata.env_var] = api_key
+
+        # Reinitialize client
+        self._initialize_llm_client(announce=True, rebuild_translators=True)
+
+    def _show_file_locations(self):
+        """Display file paths and configuration."""
+        info_text = (
+            f"[bold]Vocabulary File:[/bold]\n  {self.latex_file}\n\n"
+            f"[bold]English → {self.language_config.display_name}:[/bold]\n  {self.eng_to_fr_latex_file}\n\n"
+            f"[bold]{self.language_config.display_name} → English:[/bold]\n  {self.fr_to_eng_latex_file}\n\n"
+            f"[bold]Exported Words Tracker:[/bold]\n  {self.exported_words_file}\n\n"
+            f"[bold]Project Root:[/bold]\n  {self.project_root}"
+        )
+
+        self.ui.panel(info_text, title="File Locations", border_style="blue")
+
     def remove_accents(self, input_str):
         nfkd_form = unicodedata.normalize("NFKD", input_str)
         return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
@@ -1611,6 +2146,9 @@ class FrenchVocabBuilder:
         main_menu_loop(self)
 
     def handle_new_word_entry(self):
+        if not self.ensure_llm_ready():
+            self.ui.info("Skipping new entry; AI features are currently disabled.")
+            return
         # Reset duplicate resolution per new flow
         self.duplicate_resolution = None
         self.pending_spelling_suggestion = None
@@ -1681,9 +2219,13 @@ class FrenchVocabBuilder:
         if not word_type or not definitions or not examples:
              self.ui.error("Failed to parse essential information from AI response. Aborting.")
              return
+        if isinstance(word_type, list):
+            primary_word_type = word_type[0] if word_type else ""
+        else:
+            primary_word_type = str(word_type or "")
 
         # Post-parse routing opportunity if AI identified as sentence
-        if (word_type and isinstance(word_type, list) and word_type[0].lower() == 'sentence' and
+        if (word_type and isinstance(word_type, list) and primary_word_type.lower() == 'sentence' and
             getattr(self, 'route_sentences', True)):
             title = self._translator_title(self.language_config.target_to_eng)
             route2 = self.ui.confirm(
@@ -1701,7 +2243,7 @@ class FrenchVocabBuilder:
                     return
 
         # If we keep sentence in vocab and examples are disabled, drop them
-        if word_type and word_type[0].lower() == 'sentence' and not getattr(self, 'sentence_examples_in_vocab', False):
+        if primary_word_type.lower() == 'sentence' and not getattr(self, 'sentence_examples_in_vocab', False):
             examples = []
 
         # --- Display Parsed Info ---
@@ -1710,10 +2252,17 @@ class FrenchVocabBuilder:
         # --- Merge path (if selected) ---
         if self.duplicate_resolution and self.duplicate_resolution.get('mode') == 'merge':
             target_key = self.duplicate_resolution.get('existing', final_word)
-            self.merge_into_existing(target_key, word_type[0], definitions, examples)
+            self.merge_into_existing(target_key, primary_word_type, definitions, examples)
             self.ui.success(f"Merged AI content into existing entry for '{target_key}'.")
             self.duplicate_resolution = None
             return
+
+        history_action = "new"
+        history_existing_word: Optional[str] = None
+        if self.duplicate_resolution:
+            history_action = self.duplicate_resolution.get('mode', 'new')
+            history_existing_word = self.duplicate_resolution.get('existing')
+        corrected_word_value: Optional[str] = None
 
         # --- Format LaTeX Entry ---
         insert_word = final_word
@@ -1723,7 +2272,7 @@ class FrenchVocabBuilder:
                 insert_word = self.create_unique_variant(insert_word)
         latex_entry = self.format_latex_entry(
             insert_word,
-            word_type[0],
+            primary_word_type,
             definitions,
             examples,
             entry_command=self.entry_command,
@@ -1753,7 +2302,7 @@ class FrenchVocabBuilder:
                         insert_word = self.create_unique_variant(insert_word)
                 latex_entry = self.format_latex_entry(
                     insert_word,
-                    word_type[0],
+                    primary_word_type,
                     definitions,
                     examples,
                     entry_command=self.entry_command,
@@ -1762,6 +2311,8 @@ class FrenchVocabBuilder:
             else:
                 final_word = suggested_word
             self.pending_spelling_suggestion = None
+
+        corrected_word_value = final_word if final_word != original_word else None
 
         # --- Confirm Save ---
         if not self.ui.confirm(
@@ -1778,7 +2329,28 @@ class FrenchVocabBuilder:
         self.insert_entry_alphabetically(latex_entry, insert_word) # Insert using the (possibly variant) word
 
         # --- Update In-Memory Dictionaries ---
-        self.add_word_to_entries(insert_word, word_type[0], definitions, examples) # Use first element of word_type list
+        self.add_word_to_entries(insert_word, primary_word_type, definitions, examples) # Use first element of word_type list
+
+        history_metadata: Dict[str, Any] = {}
+        if history_existing_word:
+            history_metadata["existing_word"] = history_existing_word
+        if corrected_word_value:
+            history_metadata["corrected_word"] = corrected_word_value
+        if original_word != insert_word:
+            history_metadata["original_input"] = original_word
+            history_metadata["saved_word"] = insert_word
+        if history_action == "force":
+            history_metadata["forced_variant"] = insert_word
+
+        self._log_vocab_history(
+            action=history_action,
+            original_text=original_word,
+            saved_word=insert_word,
+            word_type=primary_word_type,
+            definitions=definitions,
+            examples=examples,
+            metadata=history_metadata or None,
+        )
 
         # --- Alphabetize ---
         self.alphabetize_entries()
@@ -1829,17 +2401,21 @@ class FrenchVocabBuilder:
             return (norm_text(p[0]), norm_text(p[1]))
 
         merged_defs_map = {norm_text(d): d for d in defs_existing}
+        added_defs: List[str] = []
         for d in new_defs:
             nd = norm_text(d)
             if nd and nd not in merged_defs_map:
                 merged_defs_map[nd] = d
+                added_defs.append(d)
         merged_defs = list(merged_defs_map.values())
 
         merged_exs_map = {norm_pair(p): p for p in exs_existing}
+        added_examples: List[Tuple[str, str]] = []
         for p in new_examples:
             np = norm_pair(p)
             if np not in merged_exs_map:
                 merged_exs_map[np] = p
+                added_examples.append(p)
         merged_exs = list(merged_exs_map.values())
 
         # Keep existing type by default; if unknown, use new
@@ -1860,6 +2436,14 @@ class FrenchVocabBuilder:
         entry['examples_list'] = merged_exs
         entry['definitions'] = "; ".join(merged_defs)
         entry['examples'] = "; ".join([f"{f} ({e})" for f,e in merged_exs])
+        self._log_merge_history(
+            existing_word=entry['word'],
+            final_type=final_type,
+            merged_definitions=merged_defs,
+            merged_examples=merged_exs,
+            added_definitions=added_defs,
+            added_examples=added_examples,
+        )
 
     def update_entry_in_file(self, word_capitalized: str, new_block: str) -> None:
         """Replace the LaTeX entry block for the given word with new_block."""

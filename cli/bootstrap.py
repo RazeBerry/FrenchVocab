@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Iterable, List, Tuple
 
 from rich.console import Console
@@ -39,18 +38,8 @@ def run_cli(argv: Iterable[str] | None = None) -> None:  # noqa: ARG001 - legacy
         console.print("\n[yellow]Launch cancelled by user.[/yellow]")
         return
 
-    start_time = time.time()
-    init_start = start_time
     app = build_app(language_code)
-    init_end = time.time()
-
-    run_start = time.time()
     app.run()
-    run_end = time.time()
-
-    print(f"Total startup time: {init_end - start_time:.2f} seconds")
-    print(f"Initialization time: {init_end - init_start:.2f} seconds")
-    print(f"Run time: {run_end - run_start:.2f} seconds")
 
 
 def _prompt_for_language(console: Console) -> str:

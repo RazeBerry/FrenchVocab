@@ -17,6 +17,7 @@ from rich.text import Text
 from languages import TranslatorConfig
 from llm_client import LLMClient
 from ui_helper import read_line
+from core.history_logger import TranslationLogger
 
 
 class TranslatorCLI:
@@ -28,10 +29,14 @@ class TranslatorCLI:
         client: Optional[LLMClient],
         config: TranslatorConfig,
         latex_file_path: Optional[Path] = None,
+        direction: str = "eng_to_target",
+        logger: Optional[TranslationLogger] = None,
     ) -> None:
         self.console = console
         self.client = client
         self.config = config
+        self.direction = direction
+        self.logger = logger
 
         self.prompt_template = config.prompt_template
         self.prompt_variable = config.prompt_variable
@@ -349,6 +354,34 @@ class TranslatorCLI:
         self.pairs[normalized_key] = {"source": source_text, "target": target_text}
         self.entry_count = len(self.pairs)
 
+    def _provider_label(self) -> Optional[str]:
+        if not self.client:
+            return None
+        getter = getattr(self.client, "model_label", None)
+        if callable(getter):
+            try:
+                return getter()
+            except Exception:
+                return self.client.__class__.__name__
+        return self.client.__class__.__name__
+
+    def _log_saved_translation(self, source_text: str, target_text: str, normalized_key: str) -> None:
+        if not self.logger or not self.logger.enabled:
+            return
+        try:
+            self.logger.log_translator_entry(
+                direction=self.direction,
+                source_text=source_text,
+                target_text=target_text,
+                normalized_key=normalized_key,
+                provider=self._provider_label(),
+                latex_file=self.latex_file,
+                source_label=self.source_label,
+                target_label=self.target_label,
+            )
+        except Exception:
+            pass
+
     # ------------------------------------------------------------------
     # Public operations
     # ------------------------------------------------------------------
@@ -375,6 +408,7 @@ class TranslatorCLI:
             latex_entry = self._format_latex_entry(source_text, target_text)
             self._add_entry_to_file(latex_entry)
             self._add_entry_to_memory(source_text, target_text, normalized)
+            self._log_saved_translation(source_text, target_text, normalized)
             self.console.print("[bold green]Translation saved successfully![/bold green]")
         else:
             self.console.print("[yellow]Translation discarded.[/yellow]")
@@ -399,6 +433,7 @@ class TranslatorCLI:
             latex_entry = self._format_latex_entry(source_text, target_text)
             self._add_entry_to_file(latex_entry)
             self._add_entry_to_memory(source_text, target_text, normalized)
+            self._log_saved_translation(source_text, target_text, normalized)
             self.console.print("[bold green]Translation saved successfully![/bold green]")
             return True
 
