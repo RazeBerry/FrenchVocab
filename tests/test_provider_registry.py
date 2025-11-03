@@ -10,7 +10,7 @@ from _stubs import install_basic_stubs  # type: ignore
 install_basic_stubs()
 
 import FrenchVocab  # noqa: E402,F401
-from core.vocab import _get_provider_metadata  # noqa: E402
+from core.providers.manager import _get_provider_metadata  # noqa: E402
 
 
 def test_unknown_provider_raises_value_error():

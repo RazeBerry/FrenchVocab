@@ -4,6 +4,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
+from rich import box
 from typing import List, Dict, Any, Optional, Tuple, Sequence
 from enum import Enum
 
@@ -46,11 +47,11 @@ def read_line(prompt: str = "", *, console: Optional[Console] = None) -> str:
     return input(prompt)
 
 class MessageType(Enum):
-    """Enum for consistent message styling"""
-    ERROR = ("bold red", "Error", "red")
-    SUCCESS = ("bold green", "Success", "green")
-    WARNING = ("bold yellow", "Warning", "yellow")
-    INFO = ("bold blue", "Info", "blue")
+    """Enum for consistent message styling with Anthropic-inspired color palette"""
+    ERROR = ("bold #ff6b6b", "Error", "#ff6b6b")  # Coral red
+    SUCCESS = ("bold #51cf66", "Success", "green3")  # Mint green
+    WARNING = ("bold #ffd43b", "Warning", "yellow3")  # Warm yellow
+    INFO = ("bold #E67E50", "Info", "dark_orange")  # Anthropic orange
     DEBUG = ("dim", "Debug", "dim")
 
 class UIHelper:
@@ -68,32 +69,36 @@ class UIHelper:
         self.console.print(f"[{style}]{text}[/{style}]")
     
     def error(self, text: str, with_panel: bool = False) -> None:
-        """Display error message, optionally in a panel"""
+        """Display error message with symbol, optionally in a panel"""
+        formatted_text = f"✗ {text}"
         if with_panel:
-            self.panel(text, "Error", "red", style="bold red")
+            self.panel(formatted_text, "Error", "#ff6b6b", style="bold #ff6b6b")
         else:
-            self.message(text, MessageType.ERROR)
+            self.message(formatted_text, MessageType.ERROR)
     
     def success(self, text: str, with_panel: bool = False) -> None:
-        """Display success message, optionally in a panel"""
+        """Display success message with symbol, optionally in a panel"""
+        formatted_text = f"✓ {text}"
         if with_panel:
-            self.panel(text, "Success", "green", style="bold green")
+            self.panel(formatted_text, "Success", "green3", style="bold #51cf66")
         else:
-            self.message(text, MessageType.SUCCESS)
+            self.message(formatted_text, MessageType.SUCCESS)
     
     def warning(self, text: str, with_panel: bool = False) -> None:
-        """Display warning message, optionally in a panel"""
+        """Display warning message with symbol, optionally in a panel"""
+        formatted_text = f"⚡ {text}"
         if with_panel:
-            self.panel(text, "Warning", "yellow", style="bold yellow")
+            self.panel(formatted_text, "Warning", "yellow3", style="bold #ffd43b")
         else:
-            self.message(text, MessageType.WARNING)
+            self.message(formatted_text, MessageType.WARNING)
     
     def info(self, text: str, with_panel: bool = False) -> None:
-        """Display info message, optionally in a panel"""
+        """Display info message with symbol, optionally in a panel"""
+        formatted_text = f"ℹ {text}"
         if with_panel:
-            self.panel(text, "Information", "blue", style="bold blue")
+            self.panel(formatted_text, "Information", "dark_orange", style="bold #E67E50")
         else:
-            self.message(text, MessageType.INFO)
+            self.message(formatted_text, MessageType.INFO)
     
     def debug(self, text: str) -> None:
         """Display debug message"""
@@ -105,16 +110,20 @@ class UIHelper:
         self,
         content: str,
         title: str = "",
-        border_style: str = "blue",
+        border_style: str = "dark_orange",
         expand: bool = True,
+        box_style=None,
         **kwargs,
     ) -> None:
-        """Display content in a styled panel"""
+        """Display content in a styled panel with rounded borders by default"""
+        if box_style is None:
+            box_style = box.ROUNDED
         self.console.print(Panel(
-            content, 
-            title=title, 
+            content,
+            title=title,
             border_style=border_style,
             expand=expand,
+            box=box_style,
             **kwargs
         ))
     
@@ -161,20 +170,20 @@ class UIHelper:
     
     # ========== Menu Methods ==========
     
-    def display_menu(self, title: str, options: List[Tuple[str, str]], 
+    def display_menu(self, title: str, options: List[Tuple[str, str]],
                      show_numbers: bool = True) -> None:
-        """Display a formatted menu"""
+        """Display a formatted menu with modern Anthropic-inspired styling"""
         table = Table(show_header=False, box=None, padding=(0, 1), expand=True)
-        table.add_column(style="bold cyan", width=3, justify="right")
+        table.add_column(style="bold dark_orange", width=3, justify="right")
         table.add_column()
-        
+
         for i, (key, description) in enumerate(options):
             if show_numbers and key.isdigit():
                 table.add_row(f"{key}.", description)
             else:
                 table.add_row(f"[{key}]", description)
-        
-        self.panel(table, title=title, border_style="blue", expand=False)
+
+        self.panel(table, title=title, border_style="dark_orange", expand=False)
 
     def interactive_menu(
         self,
@@ -228,24 +237,24 @@ class UIHelper:
     
     def display_latex_entry(self, latex_entry: str) -> None:
         """Display a LaTeX entry in a panel"""
-        self.panel(latex_entry, title="Generated LaTeX Entry", border_style="bold blue")
+        self.panel(latex_entry, title="Generated LaTeX Entry", border_style="dark_orange")
     
     def display_metrics(self, metrics: Dict[str, float]) -> None:
         """Display performance metrics in a formatted panel"""
         if not metrics:
             self.warning("LLM Performance metrics not available.")
             return
-            
+
         ttft = metrics.get('ttft', -1)
         tps = metrics.get('tps', -1)
         tokens = metrics.get('tokens_out', -1)
-        
+
         metrics_text = (
             f"TTFT: {ttft:.3f}s | "
             f"Output Tokens: {tokens} | "
             f"TPS: {tps:.1f}"
         )
-        self.panel(metrics_text, title="LLM Performance", border_style="dim blue")
+        self.panel(metrics_text, title="LLM Performance", border_style="dim dark_orange")
     
     # ========== Utility Methods ==========
     

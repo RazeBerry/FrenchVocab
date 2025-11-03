@@ -4,35 +4,31 @@ import re
 import shutil
 import string
 import unicodedata
-from concurrent.futures import TimeoutError as FuturesTimeoutError
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 import genanki
 from pathlib import Path
 from rich.console import Console
 from rich.progress import Progress
-from rich.prompt import Prompt, Confirm
 from enum import Enum, auto
 from cli.menu import main_menu_loop
 from anki_exporter import AnkiExporter, AnkiExportEntry, latex_to_anki_format as latex_to_anki_html
 from ai_response_parser import parse_ai_response_text
 import time
 import keyring
-import getpass
-from keyring.errors import KeyringError
 from llm_client import GeminiClient, ProviderFactory
 from latex_repository import LatexRepository
 from models import normalize_word_key
 from languages import LanguageConfig, TranslatorConfig, default_language_code, get_language_config
 from languages.anki_shared_styles import compute_template_hash
-try:
-    from dotenv import load_dotenv
-except ImportError:  # pragma: no cover - dependency should be present in runtime
-    load_dotenv = None  # type: ignore[misc,assignment]
 
 from .translator import TranslatorCLI
 from .history_logger import TranslationLogger
 from ui_helper import UIHelper, read_line
+from core.providers.manager import (
+    ProviderManager,
+    ProviderMetadata,
+    ProviderResolution,
+)
 
 class WordType(Enum):
     NOUN = auto()
@@ -42,60 +38,6 @@ class WordType(Enum):
     EXPRESSION = auto()
     PRONOMINAL_VERB = auto()
     OTHER = auto()
-
-
-@dataclass(frozen=True)
-class ProviderMetadata:
-    identifier: str
-    env_var: str
-    keyring_name: str
-    display_name: str
-    doc_url: str
-    key_prefixes: Tuple[str, ...]
-    min_length: int = 32
-
-
-@dataclass(frozen=True)
-class ValidationFeedback:
-    valid: bool
-    message: str
-    suggestions: Tuple[str, ...] = ()
-
-
-_PROVIDER_REGISTRY: Dict[str, ProviderMetadata] = {
-    "gemini": ProviderMetadata(
-        identifier="gemini",
-        env_var="GEMINI_API_KEY",
-        keyring_name="gemini_api_key",
-        display_name="Google Gemini",
-        doc_url="https://ai.google.dev/",
-        key_prefixes=("AIza",),
-        min_length=32,
-    ),
-    "claude": ProviderMetadata(
-        identifier="claude",
-        env_var="ANTHROPIC_API_KEY",
-        keyring_name="anthropic_api_key",
-        display_name="Anthropic Claude",
-        doc_url="https://console.anthropic.com/",
-        key_prefixes=("sk-ant-",),
-        min_length=40,
-    ),
-}
-
-
-def _get_provider_metadata(provider: Optional[str]) -> ProviderMetadata:
-    if not provider:
-        return _PROVIDER_REGISTRY["gemini"]
-
-    key = provider.lower()
-    metadata = _PROVIDER_REGISTRY.get(key)
-    if metadata is None:
-        available = ", ".join(sorted(_PROVIDER_REGISTRY.keys()))
-        raise ValueError(
-            f"Unknown provider '{provider}'. Available providers: {available}."
-        )
-    return metadata
 
 
 class FrenchVocabBuilder:
@@ -137,6 +79,7 @@ class FrenchVocabBuilder:
         module_dir = Path(__file__).resolve().parent
         project_root = module_dir.parent
         self.project_root = project_root
+        self.provider_manager = ProviderManager(self.ui, self.project_root)
 
         self.default_vocab_filename = self.language_config.vocab_filename
         if latex_file is None:
@@ -186,15 +129,14 @@ class FrenchVocabBuilder:
 
         # Determine provider early and set verbosity before key bootstrapping
         requested_provider = provider or ProviderFactory.default_provider()
-        self.provider_metadata: ProviderMetadata = _get_provider_metadata(requested_provider)
+        self.provider_metadata: ProviderMetadata = self.provider_manager.get_metadata(requested_provider)
         self.provider = self.provider_metadata.identifier
         self.verbose = verbose
 
         # Load configuration + init client only if not injected
         load_config_start = time.time()
         if self.client is None:
-            config_ready = self.load_config()
-            if config_ready:
+            if self._prepare_provider():
                 self._initialize_llm_client()
             else:
                 self._enter_degraded_mode(self.api_error_reason or "API setup skipped.")
@@ -207,7 +149,12 @@ class FrenchVocabBuilder:
         load_entries_end = time.time()
         
         self.exported_words_file = self._resolve_exported_words_path(project_root, self.latex_file.parent)
-        self.exported_words, self.exported_deck_version = self.load_exported_words()
+        self.last_export_metadata: Optional[Dict[str, Any]] = None
+        (
+            self.exported_words,
+            self.exported_deck_version,
+            self.last_export_metadata,
+        ) = self.load_exported_words()
         self.entry_count = self.count_entries()
         
         # Initialize translators based on current client availability
@@ -255,6 +202,26 @@ class FrenchVocabBuilder:
             direction="target_to_eng",
             logger=self.history_logger,
         )
+
+    def _apply_provider_resolution(self, resolution: ProviderResolution) -> None:
+        """Persist provider metadata and API key details after successful setup."""
+        self.provider_metadata = resolution.metadata
+        self.provider = resolution.metadata.identifier
+        os.environ[resolution.metadata.env_var] = resolution.api_key
+        self.api_error_reason = None
+
+    def _prepare_provider(self) -> bool:
+        """Ensure provider credentials are ready; return False when setup is skipped."""
+        try:
+            resolution = self.provider_manager.prepare_provider(self.provider_metadata)
+        except RuntimeError as exc:
+            message = str(exc) or "API setup aborted by user."
+            self.api_error_reason = message
+            self.ui.error(message)
+            return False
+
+        self._apply_provider_resolution(resolution)
+        return True
 
     def _initialize_llm_client(
         self,
@@ -323,8 +290,7 @@ class FrenchVocabBuilder:
     def reconfigure_provider(self) -> bool:
         """Run provider setup again and rebuild dependent components."""
         self.ui.info("Re-running provider setup...")
-        config_ready = self.load_config()
-        if not config_ready:
+        if not self._prepare_provider():
             return False
         return self._initialize_llm_client(rebuild_translators=True)
 
@@ -622,468 +588,11 @@ class FrenchVocabBuilder:
             pass
 
 
-    def _load_env_file(self) -> Optional[Path]:
-        """Load persisted API keys from the project .env file, if available."""
-        env_path = Path(self.project_root) / ".env"
-        if load_dotenv is None:
-            if env_path.exists():
-                self.ui.warning(
-                    "python-dotenv is not installed; skipping automatic .env loading."
-                )
-            return None
-
-        if not env_path.exists():
-            return None
-
-        try:
-            loaded = load_dotenv(dotenv_path=env_path, override=False)
-        except Exception as exc:
-            self.ui.warning(f"Failed to load {env_path}: {exc}")
-            return None
-
-        if loaded:
-            self.ui.info(f"Loaded environment variables from {env_path}.")
-            return env_path
-        return None
-
-    def load_config(self) -> bool:
-        """Load or capture the API key for the current provider."""
-        # Load persisted configuration before checking environment variables.
-        self._load_env_file()
-
-        metadata = self.provider_metadata
-        api_key, source = self._resolve_api_key(metadata)
-
-        if not api_key:
-            try:
-                metadata, api_key = self._run_setup_wizard(metadata)
-            except RuntimeError as exc:
-                message = str(exc) or "API setup aborted by user."
-                self.api_error_reason = message
-                self.ui.error(message)
-                return False
-            source = "interactive setup"
-
-        self.provider_metadata = metadata
-        self.provider = metadata.identifier
-        os.environ[metadata.env_var] = api_key
-        origin = source or "configuration"
-        self.ui.success(
-            f"{metadata.display_name} API key ready ({origin})."
-        )
-        self.api_error_reason = None
-        return True
-
-    def _resolve_api_key(self, metadata: ProviderMetadata) -> Tuple[Optional[str], Optional[str]]:
-        """Attempt to locate an API key using existing configuration sources."""
-        env_value = os.environ.get(metadata.env_var)
-        if env_value:
-            result = self._validate_api_key(metadata, env_value, perform_connection_test=False)
-            if result.valid:
-                return env_value, "environment variable"
-            self.ui.warning(
-                f"Ignoring invalid {metadata.env_var} from environment: {result.message}"
-            )
-
-        try:
-            stored_key = keyring.get_password("french_vocab_builder", metadata.keyring_name)
-        except KeyringError as exc:
-            self.ui.error(f"Error accessing system keyring: {exc}")
-            stored_key = None
-
-        if stored_key:
-            result = self._validate_api_key(metadata, stored_key, perform_connection_test=False)
-            if result.valid:
-                os.environ.setdefault(metadata.env_var, stored_key)
-                return stored_key, "system keyring"
-            self.ui.warning(
-                "Stored keyring credential failed validation; starting setup wizard."
-            )
-
-        return None, None
-
-    def _run_setup_wizard(self, default_metadata: ProviderMetadata) -> Tuple[ProviderMetadata, str]:
-        """Interactive onboarding wizard - offers guided or advanced setup."""
-        self.ui.panel(
-            "[bold cyan]🚀 Welcome to FrenchVocab![/bold cyan]\n\n"
-            "To translate words, you need an AI provider.\n\n"
-            "[bold]Choose your setup experience:[/bold]",
-            title="First-Time Setup",
-            border_style="cyan",
-        )
-
-        options = [
-            ("guided", "[bold green]✨ Guided Setup[/bold green] [dim](Recommended for beginners)[/dim]\n   Quick 3-step setup with Google Gemini (free tier available)"),
-            ("advanced", "⚙️  Advanced Setup\n   Choose provider, storage method, and more options"),
-        ]
-
-        try:
-            choice = self.ui.interactive_menu(
-                "Setup Mode",
-                options,
-                "Use ↑ and ↓ to choose. Press Enter to continue.",
-                show_keys=False,
-            )
-        except KeyboardInterrupt as exc:
-            raise RuntimeError("API setup aborted by user.") from exc
-
-        if choice == "guided":
-            return self._run_guided_onboarding(default_metadata)
-        else:
-            return self._run_advanced_setup_wizard(default_metadata)
-
-    def _run_guided_onboarding(self, default_metadata: ProviderMetadata) -> Tuple[ProviderMetadata, str]:
-        """Opinionated happy-path wizard for beginners (Gemini + Keyring)."""
-        # Force Gemini as the provider
-        metadata = _get_provider_metadata("gemini")
-
-        # Step 1: Introduction
-        self.ui.panel(
-            "[bold]Step 1/3: Get Your Free API Key[/bold]\n\n"
-            "We'll use Google Gemini (free tier: 60 requests/minute).\n\n"
-            "[cyan]What you need to do:[/cyan]\n"
-            "1. Visit: [bold]https://ai.google.dev/[/bold]\n"
-            "2. Click [bold]\"Get API Key\"[/bold] or [bold]\"API Keys\"[/bold]\n"
-            "3. Sign in with your Google account\n"
-            "4. Click [bold]\"Create API Key\"[/bold]\n"
-            "5. Copy the key (starts with [bold]AIza...[/bold])\n\n"
-            "✨ [dim]Tip: The key is free and takes ~1 minute to generate![/dim]",
-            title="🔑 API Key Needed",
-            border_style="blue",
-        )
-
-        self.ui.prompt("\nPress Enter when you have your API key ready...")
-
-        # Step 2: Key entry with validation
-        while True:
-            self.ui.panel(
-                "[bold]Step 2/3: Enter Your API Key[/bold]\n\n"
-                "Paste your Gemini API key below.\n"
-                "[dim]Input is hidden for security.[/dim]",
-                title="🔐 Secure Input",
-                border_style="yellow",
-            )
-
-            api_key = self._prompt_for_api_key(metadata)
-            validation = self._validate_api_key(metadata, api_key, perform_connection_test=True)
-
-            if validation.valid:
-                break
-
-            self._display_validation_failure(metadata, validation)
-            if not self.ui.confirm("Try entering the key again?", default=True):
-                raise RuntimeError("API setup aborted by user.")
-
-        # Step 3: Automatic storage to keyring
-        self.ui.panel(
-            "[bold]Step 3/3: Saving Your Key[/bold]\n\n"
-            "Your API key will be securely stored in your system keychain.\n"
-            "[dim](Same secure storage used for your passwords)[/dim]",
-            title="💾 Secure Storage",
-            border_style="green",
-        )
-
-        storage = self._store_api_key_to_keyring(metadata, api_key)
-
-        # Success!
-        self.ui.panel(
-            "[bold green]✅ All Set![/bold green]\n\n"
-            "Your FrenchVocab is ready to use!\n\n"
-            "🎯 Provider: [bold]Google Gemini[/bold]\n"
-            "🔐 Storage: [bold]System Keychain[/bold]\n"
-            "📚 You can now add vocabulary and translate!\n\n"
-            "[dim]Tip: Your key is saved - you won't need to enter it again.[/dim]",
-            title="🎉 Setup Complete",
-            border_style="green",
-        )
-
-        return metadata, api_key
-
-    def _run_advanced_setup_wizard(self, default_metadata: ProviderMetadata) -> Tuple[ProviderMetadata, str]:
-        """Advanced onboarding wizard with full control (original wizard)."""
-        self.ui.panel(
-            "[bold blue]Advanced Setup Mode[/bold blue]\n\n"
-            "You'll be able to choose your AI provider and storage method.",
-            title="API Setup",
-            border_style="blue",
-        )
-
-        metadata = default_metadata
-        while True:
-            metadata = self._prompt_for_provider(metadata)
-
-            while True:
-                api_key = self._prompt_for_api_key(metadata)
-                validation = self._validate_api_key(metadata, api_key, perform_connection_test=True)
-                if validation.valid:
-                    storage = self._store_api_key(metadata, api_key)
-                    self.ui.info(f"Key stored via {storage}.")
-                    return metadata, api_key
-
-                self._display_validation_failure(metadata, validation)
-                if not self.ui.confirm("Try entering the key again?", default=True):
-                    break
-
-            if not self.ui.confirm("Choose a different provider?", default=False):
-                raise RuntimeError("API setup aborted by user.")
-
-    def _prompt_for_provider(self, current: ProviderMetadata) -> ProviderMetadata:
-        """Let the user choose an AI provider."""
-        options: List[Tuple[str, str]] = []
-        for identifier, metadata in _PROVIDER_REGISTRY.items():
-            label = metadata.display_name
-            if identifier == "gemini":
-                label = f"{label} [dim](Recommended)[/dim]"
-            if identifier == current.identifier:
-                label = f"{label} [dim](current selection)[/dim]"
-            options.append((identifier, label))
-        options.append(("exit", "Exit setup"))
-
-        try:
-            choice = self.ui.interactive_menu(
-                "Choose Provider",
-                options,
-                "Use ↑ and ↓ to highlight a provider. Enter confirms.",
-                show_keys=False,
-            )
-        except KeyboardInterrupt as exc:  # pragma: no cover - user cancel
-            raise RuntimeError("API setup aborted by user.") from exc
-
-        if choice == "exit":
-            raise RuntimeError("API setup aborted by user.")
-
-        return _get_provider_metadata(choice)
-
-    def _prompt_for_api_key(self, metadata: ProviderMetadata) -> str:
-        """Collect the API key from the user with guidance."""
-        instructions = (
-            f"[bold]{metadata.display_name} requires an API key.[/bold]\n"
-            f"Get yours at: {metadata.doc_url}\n\n"
-            "Paste the key below. Input is hidden for safety."
-        )
-        self.ui.panel(instructions, title=f"{metadata.display_name} Setup", border_style="yellow")
-
-        while True:
-            try:
-                raw = getpass.getpass(f"Enter your {metadata.display_name} API key: ")
-            except (EOFError, KeyboardInterrupt) as exc:  # pragma: no cover - manual abort
-                raise RuntimeError("API setup aborted by user.") from exc
-
-            api_key = raw.strip()
-            if api_key:
-                return api_key
-            self.ui.warning("API key cannot be empty. Please try again.")
-
-    def _validate_api_key(
-        self,
-        metadata: ProviderMetadata,
-        api_key: str,
-        *,
-        perform_connection_test: bool,
-    ) -> ValidationFeedback:
-        """Validate API key format and, optionally, connectivity."""
-        key = (api_key or "").strip()
-        if not key:
-            return ValidationFeedback(False, "Key cannot be empty.", ("Paste the full key from the provider dashboard.",))
-
-        if len(key) < metadata.min_length:
-            return ValidationFeedback(
-                False,
-                "Key appears too short.",
-                ("Copy the entire key; some providers hide the middle section.",),
-            )
-
-        if metadata.key_prefixes and not any(key.startswith(prefix) for prefix in metadata.key_prefixes):
-            expected = " or ".join(f"'{p}'" for p in metadata.key_prefixes)
-            return ValidationFeedback(
-                False,
-                f"Doesn't resemble a {metadata.display_name} key.",
-                (
-                    f"{metadata.display_name} keys typically start with {expected}.",
-                    f"Check the provider at {metadata.doc_url} or switch providers.",
-                ),
-            )
-
-        if not perform_connection_test:
-            return ValidationFeedback(True, "Key format looks valid.")
-
-        return self._validate_with_provider(metadata, key)
-
-    def _validate_with_provider(self, metadata: ProviderMetadata, api_key: str) -> ValidationFeedback:
-        """Perform a live connectivity check against the provider."""
-        self.ui.info(f"Testing connection to {metadata.display_name}…")
-        try:
-            client = ProviderFactory.create(metadata.identifier, api_key)
-        except Exception as exc:
-            return ValidationFeedback(
-                False,
-                f"Failed to initialize {metadata.display_name} client: {exc}",
-                (
-                    f"Ensure the key is active in the {metadata.display_name} console.",
-                    f"Generate a new key via {metadata.doc_url} if the issue persists.",
-                ),
-            )
-
-        verifier = getattr(client, "verify_credentials", None)
-        if callable(verifier):
-            try:
-                verifier(timeout=5.0)
-            except FuturesTimeoutError:
-                return ValidationFeedback(
-                    False,
-                    "API validation timed out.",
-                    ("Check your internet connection and try again shortly.",),
-                )
-            except TimeoutError:
-                return ValidationFeedback(
-                    False,
-                    "API validation timed out.",
-                    (
-                        "The provider took too long to respond.",
-                        "Retry in a moment or verify service status.",
-                    ),
-                )
-            except Exception as exc:
-                message = str(exc) or "Provider rejected the API key."
-                return ValidationFeedback(
-                    False,
-                    message,
-                    (
-                        "Confirm the key is still active and has not been revoked.",
-                        f"Regenerate the key via {metadata.doc_url} if necessary.",
-                    ),
-                )
-
-        self.ui.success("✓ Connection successful!")
-        return ValidationFeedback(True, "Key validated successfully!")
-
-    def _store_api_key_to_keyring(self, metadata: ProviderMetadata, api_key: str) -> str:
-        """Store API key directly to system keyring (no choice, guided onboarding default)."""
-        try:
-            keyring.set_password("french_vocab_builder", metadata.keyring_name, api_key)
-            self.ui.success("✓ API key securely saved to system keychain.")
-            return "system keyring"
-        except Exception as exc:
-            self.ui.warning(
-                f"Could not access system keychain: {exc}\n"
-                "Falling back to .env file storage."
-            )
-            # Fallback to .env if keyring fails
-            destination = self._write_env_file(metadata, api_key)
-            if destination:
-                return destination
-            # Last resort: session only
-            os.environ[metadata.env_var] = api_key
-            self.ui.warning(
-                "Stored key in current session only. You'll need to set it up again next time."
-            )
-            return "session environment"
-
-    def _choose_storage_destination(self, metadata: ProviderMetadata, *, keyring_available: bool) -> str:
-        """Display a menu for selecting key storage."""
-        options = []
-        if keyring_available:
-            options.append(("keyring", "Secure system keyring [dim](recommended)[/dim]"))
-        options.append(("env_file", ".env file in project directory"))
-        options.append(("session", "Current session only (environment variable)"))
-        try:
-            choice = self.ui.interactive_menu(
-                "Where should we save this key?",
-                options,
-                "Choose how you want FrenchVocab to remember your key.",
-                show_keys=False,
-            )
-        except KeyboardInterrupt as exc:  # pragma: no cover - user cancel
-            raise RuntimeError("API setup aborted by user.") from exc
-        return choice
-
-    def _store_api_key(self, metadata: ProviderMetadata, api_key: str) -> str:
-        """Persist the API key using the user's preferred destination."""
-        keyring_available = True
-        while True:
-            choice = self._choose_storage_destination(metadata, keyring_available=keyring_available)
-            if choice == "keyring":
-                try:
-                    keyring.set_password("french_vocab_builder", metadata.keyring_name, api_key)
-                    self.ui.success("Saved API key to system keyring.")
-                    return "system keyring"
-                except Exception as exc:
-                    self.ui.warning(
-                        "Keyring is not available right now. Choose another storage option."
-                    )
-                    keyring_available = False
-                    continue
-
-            if choice == "env_file":
-                destination = self._write_env_file(metadata, api_key)
-                if destination:
-                    return destination
-                continue
-
-            if choice == "session":
-                os.environ[metadata.env_var] = api_key
-                self.ui.warning(
-                    "Stored key in current session only. Run setup again next time if needed."
-                )
-                return "session environment"
-
-    def _write_env_file(self, metadata: ProviderMetadata, api_key: str) -> Optional[str]:
-        """Persist the key to a .env file in the project root."""
-        env_path = Path(self.project_root) / ".env"
-        if env_path.exists() and not env_path.is_file():
-            self.ui.error("Cannot write .env file because the path exists and is not a file.")
-            return None
-
-        lines: List[str] = []
-        if env_path.exists():
-            try:
-                lines = env_path.read_text(encoding="utf-8").splitlines()
-            except OSError as exc:
-                self.ui.error(f"Failed to read existing .env file: {exc}")
-                return None
-
-        updated = False
-        new_lines: List[str] = []
-        key_var = metadata.env_var
-        for line in lines:
-            if line.strip().startswith(f"{key_var}="):
-                new_lines.append(f"{key_var}={api_key}")
-                updated = True
-            else:
-                new_lines.append(line)
-        if not updated:
-            new_lines.append(f"{key_var}={api_key}")
-
-        try:
-            env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
-        except OSError as exc:
-            self.ui.error(f"Failed to write .env file: {exc}")
-            return None
-
-        self.ui.success(f"Saved key to {env_path}.")
-        self.ui.info(
-            "Future runs will automatically reuse this key from the project .env file."
-        )
-        return f".env ({env_path})"
-
-    def _display_validation_failure(self, metadata: ProviderMetadata, feedback: ValidationFeedback) -> None:
-        """Present validation errors with actionable guidance."""
-        details = feedback.message
-        if feedback.suggestions:
-            suggestions = "\n".join(f"- {tip}" for tip in feedback.suggestions)
-            details = f"{details}\n\nSuggestions:\n{suggestions}"
-
-        self.ui.panel(
-            details,
-            title=f"{metadata.display_name} Validation Failed",
-            border_style="red",
-            expand=False,
-        )
 
     def get_llm_client(self):
         return self.client
 
-    def load_exported_words(self) -> Tuple[Set[str], Optional[str]]:
+    def load_exported_words(self) -> Tuple[Set[str], Optional[str], Optional[Dict[str, Any]]]:
         path = self.exported_words_file
         if path.exists():
             with path.open('r', encoding='utf-8') as f:
@@ -1091,10 +600,13 @@ class FrenchVocabBuilder:
             if isinstance(data, dict):
                 words = set(data.get("words", []))
                 version = data.get("deck_version")
-                return words, version
+                metadata = data.get("last_export")
+                if metadata is not None and not isinstance(metadata, dict):
+                    metadata = None
+                return words, version, metadata
             if isinstance(data, list):
-                return set(data), None
-        return set(), None
+                return set(data), None, None
+        return set(), None, None
     def save_exported_words(self):
         path = self.exported_words_file
         try:
@@ -1106,6 +618,9 @@ class FrenchVocabBuilder:
                 "words": sorted(self.exported_words),
                 "deck_version": self.exported_deck_version,
             }
+            metadata = getattr(self, "last_export_metadata", None)
+            if metadata:
+                payload["last_export"] = metadata
             json.dump(payload, f, ensure_ascii=False, indent=2)
 
     def count_entries(self) -> int:
@@ -1207,6 +722,8 @@ class FrenchVocabBuilder:
         *,
         selected_words: Optional[Set[str]] = None,
         auto_retry_on_empty: bool = True,
+        output_path: Optional[Path] = None,
+        export_context: str = "incremental",
     ):
         """Exports the vocabulary entries to an Anki deck.
 
@@ -1224,11 +741,16 @@ class FrenchVocabBuilder:
             selected_words (Optional[Set[str]]): Lower-case words to export exclusively.
             auto_retry_on_empty (bool): Internal flag to prevent infinite recursion when
                 auto-retrying an export that produced zero cards.
+            output_path (Optional[Path]): Explicit output location for the generated deck.
+            export_context (str): Hint describing the export trigger (used for metadata).
 
         Raises:
             IOError: If there's an error writing the Anki package file.
         """
-        deck_name = deck_name or self.language_config.anki.default_deck_name
+        requested_deck_name = deck_name or self.language_config.anki.default_deck_name
+        deck_title = self._normalize_deck_title(requested_deck_name)
+        destination_path = self._normalize_output_path(output_path or requested_deck_name)
+
         anki_config = self.language_config.anki
         template_version = getattr(anki_config, "version_id", None)
         if not template_version:
@@ -1240,7 +762,7 @@ class FrenchVocabBuilder:
                 anki_config.card_css or "",
             )
 
-        exporter = AnkiExporter(deck_name, anki_config)
+        exporter = AnkiExporter(deck_title, anki_config)
         latex_words = set(self.word_entries.keys())
         all_exported_words = set(self.exported_words)
         include_all = include_exported_words
@@ -1323,22 +845,21 @@ class FrenchVocabBuilder:
                 "No new words detected for export. Rebuilding deck with all tracked entries instead."
             )
             return self.export_to_anki(
-                deck_name,
+                deck_title,
                 include_exported_words=True,
                 selected_words=selected_words,
                 auto_retry_on_empty=False,
+                output_path=destination_path,
+                export_context=export_context,
             )
 
         deck = exporter.build_deck([item[2] for item in entries_for_export])
 
         # Write the deck to a .apkg file
-        output_path = Path(f"{deck_name}.apkg")
-        if not output_path.is_absolute():
-            output_path = output_path.resolve()
-        export_directory = output_path.parent
+        export_directory = destination_path.parent
         export_directory.mkdir(parents=True, exist_ok=True)
         self.ui.info(f"Anki deck export directory: {export_directory}")
-        genanki.Package(deck).write_to_file(str(output_path))
+        genanki.Package(deck).write_to_file(str(destination_path))
 
         newly_added_words_normalized = set()
         newly_added_display = set()
@@ -1354,12 +875,20 @@ class FrenchVocabBuilder:
         # Update the exported_words set and save it
         self.exported_words = all_exported_words
         self.exported_deck_version = template_version
+        self.last_export_metadata = {
+            "deck_name": deck_title,
+            "path": str(destination_path),
+            "export_context": export_context,
+            "timestamp": time.time(),
+            "total_words": len(all_exported_words),
+            "new_words": len(newly_added_words_normalized),
+        }
         self.save_exported_words()
 
         # Prepare the feedback message for the user
         feedback = f"""
-        [bold green]Anki deck '{deck_name}.apkg' created successfully![/bold green]
-        [bold magenta]Deck file saved to: {output_path}[/bold magenta]
+        [bold green]Anki deck '{deck_title}.apkg' created successfully![/bold green]
+        [bold magenta]Deck file saved to: {destination_path}[/bold magenta]
         [bold yellow]Export directory: {export_directory}[/bold yellow]
 
         [bold blue]Total words in deck: {len(all_exported_words)}[/bold blue]
@@ -2058,44 +1587,16 @@ class FrenchVocabBuilder:
         """Allow user to switch between providers."""
         current = self.provider_metadata
 
-        # Show provider options
-        options = []
-        for identifier, metadata in _PROVIDER_REGISTRY.items():
-            label = metadata.display_name
-            if identifier == current.identifier:
-                label = f"{label} [dim](current)[/dim]"
-            options.append((identifier, label))
-        options.append(("cancel", "Cancel"))
-
         try:
-            choice = self.ui.interactive_menu(
-                "Select Provider",
-                options,
-                "Choose a new AI provider.",
-                show_keys=False,
-            )
-        except KeyboardInterrupt:
+            resolution = self.provider_manager.change_provider(current)
+        except RuntimeError as exc:
+            self.ui.error(str(exc) or "API setup aborted by user.")
             return
 
-        if choice == "cancel" or choice == current.identifier:
+        if not resolution:
             return
 
-        # Switch provider
-        new_metadata = _get_provider_metadata(choice)
-        self.provider_metadata = new_metadata
-        self.provider = new_metadata.identifier
-
-        # Try to load existing key or run setup
-        api_key, source = self._resolve_api_key(new_metadata)
-        if not api_key:
-            self.ui.info(f"No existing key found for {new_metadata.display_name}. Starting setup...")
-            try:
-                new_metadata, api_key = self._run_setup_wizard(new_metadata)
-            except RuntimeError as exc:
-                self.ui.error(str(exc))
-                return
-
-        os.environ[new_metadata.env_var] = api_key
+        self._apply_provider_resolution(resolution)
         self._initialize_llm_client(announce=True, rebuild_translators=True)
 
     def _update_api_key_interactive(self):
@@ -2104,26 +1605,11 @@ class FrenchVocabBuilder:
             self.ui.error("No provider configured.")
             return
 
-        metadata = self.provider_metadata
-        self.ui.panel(
-            f"Updating API key for [bold]{metadata.display_name}[/bold]\n\n"
-            f"Get a new key at: {metadata.doc_url}",
-            title="Update API Key",
-            border_style="yellow",
-        )
-
-        api_key = self._prompt_for_api_key(metadata)
-        validation = self._validate_api_key(metadata, api_key, perform_connection_test=True)
-
-        if not validation.valid:
-            self._display_validation_failure(metadata, validation)
+        resolution = self.provider_manager.update_key(self.provider_metadata)
+        if not resolution:
             return
 
-        # Store the new key
-        storage = self._store_api_key_to_keyring(metadata, api_key)
-        os.environ[metadata.env_var] = api_key
-
-        # Reinitialize client
+        self._apply_provider_resolution(resolution)
         self._initialize_llm_client(announce=True, rebuild_translators=True)
 
     def _show_file_locations(self):
@@ -2570,8 +2056,6 @@ class FrenchVocabBuilder:
         except Exception:
             export_mode = "incremental"
 
-        deck_name = self.ui.prompt("Enter a name for your Anki deck", default=default_deck)
-
         selected_words: Optional[Set[str]] = None
         include_exported = False
 
@@ -2584,10 +2068,22 @@ class FrenchVocabBuilder:
                 return
             include_exported = True  # Ensure chosen entries are exported regardless of prior state.
 
+        try:
+            deck_name, explicit_path, reused_previous = self._determine_export_destination(default_deck)
+        except KeyboardInterrupt:
+            self.ui.warning("Anki export cancelled.")
+            return
+
+        if reused_previous:
+            reuse_target = explicit_path if explicit_path else self._normalize_output_path(deck_name)
+            self.ui.info(f"Reusing last Anki deck destination: {reuse_target}")
+
         self.export_to_anki(
             deck_name,
             include_exported_words=include_exported,
             selected_words=selected_words,
+            output_path=explicit_path,
+            export_context=export_mode,
         )
     
     def display_parsed_info(
@@ -2646,6 +2142,94 @@ class FrenchVocabBuilder:
             return None
         return selected_keys
 
+    def _normalize_deck_title(self, candidate: str) -> str:
+        """Derive a clean deck title from arbitrary user input or paths."""
+        value = (candidate or "").strip()
+        if not value:
+            return self.language_config.anki.default_deck_name
+        lower = value.lower()
+        if lower.endswith(".apkg"):
+            value = value[:-5]
+        name = Path(value).name or value
+        sanitized = name.strip()
+        if not sanitized:
+            return self.language_config.anki.default_deck_name
+        return sanitized
+
+    def _normalize_output_path(self, destination: Union[str, Path]) -> Path:
+        """Resolve an absolute .apkg path from either a deck name or explicit destination."""
+        if isinstance(destination, Path):
+            raw = str(destination)
+        else:
+            raw = (destination or "").strip()
+
+        if not raw:
+            raw = self.language_config.anki.default_deck_name
+
+        expanded = os.path.expanduser(raw)
+        if expanded.lower().endswith(".apkg"):
+            candidate = Path(expanded)
+        else:
+            candidate = Path(f"{expanded}.apkg")
+
+        if not candidate.is_absolute():
+            candidate = (Path.cwd() / candidate).resolve()
+        else:
+            candidate = candidate.resolve()
+        return candidate
+
+    def _determine_export_destination(self, default_deck: str) -> Tuple[str, Optional[Path], bool]:
+        """Pick an Anki deck destination, reusing prior exports when possible."""
+        metadata = getattr(self, "last_export_metadata", None) or {}
+        previous_deck = (metadata.get("deck_name") or "").strip()
+        previous_path: Optional[Path] = None
+        previous_raw_path = metadata.get("path")
+        if previous_raw_path:
+            try:
+                previous_path = Path(os.path.expanduser(str(previous_raw_path)))
+            except (TypeError, ValueError):
+                previous_path = None
+
+        if previous_deck and previous_path:
+            location_desc = str(previous_path)
+            if not previous_path.exists():
+                location_desc += " (new file will be created)"
+            options = [
+                ("reuse_previous", f"Reuse last deck '{previous_deck}' ({location_desc})"),
+                ("new_deck", "Choose a different deck"),
+            ]
+            try:
+                choice = self.ui.interactive_menu(
+                    "Anki Deck Destination",
+                    options,
+                    "Select where the exported cards should be written.",
+                )
+            except KeyboardInterrupt:
+                raise
+            except Exception:
+                choice = "reuse_previous"
+
+            if choice == "reuse_previous":
+                return previous_deck, previous_path, True
+
+        prompt_default = previous_deck or default_deck
+        raw_entry = self.ui.prompt("Enter a name for your Anki deck", default=prompt_default).strip()
+        if not raw_entry:
+            raw_entry = prompt_default
+
+        ends_with_extension = raw_entry.lower().endswith(".apkg")
+        contains_directory = raw_entry.startswith("~") or any(
+            sep in raw_entry for sep in (os.sep, os.altsep) if sep
+        )
+
+        if contains_directory or ends_with_extension:
+            explicit_path = Path(os.path.expanduser(raw_entry))
+            deck_title = self._normalize_deck_title(raw_entry)
+            return deck_title, explicit_path, False
+
+        deck_title = self._normalize_deck_title(raw_entry)
+        return deck_title, None, False
+
     def display_latex_entry(self, latex_entry: str):
         self.ui.display_latex_entry(latex_entry)
 
@@ -2689,8 +2273,18 @@ class FrenchVocabBuilder:
         # Export missing LaTeX words to Anki
         if in_latex_not_exported:
             if self.ui.confirm(f"Export {len(in_latex_not_exported)} word(s) missing in Anki now?", default=True):
-                deck_name = self.ui.prompt("Enter deck name", default=self.language_config.anki.default_deck_name)
-                self.export_to_anki(deck_name)
+                try:
+                    deck_name, explicit_path, _ = self._determine_export_destination(
+                        self.language_config.anki.default_deck_name
+                    )
+                except KeyboardInterrupt:
+                    self.ui.warning("Anki export cancelled.")
+                    return
+                self.export_to_anki(
+                    deck_name,
+                    output_path=explicit_path,
+                    export_context="reconcile_missing",
+                )
         # Remove extra exported words not present in LaTeX
         if in_exports_not_latex:
             if self.ui.confirm(f"Remove {len(in_exports_not_latex)} stale exported word(s) from tracking?", default=False):

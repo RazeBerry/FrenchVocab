@@ -8,16 +8,17 @@ from _stubs import install_basic_stubs  # type: ignore
 
 install_basic_stubs()
 
-import FrenchVocab  # noqa: E402
-import core.vocab as vocab_module  # noqa: E402
+import FrenchVocab  # noqa: E402,F401
+from core.providers import manager as manager_module  # noqa: E402
+from core.providers.manager import ProviderManager, _get_provider_metadata  # noqa: E402
 
 
 class _StubUI:
-    def __init__(self, choices):
-        self._choices = list(choices)
+    def __init__(self, choices=None):
+        self._choices = list(choices or [])
         self.messages = {"success": [], "warning": [], "error": [], "info": []}
 
-    def interactive_menu(self, _title, options, _instructions, show_keys=False):  # noqa: ARG002
+    def interactive_menu(self, _title, options, _instructions=None, show_keys=False):  # noqa: ARG002
         if not self._choices:
             return options[0][0]
         return self._choices.pop(0)
@@ -34,41 +35,40 @@ class _StubUI:
     def info(self, message, with_panel=False):  # noqa: ARG002
         self.messages["info"].append(message)
 
-    def panel(self, *_args, **_kwargs):  # pragma: no cover - unused in tests
+    def panel(self, *_args, **_kwargs):  # pragma: no cover - unused here
         pass
 
     def confirm(self, _message, default=False):  # noqa: ARG002
         return default
 
+    def prompt(self, *_args, **_kwargs):  # pragma: no cover - unused here
+        return ""
 
-def _make_builder(tmp_path: Path):
-    builder = object.__new__(vocab_module.FrenchVocabBuilder)
-    builder.project_root = tmp_path
-    builder.ui = _StubUI([])
-    return builder
+
+def _make_manager(tmp_path: Path, choices=None):
+    ui = _StubUI(choices)
+    mgr = ProviderManager(ui=ui, project_root=tmp_path)
+    return mgr, ui
 
 
 def test_store_api_key_writes_env_file(tmp_path):
-    builder = _make_builder(tmp_path)
-    builder.ui._choices = ["env_file"]
-    metadata = vocab_module._get_provider_metadata("gemini")
+    manager, ui = _make_manager(tmp_path, choices=["env_file"])
+    metadata = _get_provider_metadata("gemini")
 
-    result = vocab_module.FrenchVocabBuilder._store_api_key(builder, metadata, "AIza" + "x" * 36)
+    result = manager._store_api_key(metadata, "AIza" + "x" * 36)
 
     assert result.startswith(".env")
     env_path = tmp_path / ".env"
     assert env_path.exists()
     content = env_path.read_text(encoding="utf-8")
     assert "GEMINI_API_KEY=AIza" in content
-    info_messages = builder.ui.messages["info"]
+    info_messages = ui.messages["info"]
     assert any("Future runs will automatically reuse this key" in msg for msg in info_messages)
 
 
 def test_store_api_key_keyring_failure_falls_back(tmp_path, monkeypatch):
-    builder = _make_builder(tmp_path)
-    # first attempt keyring (fail), second attempt env_file
-    builder.ui._choices = ["keyring", "env_file"]
-    metadata = vocab_module._get_provider_metadata("gemini")
+    manager, ui = _make_manager(tmp_path, choices=["keyring", "env_file"])
+    metadata = _get_provider_metadata("gemini")
 
     import keyring
     from keyring.errors import KeyringError
@@ -77,33 +77,31 @@ def test_store_api_key_keyring_failure_falls_back(tmp_path, monkeypatch):
         raise KeyringError("backend missing")
 
     monkeypatch.setattr(keyring, "set_password", _fail)
-    monkeypatch.setattr(vocab_module.keyring, "set_password", _fail)
+    monkeypatch.setattr(manager_module, "set_password", _fail)
 
-    result = vocab_module.FrenchVocabBuilder._store_api_key(builder, metadata, "AIza" + "x" * 36)
+    result = manager._store_api_key(metadata, "AIza" + "x" * 36)
 
     assert result.startswith(".env")
-    warnings = "\n".join(builder.ui.messages["warning"])
+    warnings = "\n".join(ui.messages["warning"])
     assert "Keyring is not available" in warnings
     assert (tmp_path / ".env").exists()
 
 
-def test_load_config_reads_env_file(tmp_path, monkeypatch):
-    builder = _make_builder(tmp_path)
-    metadata = vocab_module._get_provider_metadata("gemini")
-    builder.provider_metadata = metadata
-    builder.provider = metadata.identifier
-    builder.client = None
+def test_prepare_provider_reads_env_file(tmp_path, monkeypatch):
+    manager, ui = _make_manager(tmp_path)
+    metadata = _get_provider_metadata("gemini")
 
     env_value = "AIza" + "x" * 36
     (tmp_path / ".env").write_text(f"{metadata.env_var}={env_value}\n", encoding="utf-8")
 
     monkeypatch.delenv(metadata.env_var, raising=False)
 
-    vocab_module.FrenchVocabBuilder.load_config(builder)
+    resolution = manager.prepare_provider(metadata)
 
     assert os.environ[metadata.env_var] == env_value
-    info_messages = builder.ui.messages["info"]
+    assert resolution.metadata.identifier == metadata.identifier
+    info_messages = ui.messages["info"]
     assert any("Loaded environment variables" in msg for msg in info_messages)
-    success_messages = builder.ui.messages["success"]
+    success_messages = ui.messages["success"]
     assert any(metadata.display_name in msg for msg in success_messages)
     monkeypatch.delenv(metadata.env_var, raising=False)

@@ -3,6 +3,7 @@ import sys
 import tempfile
 import types
 import unittest
+from pathlib import Path
 
 sys.path.append(os.path.dirname(__file__))
 from _stubs import install_basic_stubs
@@ -277,6 +278,47 @@ class TestExportToAnki(unittest.TestCase):
         self.assertEqual(deck.name, 'Test Deck')
         self.assertEqual(len(deck.notes), 2)
         self.assertEqual(builder.exported_deck_version, FRENCH_CONFIG.anki.version_id)
+
+    def test_export_records_metadata_and_honors_output_path(self):
+        builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
+        builder.ui = _StubUI()
+        builder.console = types.SimpleNamespace()
+        builder.word_entries = {
+            'bonjour': {
+                'word': 'Bonjour',
+                'type': 'noun',
+                'definitions': 'Salut amical',
+                'definitions_list': ['Salut amical'],
+                'examples': 'Bonjour ! (Hello!)',
+                'examples_list': [('Bonjour !', 'Hello!')],
+            },
+        }
+        builder.exported_words = set()
+        builder.exported_deck_version = None
+        builder.save_exported_words = lambda: None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            builder.exported_words_file = os.path.join(tmp, 'exported_words.json')
+            explicit_destination = Path(tmp) / "anki_exports" / "Deck Name.apkg"
+            builder.export_to_anki(
+                "Deck Name.apkg",
+                output_path=explicit_destination,
+                export_context="selected",
+            )
+            expected_path = explicit_destination.resolve()
+
+        package = self.package_cls
+        self.assertEqual(Path(package.last_written_path), expected_path)
+        deck = package.last_deck
+        self.assertEqual(deck.name, 'Deck Name')
+
+        metadata = builder.last_export_metadata
+        self.assertIsInstance(metadata, dict)
+        self.assertEqual(metadata["deck_name"], "Deck Name")
+        self.assertEqual(Path(metadata["path"]), expected_path)
+        self.assertEqual(metadata["export_context"], "selected")
+        self.assertIn('total_words', metadata)
+        self.assertIn('new_words', metadata)
 
 
 if __name__ == '__main__':

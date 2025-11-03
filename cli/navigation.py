@@ -9,6 +9,7 @@ from typing import IO, Any, Sequence, Tuple
 from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
+from rich import box
 
 try:
     from rich.live import Live
@@ -111,11 +112,17 @@ def _fallback_interactive_select(
     *,
     show_keys: bool,
 ) -> str:
-    console.print(Panel(instructions, title=title, border_style="blue", expand=False))
+    console.print(Panel(
+        instructions,
+        title=f"[bold #E67E50]{title}[/]",
+        border_style="dark_orange",
+        box=box.ROUNDED,
+        expand=False
+    ))
 
     for idx, (key, label) in enumerate(options, start=1):
         suffix = f" [dim]({key})[/dim]" if show_keys and key and key not in label else ""
-        console.print(f"{idx}. {label}{suffix}")
+        console.print(f"  [dim]○[/] {idx}. {label}{suffix}")
 
     prompt = "Select an option by number"
     if options:
@@ -132,7 +139,7 @@ def _fallback_interactive_select(
             idx = int(choice)
             if 1 <= idx <= len(options):
                 return options[idx - 1][0]
-        console.print("[bold red]Invalid selection. Please enter a valid option number.[/bold red]")
+        console.print("[bold #ff6b6b]✗ Invalid selection. Please enter a valid option number.[/bold #ff6b6b]")
 
 
 def _render_menu(
@@ -148,8 +155,13 @@ def _render_menu(
         lines.append("")
 
     for idx, (key, label) in enumerate(options):
-        prefix = "[bold green]>[/bold green]" if idx == active_index else "  "
-        line = f"{prefix}{label}"
+        if idx == active_index:
+            # Active item with Anthropic orange background highlight
+            line = f"[black on dark_orange] → {label} [/]"
+        else:
+            # Inactive item with subtle bullet
+            line = f"  [dim]○[/] {label}"
+
         if show_keys and key and key not in label:
             line = f"{line} [dim]({key})[/dim]"
         lines.append(line)
@@ -171,8 +183,9 @@ def _menu_renderable(
     max_width = max(32, min(console.size.width - 6, 96))
     panel = Panel(
         content,
-        title=title,
-        border_style="blue",
+        title=f"[bold #E67E50]{title}[/]",
+        border_style="dark_orange",
+        box=box.ROUNDED,
         expand=False,
         width=max_width,
         padding=(1, 2),

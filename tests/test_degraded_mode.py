@@ -15,11 +15,11 @@ class _DummyClient:
 
 
 def test_builder_enters_degraded_mode_when_setup_fails(monkeypatch, tmp_path):
-    def _failing_load_config(self):
+    def _failing_prepare(self):
         self.api_error_reason = "forced failure"
         return False
 
-    monkeypatch.setattr(FrenchVocab.FrenchVocabBuilder, "load_config", _failing_load_config)
+    monkeypatch.setattr(FrenchVocab.FrenchVocabBuilder, "_prepare_provider", _failing_prepare)
 
     builder = FrenchVocab.FrenchVocabBuilder(
         latex_file=str(tmp_path / "vocab.tex"),
@@ -36,7 +36,7 @@ def test_builder_enters_degraded_mode_when_setup_fails(monkeypatch, tmp_path):
 def test_reconfigure_provider_restores_client(monkeypatch, tmp_path):
     call_state = {"count": 0}
 
-    def _load_config(self):
+    def _prepare(self):
         call_state["count"] += 1
         if call_state["count"] == 1:
             self.api_error_reason = "initial failure"
@@ -52,7 +52,7 @@ def test_reconfigure_provider_restores_client(monkeypatch, tmp_path):
             self._init_translators()
         return True
 
-    monkeypatch.setattr(FrenchVocab.FrenchVocabBuilder, "load_config", _load_config)
+    monkeypatch.setattr(FrenchVocab.FrenchVocabBuilder, "_prepare_provider", _prepare)
     monkeypatch.setattr(FrenchVocab.FrenchVocabBuilder, "_initialize_llm_client", _initialize_client)
 
     builder = FrenchVocab.FrenchVocabBuilder(
@@ -75,11 +75,11 @@ def test_reconfigure_provider_restores_client(monkeypatch, tmp_path):
 
 
 def test_ensure_llm_ready_skip_returns_false(monkeypatch, tmp_path):
-    def _load_config(self):
+    def _prepare(self):
         self.api_error_reason = "no credentials"
         return False
 
-    monkeypatch.setattr(FrenchVocab.FrenchVocabBuilder, "load_config", _load_config)
+    monkeypatch.setattr(FrenchVocab.FrenchVocabBuilder, "_prepare_provider", _prepare)
 
     builder = FrenchVocab.FrenchVocabBuilder(
         latex_file=str(tmp_path / "ensure.tex"),

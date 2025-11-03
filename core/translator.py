@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich.text import Text
+from rich import box
 
 from languages import TranslatorConfig
 from llm_client import LLMClient
@@ -153,21 +154,23 @@ class TranslatorCLI:
         return self.pairs.get(normalized_key)
 
     def display_duplicate_warning(self, existing_entry: Dict[str, str]) -> None:
+        # Warning panel: wrapped for inline alerts
         panel_content = (
             f"This {self.source_label} phrase already exists:\n\n"
-            f"  [bold cyan]{self.source_label}:[/bold cyan] {existing_entry['source']}\n"
+            f"  [bold #E67E50]{self.source_label}:[/bold #E67E50] {existing_entry['source']}\n"
             f"  [bold magenta]{self.target_label}:[/bold magenta] {existing_entry['target']}"
         )
-        self.console.print(Panel(panel_content, title="Duplicate Found", border_style="yellow", expand=False))
+        self.console.print(Panel(panel_content, title="Duplicate Found", border_style="yellow3", box=box.ROUNDED, expand=False))
 
     def _collect_multiline_input(self, language_label: str) -> Optional[str]:
+        # Instructions panel: wrapped for contextual info
         instructions = (
-            f"[cyan]Enter {language_label} text to translate.[/cyan]\n"
+            f"[#E67E50]Enter {language_label} text to translate.[/#E67E50]\n"
             "[dim]- Type or paste your text.\n"
             "- Enter 'q' on the first line to cancel.\n"
             "- Press Enter on an empty line to finish.[/dim]"
         )
-        self.console.print(Panel(instructions, border_style="blue", expand=False))
+        self.console.print(Panel(instructions, border_style="dark_orange", box=box.ROUNDED, expand=False))
 
         lines: list[str] = []
 
@@ -287,13 +290,14 @@ class TranslatorCLI:
             self.console.print("[bold yellow]Please enter Y or N.[/bold yellow]")
 
     def confirm_translation(self, source_text: str, target_text: str) -> bool:
+        # Confirmation panel: wrapped for focused decision-making
         table = Table(title="Confirm Translation", show_header=False, box=None, padding=(0, 1))
-        table.add_column(style="cyan", no_wrap=True)
+        table.add_column(style="dark_orange", no_wrap=True)
         table.add_column(style="white")
         table.add_row(f"{self.source_label}:", Text(source_text))
-        table.add_row(f"{self.target_label}:", Text(target_text, style="bold green"))
+        table.add_row(f"{self.target_label}:", Text(target_text, style="bold #51cf66"))
 
-        self.console.print(Panel(table, border_style="blue", expand=False))
+        self.console.print(Panel(table, border_style="dark_orange", box=box.ROUNDED, expand=False))
         return self._confirm_yes_no(
             f"Save this {self.source_label} → {self.target_label} translation?",
             default=True,
@@ -441,11 +445,14 @@ class TranslatorCLI:
         return False
 
     def run(self) -> None:
+        # Header panel: full-width for major section indicator
         self.console.print(
             Panel(
-                f"[bold blue]{self.ui_title}[/bold blue]\nCurrently managing {self.entry_count} pairs in {self.latex_file.name}",
-                border_style="blue",
+                f"[bold #E67E50]{self.ui_title}[/bold #E67E50]\nCurrently managing {self.entry_count} pairs in {self.latex_file.name}",
+                border_style="dark_orange",
                 title="Translator Mode",
+                box=box.ROUNDED,
+                expand=True,  # Full-width for section headers
             )
         )
         self.run_single_translation()
