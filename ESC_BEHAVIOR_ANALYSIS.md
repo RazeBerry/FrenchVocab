@@ -209,7 +209,7 @@ The current ESC behavior follows **standard CLI conventions**:
 
 ## 🆕 2025-11-03 Update
 
-- macOS/Linux now use a two-stage poll (15 ms + 30 ms) driven by `select` on the raw file descriptor, reading bytes via `os.read`. ANSI (`ESC [A/B/C/D`) and application-cursor (`ESC OA/OB/OC/OD`) arrow sequences are both recognised, eliminating the accidental exits.
+- macOS/Linux now read directly from the TTY file descriptor and check for follow-up bytes immediately before falling back to a two-stage poll (0 ms + 15 ms, then 30 ms). ANSI (`ESC [A/B/C/D`) and application-cursor (`ESC OA/OB/OC/OD`) arrow sequences are both recognised, eliminating the accidental exits without adding perceivable delay.
 - Windows keeps the conservative `msvcrt.getwch()` handling until we can validate ConPTY behaviour; small clean-up only.
 
 ---

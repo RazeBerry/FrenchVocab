@@ -266,8 +266,12 @@ def _read_key_posix() -> str:
 
     sequence: list[str] = []
     for _ in range(_MAX_ESCAPE_SEQUENCE_BYTES):
-        timeout = _ESC_INITIAL_TIMEOUT if not sequence else _ESC_SEQUENCE_TIMEOUT
-        ready, _, _ = select.select([fd], [], [], timeout)
+        timeouts = [0.0, _ESC_INITIAL_TIMEOUT] if not sequence else [_ESC_SEQUENCE_TIMEOUT]
+        ready = False
+        for timeout in timeouts:
+            ready, _, _ = select.select([fd], [], [], timeout)
+            if ready:
+                break
         if not ready:
             break
         next_raw = os.read(fd, 1)
