@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import select
 import sys
 from contextlib import contextmanager
 from typing import IO, Any, Sequence, Tuple
@@ -27,6 +29,9 @@ except ImportError:  # pragma: no cover - used when Rich stubs are installed
 MenuOption = Tuple[str, str]
 
 _INSTRUCTION_DEFAULT = "Use ↑ and ↓ to navigate, press Enter to select, Esc to cancel."
+_ESC_INITIAL_TIMEOUT = 0.015  # fast path when ESC is pressed alone without clipping arrow keys
+_ESC_SEQUENCE_TIMEOUT = 0.03  # follow-up polling window once a sequence begins
+_MAX_ESCAPE_SEQUENCE_BYTES = 5
 
 
 def interactive_select(
@@ -237,6 +242,8 @@ def _read_key_windows() -> str:
                 return "up"
             if ch2 == "P":
                 return "down"
+            # Preserve legacy behaviour for unrecognised extended keys; ConPTY quirks
+            # require manual validation before tightening this path.
             continue
         if ch == "\x03":
             return "ctrl_c"
@@ -244,22 +251,43 @@ def _read_key_windows() -> str:
 
 
 def _read_key_posix() -> str:
-    ch = sys.stdin.read(1)
+    fd = sys.stdin.fileno()
+    raw = os.read(fd, 1)
+    ch = raw.decode("utf-8", "ignore")
 
-    if ch in ("\r", "\n"):
-        return "enter"
-    if ch == "\x1b":
-        remainder = sys.stdin.read(2)
-        if remainder == "[A":
-            return "up"
-        if remainder == "[B":
-            return "down"
-        return "escape"
-    if ch == "\x03":
-        return "ctrl_c"
     if ch == "":
         return "escape"
-    return ch
+    if ch in ("\r", "\n"):
+        return "enter"
+    if ch == "\x03":
+        return "ctrl_c"
+    if ch != "\x1b":
+        return ch
+
+    sequence: list[str] = []
+    for _ in range(_MAX_ESCAPE_SEQUENCE_BYTES):
+        timeout = _ESC_INITIAL_TIMEOUT if not sequence else _ESC_SEQUENCE_TIMEOUT
+        ready, _, _ = select.select([fd], [], [], timeout)
+        if not ready:
+            break
+        next_raw = os.read(fd, 1)
+        if not next_raw:
+            break
+        next_ch = next_raw.decode("utf-8", "ignore")
+        if not next_ch:
+            break
+        sequence.append(next_ch)
+
+    remainder = "".join(sequence)
+    if remainder in {"[A", "OA"}:
+        return "up"
+    if remainder in {"[B", "OB"}:
+        return "down"
+    if remainder in {"[C", "OC"}:
+        return "right"
+    if remainder in {"[D", "OD"}:
+        return "left"
+    return "escape"
 
 
 __all__ = ["interactive_select"]
