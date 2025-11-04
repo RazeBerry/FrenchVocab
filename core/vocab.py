@@ -1079,8 +1079,8 @@ class FrenchVocabBuilder:
         target_to_cfg = self.language_config.target_to_eng
 
         options = [
-            ("eng_to_target", f"{eng_to_cfg.source_label} -> {eng_to_cfg.target_label} [dim]({eng_fr_count} pairs)[/dim]"),
             ("target_to_eng", f"{target_to_cfg.source_label} -> {target_to_cfg.target_label} [dim]({fr_eng_count} pairs)[/dim]"),
+            ("eng_to_target", f"{eng_to_cfg.source_label} -> {eng_to_cfg.target_label} [dim]({eng_fr_count} pairs)[/dim]"),
             ("back", "Back to main menu"),
         ]
 
