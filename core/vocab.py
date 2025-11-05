@@ -516,8 +516,11 @@ class FrenchVocabBuilder:
     def _history_log_error(self, message: str) -> None:
         try:
             self.ui.warning(message)
-        except Exception:
-            pass
+        except Exception as e:
+            # Fallback: print to stderr if UI fails
+            import sys
+            print(f"WARNING: {message}", file=sys.stderr)
+            print(f"(UI error: {e})", file=sys.stderr)
 
     def _provider_label(self) -> str:
         label = self.provider.capitalize() if isinstance(self.provider, str) else "provider"
@@ -1012,7 +1015,7 @@ class FrenchVocabBuilder:
         app_title = self._ui_text("app.title", f"{language_name} Vocabulary LaTeX Builder")
 
         self.ui.panel(
-            f"[bold blue]Welcome to the {app_title}![/bold blue]\n\n"
+            f"[bold #E67E50]Welcome to the {app_title}![/bold #E67E50]\n\n"
             f"This application helps you build a LaTeX document for {language_name} vocabulary.\n"
             f"You can input {language_name} words, and the AI will provide definitions and examples.\n\n"
             f"[bold green]Your current vocabulary library contains {self.entry_count} words.[/bold green]\n"
@@ -1021,7 +1024,7 @@ class FrenchVocabBuilder:
             f"[italic cyan]Version 2.0[/italic cyan]\n"
             f"[dim]GitHub: https://github.com/RazeBerry/FrenchVocab/tree/main[/dim]",
             title=self._ui_text("app.panel_title", f"{language_name} Vocab Builder"),
-            border_style="bold green"
+            border_style="dark_orange"
         )
 
     def show_menu(self):
@@ -1485,10 +1488,10 @@ class FrenchVocabBuilder:
         language_name = self.language_config.display_name
         app_title = self._ui_text("app.title", f"{language_name} Vocabulary LaTeX Builder")
         self.ui.panel(
-            f"[bold blue]Thank you for using the {app_title}![/bold blue]\n\n"
+            f"[bold #E67E50]Thank you for using the {app_title}![/bold #E67E50]\n\n"
             "Your LaTeX file has been updated with the new entries.",
             title="Goodbye!",
-            border_style="bold green"
+            border_style="dark_orange"
         )
 
     def show_settings_screen(self):

@@ -52,7 +52,7 @@ class MessageType(Enum):
     SUCCESS = ("bold #51cf66", "Success", "green3")  # Mint green
     WARNING = ("bold #ffd43b", "Warning", "yellow3")  # Warm yellow
     INFO = ("bold #E67E50", "Info", "dark_orange")  # Anthropic orange
-    DEBUG = ("dim", "Debug", "dim")
+    DEBUG = ("#909090", "Debug", "#909090")  # Medium gray for better accessibility
 
 class UIHelper:
     """Centralized UI helper for all console output operations"""
