@@ -6,7 +6,7 @@ import re
 import string
 import unicodedata
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 from rich.console import Console
 from rich.panel import Panel
@@ -32,6 +32,7 @@ class TranslatorCLI:
         latex_file_path: Optional[Path] = None,
         direction: str = "eng_to_target",
         logger: Optional[TranslationLogger] = None,
+        usage_callback: Optional[Callable[[Dict[str, int]], None]] = None,
     ) -> None:
         self.console = console
         self.ui = UIHelper(console)
@@ -39,6 +40,7 @@ class TranslatorCLI:
         self.config = config
         self.direction = direction
         self.logger = logger
+        self.usage_callback = usage_callback
 
         self.prompt_template = config.prompt_template
         self.prompt_variable = config.prompt_variable
@@ -242,12 +244,20 @@ class TranslatorCLI:
             self.ui.error(f"Prompt template missing placeholder for '{exc.args[0]}'.")
             return None
 
+        metrics: Dict[str, Any] = {}
         try:
             with self.console.status("[cyan]Querying AI for translation..."):
                 chunks = []
-                for chunk in self.client.stream(prompt):
-                    chunks.append(chunk)
+                stream = self.client.stream(prompt)
+                while True:
+                    try:
+                        chunk = next(stream)
+                        chunks.append(chunk)
+                    except StopIteration as stop:
+                        metrics = stop.value if stop.value else {}
+                        break
                 translation = "".join(chunks).strip()
+                self._emit_usage(metrics.get("usage") if isinstance(metrics, dict) else None)
 
             if not translation:
                 self.ui.error("Error: received empty response from AI.")
@@ -264,6 +274,9 @@ class TranslatorCLI:
         except Exception as exc:  # pragma: no cover - defensive path
             self.ui.error(f"An error occurred during AI query: {exc}")
             return None
+        finally:
+            if not metrics:
+                self._emit_usage(None)
 
     def confirm_translation(self, source_text: str, target_text: str) -> bool:
         # Confirmation preview: rendered without borders for easy copy/paste
@@ -333,6 +346,10 @@ class TranslatorCLI:
     def _add_entry_to_memory(self, source_text: str, target_text: str, normalized_key: str) -> None:
         self.pairs[normalized_key] = {"source": source_text, "target": target_text}
         self.entry_count = len(self.pairs)
+
+    def _emit_usage(self, usage: Optional[Dict[str, int]]) -> None:
+        if self.usage_callback and usage:
+            self.usage_callback(usage)
 
     def _provider_label(self) -> Optional[str]:
         if not self.client:

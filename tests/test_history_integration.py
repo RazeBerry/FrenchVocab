@@ -27,6 +27,7 @@ def test_handle_new_word_entry_logs(tmp_path, monkeypatch):
     builder.display_parsed_info = lambda *args, **kwargs: None
     builder.display_latex_entry = lambda *args, **kwargs: None
     builder.ui.confirm = lambda *args, **kwargs: True
+    builder.ui.interactive_menu = lambda *args, **kwargs: "menu"  # Return to menu, don't recurse
     builder.alphabetize_entries = lambda: None
 
     builder.handle_new_word_entry()

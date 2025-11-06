@@ -86,12 +86,11 @@ class TestSentenceFlow(unittest.TestCase):
             "2. fr\n(en)\n"
             "3. fr\n(en)\n"
         )
+        # Mock ui.confirm to accept the correction
+        b.ui.confirm = lambda *args, **kwargs: True
         res = b.check_spelling("orig", ai_resp)
+        # Now returns corrected word immediately (user confirmed)
         self.assertEqual(res, "correction")
-        self.assertEqual(
-            b.pending_spelling_suggestion,
-            {"original": "orig", "suggested": "correction"},
-        )
 
     def test_check_spelling_returns_input_when_no_change(self):
         b = self._builder(client=_FakeLLMClient())
@@ -106,7 +105,7 @@ class TestSentenceFlow(unittest.TestCase):
         )
         res = b.check_spelling("orig", ai_resp)
         self.assertEqual(res, "orig")
-        self.assertIsNone(b.pending_spelling_suggestion)
+        # No longer using pending_spelling_suggestion - decision made immediately
 
     def test_check_spelling_ignores_trailing_punctuation(self):
         b = self._builder(client=_FakeLLMClient())
@@ -117,7 +116,7 @@ class TestSentenceFlow(unittest.TestCase):
         )
         res = b.check_spelling("exploit d'huissier,", ai_resp)
         self.assertEqual(res, "exploit d'huissier")
-        self.assertIsNone(b.pending_spelling_suggestion)
+        # Trailing punctuation normalized - no user confirmation needed
 
     def test_format_latex_entry_preserves_sentence_casing(self):
         latex = FrenchVocab.FrenchVocabBuilder.format_latex_entry(
@@ -164,6 +163,7 @@ class TestSentenceFlow(unittest.TestCase):
         def _capture_insert(entry, word):
             captured['entry'] = entry
         b.insert_entry_alphabetically = _capture_insert
+        b.ui.interactive_menu = lambda *args, **kwargs: "menu"  # Return to menu after save
 
         b.get_word_input = lambda: "Phrase terminée."
         b.handle_new_word_entry()
@@ -256,10 +256,12 @@ class TestSentenceFlow(unittest.TestCase):
         added_words = []
         b.add_word_to_entries = lambda word, *_args: added_words.append(word)
         b.alphabetize_entries = lambda: None
+        b.ui.interactive_menu = lambda *args, **kwargs: "menu"  # Return to menu after save
 
         b.handle_new_word_entry()
 
-        self.assertGreaterEqual(len(displayed_entries), 2)
+        # With new flow, user declines correction immediately, so only ONE entry displayed (with original spelling)
+        self.assertGreaterEqual(len(displayed_entries), 1)
         self.assertIn("\\entry{Orig}{verb}", displayed_entries[-1])
         self.assertEqual(inserted.get('word'), "orig")
         self.assertEqual(added_words, ["orig"])

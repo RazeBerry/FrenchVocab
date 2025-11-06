@@ -117,6 +117,15 @@ class FrenchVocabBuilder:
         self.client = client
         self.api_available = self.client is not None
         self.api_error_reason: Optional[str] = None
+        self.session_usage: Dict[str, int] = {
+            "prompt_tokens": 0,
+            "output_tokens": 0,
+            "total_tokens": 0,
+            "thoughts_tokens": 0,
+            "tool_tokens": 0,
+            "cached_tokens": 0,
+        }
+        self.session_requests: int = 0
         
         # Apply optional runtime settings (env/config overrides)
         self._load_input_limits()
@@ -126,7 +135,6 @@ class FrenchVocabBuilder:
         self.eng_to_fr_translator: Optional[TranslatorCLI] = None
         self.fr_to_eng_translator: Optional[TranslatorCLI] = None
         self.duplicate_resolution: Optional[Dict[str, str]] = None  # stores {'mode': 'merge'|'force', 'existing': <word>}
-        self.pending_spelling_suggestion: Optional[Dict[str, str]] = None
 
         # Determine provider early and set verbosity before key bootstrapping
         requested_provider = provider or ProviderFactory.default_provider()
@@ -195,6 +203,7 @@ class FrenchVocabBuilder:
             latex_file_path=self.eng_to_fr_latex_file,
             direction="eng_to_target",
             logger=self.history_logger,
+            usage_callback=self._record_usage,
         )
         self.fr_to_eng_translator = TranslatorCLI(
             console=self.console,
@@ -203,6 +212,7 @@ class FrenchVocabBuilder:
             latex_file_path=self.fr_to_eng_latex_file,
             direction="target_to_eng",
             logger=self.history_logger,
+            usage_callback=self._record_usage,
         )
 
     def _apply_provider_resolution(self, resolution: ProviderResolution) -> None:
@@ -964,7 +974,7 @@ class FrenchVocabBuilder:
             return False
 
         if choice == "skip":
-            self.ui.panel("Skipping this word. Returning to main menu.", border_style="green")
+            self.ui.info("Skipping this word. Returning to main menu.")
             return False
         elif choice == "view":
             self.ui.panel(f"Displaying existing entry for '{actual_existing_word}':", border_style="cyan")
@@ -1313,6 +1323,7 @@ class FrenchVocabBuilder:
 
         # Display metrics if available
         self.ui.display_metrics(metrics)
+        self._record_usage(metrics.get("usage"))
              
         return full_text
 
@@ -1532,12 +1543,53 @@ class FrenchVocabBuilder:
     def exit_screen(self):
         language_name = self.language_config.display_name
         app_title = self._ui_text("app.title", f"{language_name} Vocabulary LaTeX Builder")
-        self.ui.panel(
+        token_summary = self._format_token_summary()
+        message = (
             f"[bold #E67E50]Thank you for using the {app_title}![/bold #E67E50]\n\n"
-            "Your LaTeX file has been updated with the new entries.",
+            "Your LaTeX file has been updated with the new entries."
+        )
+        if token_summary:
+            message += f"\n\n[#E67E50]Session tokens[/#E67E50]: {token_summary}"
+        self.ui.panel(
+            message,
             title="Goodbye!",
             border_style="dark_orange"
         )
+
+    def _record_usage(self, usage: Optional[Dict[str, int]]) -> None:
+        """Aggregate per-session token usage for the exit summary."""
+        if not usage:
+            return
+        self.session_requests += 1
+        for key, value in usage.items():
+            if value is None:
+                continue
+            self.session_usage[key] = self.session_usage.get(key, 0) + int(value)
+
+    def _format_token_summary(self) -> str:
+        tokens = {k: v for k, v in self.session_usage.items() if v}
+        if not tokens:
+            return ""
+
+        labels = [
+            ("prompt_tokens", "Input"),
+            ("output_tokens", "Output"),
+            ("total_tokens", "Total"),
+            ("thoughts_tokens", "Thoughts"),
+            ("tool_tokens", "Tool Prompts"),
+            ("cached_tokens", "Cache"),
+        ]
+        parts: List[str] = []
+        for key, label in labels:
+            value = tokens.pop(key, None)
+            if value is not None:
+                parts.append(f"{label}: {value:,}")
+        for key, value in tokens.items():
+            friendly = key.replace("_", " ").title()
+            parts.append(f"{friendly}: {value:,}")
+
+        prefix = f"Sessions: {self.session_requests} | " if self.session_requests else ""
+        return prefix + " | ".join(parts)
 
     def show_settings_screen(self):
         """Display current configuration and allow changes."""
@@ -1685,7 +1737,6 @@ class FrenchVocabBuilder:
             return
         # Reset duplicate resolution per new flow
         self.duplicate_resolution = None
-        self.pending_spelling_suggestion = None
         original_word = self.get_word_input()
         if not original_word:
             return # User cancelled input
@@ -1700,23 +1751,13 @@ class FrenchVocabBuilder:
         # Detect input type early (used to control downstream flow)
         detected_type = self.detect_input_type(original_word)
 
-        # Optional intelligent routing: send sentences to Fr->En translator
+        # Show non-blocking hint if sentence detected (full routing decision deferred until after AI analysis)
         if detected_type == 'sentence' and getattr(self, 'route_sentences', True):
             target_filename = self.language_config.target_to_eng.default_filename
-            route = self.ui.confirm(
-                f"This looks like a full sentence. Translate and save in {target_filename} instead?",
-                default=True,
+            self.ui.info(
+                f"ℹ This looks like a sentence. After AI analysis, you'll have the option to route it to {target_filename}.",
+                accent="dim"
             )
-            if route:
-                if not self.fr_to_eng_translator:
-                    title = self._translator_title(self.language_config.target_to_eng)
-                    self.ui.error(f"{title} is not available (initialization failed). Proceeding in vocab mode.")
-                else:
-                    # Perform translation and save via the translator
-                    ok = self.fr_to_eng_translator.translate_and_save(original_word)
-                    if ok is False:
-                        self.ui.warning("Translation cancelled or failed.")
-                    return
 
         # --- Query AI ---
         ai_response = self.query_ai(original_word)
@@ -1820,32 +1861,7 @@ class FrenchVocabBuilder:
         # --- Display LaTeX Entry ---
         self.display_latex_entry(latex_entry)
 
-        if self.pending_spelling_suggestion:
-            original_word = self.pending_spelling_suggestion["original"]
-            suggested_word = self.pending_spelling_suggestion["suggested"]
-            use_corrected = self.ui.confirm(
-                f"Use corrected spelling '{suggested_word}' instead of original '{original_word}'?",
-                default=True,
-            )
-            if not use_corrected:
-                self.ui.info(f"Reverting to original spelling '{original_word}'.")
-                final_word = original_word
-                insert_word = original_word
-                if self.duplicate_resolution and self.duplicate_resolution.get('mode') == 'force':
-                    if self.check_duplicate(insert_word):
-                        insert_word = self.create_unique_variant(insert_word)
-                latex_entry = self.format_latex_entry(
-                    insert_word,
-                    primary_word_type,
-                    definitions,
-                    examples,
-                    entry_command=self.entry_command,
-                )
-                self.display_latex_entry(latex_entry)
-            else:
-                final_word = suggested_word
-            self.pending_spelling_suggestion = None
-
+        # Spelling correction now happens before LaTeX generation (no need to re-confirm here)
         corrected_word_value = final_word if final_word != original_word else None
 
         # --- Confirm Save ---
@@ -1891,7 +1907,34 @@ class FrenchVocabBuilder:
 
         self.duplicate_resolution = None
 
-        self.ui.success(f"Successfully processed and added entry for '{final_word}'.")
+        entry_count = len(self.word_entries)
+        self.ui.success(f"Entry saved successfully! ({entry_count - 1} → {entry_count} entries)")
+
+        # Quick action menu - allow users to continue without returning to main menu
+        try:
+            quick_action = self.ui.interactive_menu(
+                "What's next?",
+                [
+                    ("add", "Add another word"),
+                    ("view", "View all vocabulary"),
+                    ("search", "Search vocabulary"),
+                    ("menu", "Return to main menu"),
+                ],
+                "Press Esc to return to main menu",
+            )
+
+            if quick_action == "add":
+                # Recursively call to add another word
+                self.handle_new_word_entry()
+            elif quick_action == "view":
+                self.display_all_vocabulary()
+            elif quick_action == "search":
+                self.search_vocabulary()
+            # If "menu" selected, just return normally
+
+        except KeyboardInterrupt:
+            # User pressed Esc - return to main menu
+            pass
 
     def create_unique_variant(self, base_word: str) -> str:
         """Create a unique variant label for a duplicate word using hyphenated suffixes."""
@@ -2026,10 +2069,6 @@ class FrenchVocabBuilder:
         trimmed_original = word.strip()
         trimmed_corrected = corrected_spelling.strip() if corrected_spelling else None
 
-        # Debug: Print what was extracted (can be removed later)
-        if corrected_spelling is not None:
-            self.ui.debug(f"Extracted corrected spelling: '{corrected_spelling}'")
-        
         # Validate the corrected spelling - check if it's empty, placeholder text, or same as input
         if corrected_spelling:
             # Remove common placeholder patterns
@@ -2045,27 +2084,34 @@ class FrenchVocabBuilder:
             if normalized_original.lower() == normalized_corrected.lower():
                 # Case-only or trailing punctuation differences—trust cleaned suggestion silently
                 return normalized_corrected or corrected_spelling
-            
-            # Valid correction found that's different from input
+
+            # Valid correction found that's different from input - ASK IMMEDIATELY
             suggestion_panel = (
-                "[bold]Original:[/bold] "
+                "[bold]You entered:[/bold] "
                 f"[bold red]{word}[/bold red]\n"
-                "[bold]Suggested:[/bold] "
+                "[bold]Suggested spelling:[/bold] "
                 f"[bold green]{corrected_spelling}[/bold green]"
             )
             self.ui.panel(
                 suggestion_panel,
-                title="Spelling Suggestion",
+                title="⚡ Spelling Suggestion",
                 border_style="yellow",
                 expand=False,
             )
-            self.pending_spelling_suggestion = {
-                "original": word,
-                "suggested": corrected_spelling,
-            }
-            self.ui.info("Using suggested spelling for now; you can revert after the preview.")
-            return corrected_spelling
-        
+
+            # Ask user to choose immediately (before generating LaTeX)
+            use_corrected = self.ui.confirm(
+                f"Use corrected spelling '{corrected_spelling}'?",
+                default=True,
+            )
+
+            if use_corrected:
+                self.ui.info(f"✓ Using corrected spelling: '{corrected_spelling}'")
+                return corrected_spelling
+            else:
+                self.ui.info(f"✓ Keeping original spelling: '{word}'")
+                return word
+
         return word
 
     def add_word_to_entries(self, word: str, word_type: str, definitions: List[str], examples: List[Tuple[str, str]]):

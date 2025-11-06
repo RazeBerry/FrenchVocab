@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from time import perf_counter
 import os
+from typing import Any, Dict, Optional
 # Fix the imports for Google Generative AI
 from google import genai
 from google.genai import types
@@ -35,7 +36,7 @@ class GeminiClient(LLMClient):
         Yields chunks of text while calculating TTFT and TPS.
 
         Returns a dictionary with performance metrics upon generator completion.
-        Example return: {'ttft': 0.5, 'tps': 50.0, 'tokens_out': 100}
+        Example return: {'ttft': 0.5, 'tps': 50.0, 'tokens_out': 100, 'usage': {...}}
         """
         client = self._client
         model_name = self.MODEL_NAME
@@ -62,6 +63,7 @@ class GeminiClient(LLMClient):
         ttft = 0.0
         pieces = []
         first_chunk_yielded = False
+        usage_metadata: Optional[Any] = None
 
         try:
             first_chunk = next(stream)
@@ -71,12 +73,15 @@ class GeminiClient(LLMClient):
             pieces.append(first_chunk_text)
             yield first_chunk_text
             first_chunk_yielded = True
+            usage_metadata = getattr(first_chunk, "usage_metadata", None) or usage_metadata
 
             for chunk in stream:
                 chunk_text = chunk.text or ""
                 if chunk_text:
                     pieces.append(chunk_text)
                     yield chunk_text
+                if getattr(chunk, "usage_metadata", None):
+                    usage_metadata = chunk.usage_metadata
 
         except StopIteration:
             if not first_chunk_yielded:
@@ -88,8 +93,23 @@ class GeminiClient(LLMClient):
             t_last = perf_counter()
             full_text = "".join(pieces)
 
-            out_tokens = 0
-            if full_text:
+            final_response = None
+            try:
+                final_response = getattr(stream, "response", None)
+                if callable(final_response):
+                    final_response = final_response()
+            except Exception:
+                final_response = None
+
+            if final_response is not None:
+                usage_metadata = getattr(final_response, "usage_metadata", None) or usage_metadata
+
+            usage_summary: Dict[str, int] = {}
+            if usage_metadata is not None:
+                usage_summary = self._extract_usage_counts(usage_metadata)
+
+            out_tokens = usage_summary.get("output_tokens", 0)
+            if not out_tokens and full_text:
                 try:
                     token_payload = [
                         types.Content(
@@ -104,16 +124,25 @@ class GeminiClient(LLMClient):
                     out_tokens = getattr(token_info, "total_tokens", 0)
                 except Exception as e:
                     print(f"[Error] Failed to count tokens: {e}")
+            if out_tokens:
+                if not usage_summary:
+                    usage_summary = {}
+                usage_summary.setdefault("output_tokens", out_tokens)
+                usage_summary.setdefault("total_tokens", out_tokens)
 
             duration = t_last - t_first if t_first > 0 else 1e-9
             duration = duration or 1e-9
             tps = out_tokens / duration
 
-        return dict(
+        metrics: Dict[str, Any] = dict(
             ttft=ttft,
             tokens_out=out_tokens,
             tps=tps,
         )
+        if usage_summary:
+            metrics["usage"] = usage_summary
+
+        return metrics
 
     def model_label(self) -> str:
         return f"Google Gemini ({self.MODEL_NAME})"
@@ -137,6 +166,27 @@ class GeminiClient(LLMClient):
             raise TimeoutError("Gemini validation timed out") from exc
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
+
+    @staticmethod
+    def _extract_usage_counts(usage: Any) -> Dict[str, int]:
+        """Convert SDK usage metadata to a plain dict of token counters."""
+        fields = {
+            "prompt_tokens": ("prompt_token_count",),
+            "output_tokens": ("candidates_token_count", "response_token_count"),
+            "total_tokens": ("total_token_count",),
+            "thoughts_tokens": ("thoughts_token_count",),
+            "tool_tokens": ("tool_use_prompt_token_count",),
+            "cached_tokens": ("cached_content_token_count",),
+        }
+
+        summary: Dict[str, int] = {}
+        for label, attr_names in fields.items():
+            for attr in attr_names:
+                value = getattr(usage, attr, None)
+                if value is not None:
+                    summary[label] = int(value)
+                    break
+        return summary
 
 # Optional Claude client implementation for backward compatibility
 # To restore Claude support, users can simply switch to this client

@@ -18,11 +18,12 @@ class _FakeStream:
 
 
 class _Models:
-    def __init__(self):
+    def __init__(self, stream_factory=None):
         self.last_count_kwargs = None
+        self._stream_factory = stream_factory or _FakeStream
 
     def generate_content_stream(self, **_kwargs):
-        return _FakeStream()
+        return self._stream_factory()
 
     def count_tokens(self, **kwargs):
         self.last_count_kwargs = kwargs
@@ -30,9 +31,9 @@ class _Models:
 
 
 class _Client:
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, stream_factory=None):
         self.api_key = api_key
-        self.models = _Models()
+        self.models = _Models(stream_factory)
 
 
 class _Part:
@@ -57,7 +58,7 @@ class _ThinkingConfig:
         self.kwargs = _kwargs
 
 
-def _install_google_stub():
+def _install_google_stub(stream_factory=None):
     saved = {
         name: sys.modules.get(name)
         for name in ("google", "google.genai", "google.genai.types")
@@ -71,7 +72,7 @@ def _install_google_stub():
     types_mod.GenerateContentConfig = _GenerateContentConfig
     types_mod.ThinkingConfig = _ThinkingConfig
 
-    genai_mod.Client = _Client
+    genai_mod.Client = lambda api_key=None: _Client(api_key=api_key, stream_factory=stream_factory)
     genai_mod.types = types_mod
 
     sys.modules["google"] = google_mod
@@ -100,7 +101,14 @@ def test_gemini_client_uses_structured_token_payload(tmp_path):
         spec.loader.exec_module(llm_client)
 
         client = llm_client.GeminiClient()
-        chunks = list(client.stream("prompt"))
+        stream = client.stream("prompt")
+        chunks = []
+        while True:
+            try:
+                chunks.append(next(stream))
+            except StopIteration as stop:
+                metrics = stop.value
+                break
         assert "".join(chunks) == "helloworld"
 
         models = client._client.models
@@ -110,5 +118,55 @@ def test_gemini_client_uses_structured_token_payload(tmp_path):
         content = payload[0]
         assert getattr(content, "role", None) == "user"
         assert content.parts[0]["text"] == "helloworld"
+        assert metrics["usage"]["output_tokens"] == 5
+        assert metrics["usage"]["total_tokens"] == 5
+    finally:
+        _restore_google_stub(saved)
+
+
+def test_gemini_client_reports_usage_metadata(tmp_path):
+    os.environ["GEMINI_API_KEY"] = "AIza" + "x" * 36
+
+    def stream_factory():
+        stream = _FakeStream()
+        stream.response = SimpleNamespace(
+            usage_metadata=SimpleNamespace(
+                prompt_token_count=11,
+                candidates_token_count=23,
+                total_token_count=34,
+                thoughts_token_count=5,
+                tool_use_prompt_token_count=None,
+                cached_content_token_count=None,
+            )
+        )
+        return stream
+
+    saved = _install_google_stub(stream_factory=stream_factory)
+    try:
+        module_path = Path(__file__).resolve().parent.parent / "llm_client.py"
+        spec = importlib.util.spec_from_file_location("llm_client_actual", module_path)
+        llm_client = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(llm_client)
+
+        client = llm_client.GeminiClient()
+        stream = client.stream("prompt")
+
+        chunks = []
+        while True:
+            try:
+                chunks.append(next(stream))
+            except StopIteration as stop:
+                metrics = stop.value
+                break
+
+        assert "".join(chunks) == "helloworld"
+        assert metrics["usage"]["prompt_tokens"] == 11
+        assert metrics["usage"]["output_tokens"] == 23
+        assert metrics["usage"]["total_tokens"] == 34
+        assert metrics["usage"]["thoughts_tokens"] == 5
+        assert metrics["tokens_out"] == 23
+        assert metrics["usage"].get("tool_tokens") is None
+        assert client._client.models.last_count_kwargs is None
     finally:
         _restore_google_stub(saved)
