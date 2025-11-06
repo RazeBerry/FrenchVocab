@@ -117,33 +117,53 @@ def _fallback_interactive_select(
     *,
     show_keys: bool,
 ) -> str:
+    menu_options: list[MenuOption] = list(options)
+    cancel_option = next(
+        (opt for opt in menu_options if opt[0] in {"back", "cancel"}),
+        None,
+    )
+    if cancel_option:
+        cancel_key, cancel_label = cancel_option
+    else:
+        cancel_key, cancel_label = (None, "Cancel / Back")
+
+    enriched_instructions = (
+        f"{instructions}\n[dim]Enter 0 to cancel or return.[/dim]"
+    )
+
     console.print(Panel(
-        instructions,
+        enriched_instructions,
         title=f"[bold #E67E50]{title}[/]",
         border_style="dark_orange",
         box=box.ROUNDED,
         expand=False
     ))
 
-    for idx, (key, label) in enumerate(options, start=1):
+    console.print(f"  [dim]○[/] 0. {cancel_label}")
+
+    for idx, (key, label) in enumerate(menu_options, start=1):
         suffix = f" [dim]({key})[/dim]" if show_keys and key and key not in label else ""
         console.print(f"  [dim]○[/] {idx}. {label}{suffix}")
 
     prompt = "Select an option by number"
-    if options:
-        prompt += f" [1-{len(options)}]"
-    prompt += " (Enter for 1): "
+    if menu_options:
+        prompt += f" [0-{len(menu_options)}]"
+    prompt += " (Enter for 1, 0 to cancel): "
 
     while True:
         console_input = getattr(console, "input", None)
         raw = console_input(prompt) if callable(console_input) else input(prompt)
         choice = raw.strip()
-        if not choice and options:
-            return options[0][0]
+        if choice == "0":
+            if cancel_key is not None:
+                return cancel_key
+            raise KeyboardInterrupt
+        if not choice and menu_options:
+            return menu_options[0][0]
         if choice.isdigit():
             idx = int(choice)
-            if 1 <= idx <= len(options):
-                return options[idx - 1][0]
+            if 1 <= idx <= len(menu_options):
+                return menu_options[idx - 1][0]
         console.print("[bold #ff6b6b]✗ Invalid selection. Please enter a valid option number.[/bold #ff6b6b]")
 
 

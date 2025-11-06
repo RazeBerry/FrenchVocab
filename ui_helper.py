@@ -54,6 +54,11 @@ class MessageType(Enum):
     INFO = ("bold #E67E50", "Info", "dark_orange")  # Anthropic orange
     DEBUG = ("#909090", "Debug", "#909090")  # Medium gray for better accessibility
 
+
+DEFAULT_MENU_INSTRUCTIONS = (
+    "Use ↑ and ↓ to navigate. Press Enter to choose. Esc returns."
+)
+
 class UIHelper:
     """Centralized UI helper for all console output operations"""
     
@@ -63,42 +68,55 @@ class UIHelper:
     
     # ========== Basic Message Methods ==========
     
-    def message(self, text: str, msg_type: MessageType) -> None:
+    def message(self, text: str, msg_type: MessageType, *, accent: str | None = None) -> None:
         """Display a formatted message based on type"""
         style, _, _ = msg_type.value
+        if accent:
+            text = f"[{accent}]{text}[/{accent}]"
         self.console.print(f"[{style}]{text}[/{style}]")
-    
-    def error(self, text: str, with_panel: bool = False) -> None:
-        """Display error message with symbol, optionally in a panel"""
+
+    def error(self, text: str, with_panel: bool = False, *, accent: str | None = None) -> None:
+        """Display error message with symbol, optionally in a panel.
+
+        Use with_panel=True for:
+        - Critical system errors (file I/O failures, API unavailable)
+        - Errors that block core functionality
+        - Multi-line error messages with context
+
+        Use plain text (with_panel=False) for:
+        - User input validation errors
+        - Recoverable errors
+        - Single-line error messages
+        """
         formatted_text = f"✗ {text}"
         if with_panel:
             self.panel(formatted_text, "Error", "#ff6b6b", style="bold #ff6b6b")
         else:
-            self.message(formatted_text, MessageType.ERROR)
-    
-    def success(self, text: str, with_panel: bool = False) -> None:
+            self.message(formatted_text, MessageType.ERROR, accent=accent)
+
+    def success(self, text: str, with_panel: bool = False, *, accent: str | None = None) -> None:
         """Display success message with symbol, optionally in a panel"""
         formatted_text = f"✓ {text}"
         if with_panel:
             self.panel(formatted_text, "Success", "green3", style="bold #51cf66")
         else:
-            self.message(formatted_text, MessageType.SUCCESS)
-    
-    def warning(self, text: str, with_panel: bool = False) -> None:
+            self.message(formatted_text, MessageType.SUCCESS, accent=accent)
+
+    def warning(self, text: str, with_panel: bool = False, *, accent: str | None = None) -> None:
         """Display warning message with symbol, optionally in a panel"""
         formatted_text = f"⚡ {text}"
         if with_panel:
             self.panel(formatted_text, "Warning", "yellow3", style="bold #ffd43b")
         else:
-            self.message(formatted_text, MessageType.WARNING)
-    
-    def info(self, text: str, with_panel: bool = False) -> None:
+            self.message(formatted_text, MessageType.WARNING, accent=accent)
+
+    def info(self, text: str, with_panel: bool = False, *, accent: str | None = None) -> None:
         """Display info message with symbol, optionally in a panel"""
         formatted_text = f"ℹ {text}"
         if with_panel:
             self.panel(formatted_text, "Information", "dark_orange", style="bold #E67E50")
         else:
-            self.message(formatted_text, MessageType.INFO)
+            self.message(formatted_text, MessageType.INFO, accent=accent)
     
     def debug(self, text: str) -> None:
         """Display debug message"""
@@ -146,12 +164,32 @@ class UIHelper:
         """Display a table"""
         self.console.print(table)
     
-    def quick_table(self, title: str, headers: List[str], rows: List[List[str]], 
+    def quick_table(self, title: str, headers: List[str], rows: List[List[str]],
                     header_style: str = "cyan") -> None:
         """Quick method to create and display a simple table"""
         table = Table(title=title)
         for header in headers:
             table.add_column(header, style=header_style)
+        for row in rows:
+            table.add_row(*row)
+        self.display_table(table)
+
+    def render_table(
+        self,
+        title: str,
+        columns: List[str],
+        rows: List[List[str]],
+        *,
+        column_styles: Optional[List[str]] = None,
+        header_style: str = "cyan",
+    ) -> None:
+        """Render a table with shared styling to keep layouts consistent."""
+        table = Table(title=title, show_header=True, header_style=header_style)
+        for idx, header in enumerate(columns):
+            kwargs: Dict[str, Any] = {}
+            if column_styles and idx < len(column_styles):
+                kwargs["style"] = column_styles[idx]
+            table.add_column(header, **kwargs)
         for row in rows:
             table.add_row(*row)
         self.display_table(table)
@@ -199,11 +237,13 @@ class UIHelper:
         """
         from cli.navigation import interactive_select
 
+        final_instructions = instructions or DEFAULT_MENU_INSTRUCTIONS
+
         return interactive_select(
             self.console,
             title,
             options,
-            instructions,
+            final_instructions,
             show_keys=show_keys,
         )
     

@@ -35,14 +35,15 @@ def test_panel_consistency():
     )
     console.print(Panel(instructions, border_style="dark_orange", box=box.ROUNDED, expand=False))
 
-    # 3. Wrapped Confirmation Dialog
-    console.print("\n[bold]3. Wrapped Confirmation Dialog (expand=False):[/]\n")
-    table = Table(title="Confirm Translation", show_header=False, box=None, padding=(0, 1))
+    # 3. Confirmation preview without visual border
+    console.print("\n[bold]3. Confirmation Preview Without Borders:[/]\n")
+    console.print("[dim]Streamlined layout keeps copy/paste clean—no box characters.[/dim]\n")
+    table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column(style="dark_orange", no_wrap=True)
     table.add_column(style="white")
     table.add_row("German:", "Guten Morgen, wie geht es Ihnen?")
     table.add_row("English:", "[bold #51cf66]Good morning, how are you?[/bold #51cf66]")
-    console.print(Panel(table, border_style="dark_orange", box=box.ROUNDED, expand=False))
+    console.print(table)
 
     # 4. Wrapped Warning Panel
     console.print("\n[bold]4. Wrapped Warning Panel (expand=False):[/]\n")
@@ -75,9 +76,13 @@ def test_panel_consistency():
 
     console.print("[bold]Wrapped Panels (expand=False):[/]")
     console.print("  • Instructions and helper text")
-    console.print("  • Inline menus and confirmation dialogs")
+    console.print("  • Inline menus")
     console.print("  • Warnings and alerts")
-    console.print("  • Contextual information that shouldn't overwhelm\n")
+    console.print("  • Contextual info that benefits from borders\n")
+
+    console.print("[bold]Borderless Layouts:[/]")
+    console.print("  • Translation confirmation previews")
+    console.print("  • Content users frequently copy or share\n")
 
     console.print("[bold]Why This Matters:[/]")
     console.print("  • [#51cf66]✓[/#51cf66] Consistent visual hierarchy")

@@ -46,6 +46,7 @@ class FrenchVocabBuilder:
     DEFAULT_FILENAME = DEFAULT_LANGUAGE_CONFIG.vocab_filename
     language_config: LanguageConfig = DEFAULT_LANGUAGE_CONFIG
     language_code: str = DEFAULT_LANGUAGE_CODE
+    DEFINITION_PREVIEW_LIMIT = 60
 
     def __init__(
         self,
@@ -162,11 +163,12 @@ class FrenchVocabBuilder:
 
         init_end = time.time()
         if self.verbose:
-            self.console.print(
+            timings = (
                 f"Total init time: {init_end - init_start:.5f} seconds\n"
                 f"  Load config time: {load_config_end - load_config_start:.5f} seconds\n"
                 f"  Load entries time: {load_entries_end - load_entries_start:.5f} seconds"
             )
+            self.ui.info(timings, accent="dim")
 
     def _init_translators(self) -> None:
         """Instantiate translator flows when an LLM client is available."""
@@ -217,7 +219,7 @@ class FrenchVocabBuilder:
         except RuntimeError as exc:
             message = str(exc) or "API setup aborted by user."
             self.api_error_reason = message
-            self.ui.error(message)
+            self.ui.error(message, with_panel=True)
             return False
 
         self._apply_provider_resolution(resolution)
@@ -267,6 +269,7 @@ class FrenchVocabBuilder:
 
         options = [
             ("retry", "Retry provider setup now"),
+            ("settings", "Open AI settings"),
             ("skip", "Return without AI features"),
         ]
 
@@ -284,6 +287,9 @@ class FrenchVocabBuilder:
             if self.reconfigure_provider():
                 return True
             self.ui.warning("Provider setup failed. Remaining in offline mode.")
+        elif choice == "settings":
+            self.show_settings_screen()
+            return self.ensure_llm_ready()
 
         return False
 
@@ -373,7 +379,7 @@ class FrenchVocabBuilder:
                 file.write(template.final_content)
             self.ui.success(f"Created initial LaTeX file: {self.latex_file}")
         except IOError as e:
-            self.ui.error(f"Error creating initial LaTeX file: {e}")
+            self.ui.error(f"Error creating initial LaTeX file: {e}", with_panel=True)
             raise
 
     def _load_input_limits(self) -> None:
@@ -630,7 +636,7 @@ class FrenchVocabBuilder:
         try:
             stat = self.latex_file.stat()
         except FileNotFoundError:
-            self.ui.error(f"File not found - {self.latex_file}")
+            self.ui.error(f"File not found - {self.latex_file}", with_panel=True)
             self._entry_count_snapshot = None
             return 0
 
@@ -646,7 +652,7 @@ class FrenchVocabBuilder:
             with self.latex_file.open("r", encoding="utf-8") as file:
                 content = file.read()
         except Exception as exc:
-            self.ui.error(f"Error reading file: {exc}")
+            self.ui.error(f"Error reading file: {exc}", with_panel=True)
             return 0
 
         cmd_pattern = re.escape(self._entry_command()) + r"\{"
@@ -936,8 +942,8 @@ class FrenchVocabBuilder:
         actual_existing_word = self.normalized_entries.get(normalized_word, existing_word) # Get the stored version
 
         warning_text = f"Duplicate Warning:\nWord '{word}' (normalized: '{normalized_word}') already exists in the dictionary as '{actual_existing_word}'."
-        # Use a red border for higher visibility
-        self.ui.panel(warning_text, title="Duplicate Found!", border_style="bold red")
+        # Use yellow3 border for warnings per design system
+        self.ui.panel(warning_text, title="Duplicate Found!", border_style="yellow3")
 
         # Create options for the menu
         options = [
@@ -1038,24 +1044,29 @@ class FrenchVocabBuilder:
 
         exported_count = len(getattr(self, "exported_words", []))
         language_name = self.language_config.display_name
-        add_word_label = self._ui_text("menu.add_word", f"Add {language_name} word")
 
-        # Consolidated translation menu
+        # Display status summary panel above menu for reduced cognitive load
+        provider_status = "✓ Connected" if self.api_available else "⚠ Unavailable"
+        provider_color = "green" if self.api_available else "yellow"
+
         total_translation_pairs = eng_fr_count + fr_eng_count
-        translate_label = f"Translate [dim]({total_translation_pairs} total pairs)[/dim]"
+        status_text = (
+            f"[bold]Library:[/bold] {self.entry_count} vocab words  |  "
+            f"[bold]Translations:[/bold] {total_translation_pairs} pairs  |  "
+            f"[bold]AI:[/bold] [{provider_color}]{provider_status}[/{provider_color}]"
+        )
+        self.ui.panel(status_text, title="Status", border_style="dim dark_orange", expand=False)
 
+        # Clean, action-focused menu items without inline metadata
+        add_word_label = self._ui_text("menu.add_word", f"Add {language_name} word")
         display_all_label = self._ui_text("menu.display_all", f"Display all {language_name} words")
 
-        # Show provider status indicator
-        provider_status = "[green]connected[/green]" if self.api_available else "[yellow]unavailable[/yellow]"
-        settings_label = f"Settings & Configuration [dim]({provider_status})[/dim]"
-
         options = [
-            ("add", f"{add_word_label} [dim]({self.entry_count} entries)[/dim]"),
-            ("translate", translate_label),
-            ("anki_tools", f"Anki tools [dim]({exported_count} tracked exports)[/dim]"),
+            ("add", add_word_label),
+            ("translate", "Translate text"),
+            ("anki_tools", "Anki tools"),
             ("display_vocab", display_all_label),
-            ("settings", settings_label),
+            ("settings", "Settings & Configuration"),
             ("exit", "[bold yellow]Exit[/bold yellow]"),
         ]
 
@@ -1081,9 +1092,17 @@ class FrenchVocabBuilder:
         eng_to_cfg = self.language_config.eng_to_target
         target_to_cfg = self.language_config.target_to_eng
 
+        # Show translation stats in a clean status panel
+        status_text = (
+            f"[bold]{target_to_cfg.source_label} → {target_to_cfg.target_label}:[/bold] {fr_eng_count} pairs  |  "
+            f"[bold]{eng_to_cfg.source_label} → {eng_to_cfg.target_label}:[/bold] {eng_fr_count} pairs"
+        )
+        self.ui.panel(status_text, title="Translation Status", border_style="dim dark_orange", expand=False)
+
+        # Clean menu items focused on the action choice
         options = [
-            ("target_to_eng", f"{target_to_cfg.source_label} -> {target_to_cfg.target_label} [dim]({fr_eng_count} pairs)[/dim]"),
-            ("eng_to_target", f"{eng_to_cfg.source_label} -> {eng_to_cfg.target_label} [dim]({eng_fr_count} pairs)[/dim]"),
+            ("target_to_eng", f"{target_to_cfg.source_label} → {target_to_cfg.target_label}"),
+            ("eng_to_target", f"{eng_to_cfg.source_label} → {eng_to_cfg.target_label}"),
             ("back", "Back to main menu"),
         ]
 
@@ -1091,7 +1110,7 @@ class FrenchVocabBuilder:
             return self.ui.interactive_menu(
                 "Translation Direction",
                 options,
-                "Choose which direction to translate.",
+                "Choose which direction to translate. Esc returns.",
                 show_keys=False,
             )
         except KeyboardInterrupt:
@@ -1101,14 +1120,23 @@ class FrenchVocabBuilder:
         """Display the nested Anki submenu and return the selected option."""
         in_latex_not_exported, in_exports_not_latex = self.compare_entries_and_exports()
         language_name = self.language_config.display_name
+
+        # Show status summary for Anki operations
+        pending = len(in_latex_not_exported)
+        extra = len(in_exports_not_latex)
+        status_text = f"[bold]Pending exports:[/bold] {pending}  |  [bold]Extra in Anki:[/bold] {extra}"
+        self.ui.panel(status_text, title="Anki Status", border_style="dim dark_orange", expand=False)
+
         export_label = self._ui_text("menu.anki_export", f"Export {language_name} words to Anki")
         reconcile_label = self._ui_text(
             "menu.anki_reconcile",
             f"Reconcile Anki exports ({self.language_config.target_to_eng.source_label} -> {self.language_config.target_to_eng.target_label})",
         )
+
+        # Clean menu items - status is shown above
         options = [
-            ("export", f"{export_label} [dim](pending: {len(in_latex_not_exported)})[/dim]"),
-            ("reconcile", f"{reconcile_label} [dim](extra: {len(in_exports_not_latex)})[/dim]"),
+            ("export", export_label),
+            ("reconcile", reconcile_label),
             ("back", "[bold yellow]Back to main menu[/bold yellow]"),
         ]
 
@@ -1146,8 +1174,18 @@ class FrenchVocabBuilder:
         lines = []
         first = True
         language_name = self.language_config.display_name
-        first_prompt = f"\nEnter {language_name} text (word/phrase/sentence). Empty line to submit (or 'q' to cancel): "
-        continuation_prompt = "Enter more text (or press Enter to finish): "
+        limit_descriptors: list[str] = []
+        if getattr(self, "max_words", None):
+            limit_descriptors.append(f"≤{self.max_words} words")
+        if getattr(self, "max_word_length", None):
+            limit_descriptors.append(f"≤{self.max_word_length} chars")
+        limit_hint = f" [{' • '.join(limit_descriptors)}]" if limit_descriptors else ""
+
+        first_prompt = (
+            f"\nEnter {language_name} text (word/phrase/sentence){limit_hint}. "
+            "Submit an empty line to finish or 'q' to cancel: "
+        )
+        continuation_prompt = "Add another line (Enter on empty line finishes): "
         while True:
             try:
                 prompt = (
@@ -1183,16 +1221,23 @@ class FrenchVocabBuilder:
 
         # Basic validations
         if not word:
-            self.ui.error("Input cannot be empty.")
+            self.ui.error("Cannot add vocabulary entry: input cannot be empty.")
             return ""
         if self.max_words is not None and len(word.split()) > self.max_words:
-            self.ui.error(f"Please limit to {self.max_words} words.")
+            self.ui.error(
+                f"Cannot add vocabulary entry: please limit to {self.max_words} words."
+            )
             return ""
         if len(word) > self.max_word_length:
-            self.ui.error(f"Input is too long. Please limit to {self.max_word_length} characters.")
+            self.ui.error(
+                f"Cannot add vocabulary entry: please limit to {self.max_word_length} characters."
+            )
             return ""
         if not self.is_valid_input(word):
-            self.ui.error(f"Input contains unsupported characters for {self.language_config.display_name} text.")
+            self.ui.error(
+                f"Cannot add vocabulary entry: input contains unsupported characters for "
+                f"{self.language_config.display_name} text."
+            )
             return ""
 
         return word
@@ -1214,7 +1259,7 @@ class FrenchVocabBuilder:
         client = self.get_llm_client()
         if not client:
             reason = self.api_error_reason or f"{provider_label} client is not configured."
-            self.ui.error(f"AI provider unavailable: {reason}")
+            self.ui.error(f"Cannot query AI provider: {reason}")
             self.ui.info("AI-powered suggestions are disabled. Retry provider setup to continue.")
             return ""
         
@@ -1636,7 +1681,7 @@ class FrenchVocabBuilder:
 
     def handle_new_word_entry(self):
         if not self.ensure_llm_ready():
-            self.ui.info("Skipping new entry; AI features are currently disabled.")
+            self.ui.info("Returning to main menu without adding a word. Configure an AI provider to re-enable this flow.")
             return
         # Reset duplicate resolution per new flow
         self.duplicate_resolution = None
@@ -2308,33 +2353,70 @@ class FrenchVocabBuilder:
         # Sort entries alphabetically
         sorted_entries = sorted(self.word_entries.items(), key=lambda x: self.normalize_word(x[0]))
         
-        # Prepare data for table
         headers = ["No.", "Word", "Type", "Definitions"]
         rows = []
-        
+        truncated_definitions: Dict[int, str] = {}
+
         for index, (word, entry) in enumerate(sorted_entries, 1):
-            # Truncate definitions if too long
             definitions = entry["definitions"]
-            if len(definitions) > 60:
-                definitions = definitions[:57] + "..."
-            
+            display_definitions = definitions
+            if len(definitions) > self.DEFINITION_PREVIEW_LIMIT:
+                display_definitions = definitions[: self.DEFINITION_PREVIEW_LIMIT - 3] + "..."
+                truncated_definitions[index] = definitions
+
             rows.append([
                 str(index),
                 entry["word"],
                 entry["type"] if isinstance(entry["type"], str) else ", ".join(entry["type"]),
-                definitions
+                display_definitions
             ])
-        
-        # Display the table
-        self.ui.quick_table(f"[bold blue]All Vocabulary Entries ({len(self.word_entries)} words)[/bold blue]", headers, rows)
-        
-        # Add filter/search option
-        if self.ui.confirm("Would you like to search for a specific word?", default=False):
-            self.search_vocabulary()
 
-    def search_vocabulary(self):
+        self.ui.render_table(
+            title=f"All Vocabulary Entries ({len(self.word_entries)} words)",
+            columns=headers,
+            rows=rows,
+            column_styles=["cyan", "magenta", "green", "white"],
+        )
+
+        if truncated_definitions:
+            self.ui.info(
+                "Some definitions are abbreviated. Enter an entry number to view the full text or press Enter to exit.",
+                accent="dim",
+            )
+            while True:
+                selection = read_line("Show full definitions for #: ")
+                if not selection.strip():
+                    break
+                if selection.strip().isdigit():
+                    entry_number = int(selection.strip())
+                    full_text = truncated_definitions.get(entry_number)
+                    if full_text is None:
+                        self.ui.warning("Please enter a valid entry number with truncated definitions.")
+                        continue
+                    self.ui.panel(
+                        full_text,
+                        title=f"Definitions for entry {entry_number}",
+                        border_style="dark_orange",
+                        expand=True,
+                    )
+                else:
+                    self.ui.warning("Please enter a number or press Enter to finish.")
+
+        search_query = self.ui.prompt(
+            "Search vocabulary (press Enter to skip)",
+            style="dim",
+        ).strip()
+        if search_query:
+            self.search_vocabulary(search_query)
+
+    def search_vocabulary(self, search_term: Optional[str] = None):
         """Allows searching for specific vocabulary entries by keyword."""
-        search_term = self.ui.prompt("Enter search term").strip().lower()
+        if search_term is None:
+            search_term = self.ui.prompt("Enter search term").strip()
+        search_term = search_term.lower()
+        if not search_term:
+            self.ui.info("Search skipped.", accent="dim")
+            return
         
         results = {}
         for word, entry in self.word_entries.items():
@@ -2353,18 +2435,23 @@ class FrenchVocabBuilder:
         rows = []
         
         for word, entry in sorted(results.items(), key=lambda x: self.normalize_word(x[0])):
-            # Truncate definitions if too long
             definitions = entry["definitions"]
-            if len(definitions) > 60:
-                definitions = definitions[:57] + "..."
+            display_definitions = definitions
+            if len(definitions) > self.DEFINITION_PREVIEW_LIMIT:
+                display_definitions = definitions[: self.DEFINITION_PREVIEW_LIMIT - 3] + "..."
             
             rows.append([
                 entry["word"],
                 entry["type"] if isinstance(entry["type"], str) else ", ".join(entry["type"]),
-                definitions
+                display_definitions
             ])
         
-        self.ui.quick_table(f"[bold blue]Search Results for '{search_term}' ({len(results)} matches)[/bold blue]", headers, rows)
+        self.ui.render_table(
+            title=f"Search Results for '{search_term}' ({len(results)} matches)",
+            columns=headers,
+            rows=rows,
+            column_styles=["magenta", "green", "white"],
+        )
         
         # Offer to display full entry for a selected word
         if self.ui.confirm("Would you like to see the full entry for any of these words?", default=False):

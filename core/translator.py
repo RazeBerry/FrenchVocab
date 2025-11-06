@@ -10,14 +10,14 @@ from typing import Dict, Optional
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Prompt
 from rich.table import Table
 from rich.text import Text
 from rich import box
 
 from languages import TranslatorConfig
 from llm_client import LLMClient
-from ui_helper import read_line
+from ui_helper import UIHelper, read_line
 from core.history_logger import TranslationLogger
 
 
@@ -34,6 +34,7 @@ class TranslatorCLI:
         logger: Optional[TranslationLogger] = None,
     ) -> None:
         self.console = console
+        self.ui = UIHelper(console)
         self.client = client
         self.config = config
         self.direction = direction
@@ -71,27 +72,22 @@ class TranslatorCLI:
             with self.latex_file.open("w", encoding="utf-8") as file:
                 file.write(self.initial_tex_content)
                 file.write(self.final_tex_content)
-            self.console.print(
-                f"[bold green]Created initial LaTeX file: {self.latex_file}[/bold green]"
-            )
+            self.ui.success(f"Created initial LaTeX file: {self.latex_file}")
         except IOError as exc:
-            self.console.print(
-                f"[bold red]Error creating initial LaTeX file {self.latex_file}: {exc}[/bold red]"
-            )
+            self.ui.error(f"Failed to create initial LaTeX file {self.latex_file}: {exc}", with_panel=True)
 
     def load_existing_entries(self) -> None:
         if not self.latex_file.exists():
-            self.console.print(
-                f"[bold yellow]LaTeX file {self.latex_file} not found. Starting fresh.[/bold yellow]"
-            )
+            self.ui.warning(f"LaTeX file {self.latex_file} not found. Starting fresh.")
             return
 
         try:
             with self.latex_file.open("r", encoding="utf-8", errors="ignore") as file:
                 content = file.read()
         except UnicodeDecodeError as exc:
-            self.console.print(
-                f"[bold red]UnicodeDecodeError reading {self.latex_file}: {exc}. Some characters might be lost.[/bold red]"
+            self.ui.error(
+                f"Cannot read {self.latex_file}: UnicodeDecodeError {exc}. Some characters might be lost.",
+                with_panel=True
             )
             return
 
@@ -107,8 +103,8 @@ class TranslatorCLI:
                 source = match.group(1).strip()
                 target = match.group(2).strip()
                 if not source or not target:
-                    self.console.print(
-                        f"[bold yellow]Skipping entry with empty {self.source_label} or {self.target_label} near {match.start()}[/bold yellow]"
+                    self.ui.warning(
+                        f"Skipping entry with empty {self.source_label} or {self.target_label} near position {match.start()}."
                     )
                     parse_errors += 1
                     continue
@@ -116,23 +112,24 @@ class TranslatorCLI:
                 normalized = self.normalize_text(source)
                 if normalized in self.pairs:
                     existing = self.pairs[normalized]["source"]
-                    self.console.print(
-                        f"[bold orange3]Warning: Duplicate normalized {self.source_label} key '{normalized}' found."
-                        f" Overwriting entry for '{existing}' with '{source}'.[/bold orange3]"
+                    self.ui.warning(
+                        f"Duplicate normalized {self.source_label} key '{normalized}' found."
+                        f" Overwriting entry for '{existing}' with '{source}'."
                     )
 
                 self.pairs[normalized] = {"source": source, "target": target}
                 loaded_count += 1
             except Exception as exc:  # pragma: no cover - defensive path
-                self.console.print(
-                    f"[bold red]Error parsing entry near position {match.start()}: {exc}[/bold red]"
-                )
+                self.ui.error(f"Error parsing entry near position {match.start()}: {exc}")
                 parse_errors += 1
 
         self.entry_count = len(self.pairs)
-        self.console.print(
-            f"Loaded {self.entry_count} {self.source_label}-{self.target_label} pairs from {self.latex_file}. ({parse_errors} parsing errors)"
+        summary = (
+            f"Loaded {self.entry_count} {self.source_label}-{self.target_label} pairs from {self.latex_file}."
         )
+        if parse_errors:
+            summary += f" ({parse_errors} parsing errors)"
+        self.ui.info(summary)
 
     # ------------------------------------------------------------------
     # Helper utilities
@@ -160,7 +157,13 @@ class TranslatorCLI:
             f"  [bold #E67E50]{self.source_label}:[/bold #E67E50] {existing_entry['source']}\n"
             f"  [bold magenta]{self.target_label}:[/bold magenta] {existing_entry['target']}"
         )
-        self.console.print(Panel(panel_content, title="Duplicate Found", border_style="yellow3", box=box.ROUNDED, expand=False))
+        self.ui.panel(
+            panel_content,
+            title="Duplicate Found",
+            border_style="yellow3",
+            expand=False,
+            box_style=box.ROUNDED,
+        )
 
     def _collect_multiline_input(self, language_label: str) -> Optional[str]:
         # Instructions panel: wrapped for contextual info
@@ -170,7 +173,12 @@ class TranslatorCLI:
             "- Enter 'q' on the first line to cancel.\n"
             "- Press Enter on an empty line to finish.[/dim]"
         )
-        self.console.print(Panel(instructions, border_style="dark_orange", box=box.ROUNDED, expand=False))
+        self.ui.panel(
+            instructions,
+            border_style="dark_orange",
+            expand=False,
+            box_style=box.ROUNDED,
+        )
 
         lines: list[str] = []
 
@@ -189,10 +197,10 @@ class TranslatorCLI:
             if not lines:
                 stripped = line.strip()
                 if stripped.lower() == "q":
-                    self.console.print("[yellow]Translation cancelled.[/yellow]")
+                    self.ui.warning("Translation cancelled.")
                     return None
                 if not stripped:
-                    self.console.print("[bold yellow]Please enter at least one line (or 'q' to cancel).[/bold yellow]")
+                    self.ui.warning("Please enter at least one line (or 'q' to cancel).")
                     continue
             else:
                 if line == "":
@@ -200,15 +208,15 @@ class TranslatorCLI:
 
             lines.append(line.rstrip("\n"))
             plural = "line" if len(lines) == 1 else "lines"
-            self.console.print(f"[dim]Captured {len(lines)} {plural}. Blank line to finish.[/dim]")
+            self.ui.info(f"Captured {len(lines)} {plural}. Blank line to finish.", accent="dim")
 
         if not lines:
-            self.console.print("[yellow]Translation cancelled.[/yellow]")
+            self.ui.warning("Translation cancelled.")
             return None
 
         text = "\n".join(lines).strip()
         if not text:
-            self.console.print("[bold red]Input cannot be empty.[/bold red]")
+            self.ui.error("Cannot continue: input cannot be empty.")
             return None
         return text
 
@@ -225,15 +233,13 @@ class TranslatorCLI:
     # ------------------------------------------------------------------
     def query_ai_for_translation(self, source_text: str) -> Optional[str]:
         if not self.client:
-            self.console.print("[bold red]LLM client not available.[/bold red]")
+            self.ui.error("Cannot query translation: LLM client not available.", with_panel=True)
             return None
 
         try:
             prompt = self.prompt_template.format(**{self.prompt_variable: source_text})
         except KeyError as exc:
-            self.console.print(
-                f"[bold red]Prompt template missing placeholder for '{exc.args[0]}'.[/bold red]"
-            )
+            self.ui.error(f"Prompt template missing placeholder for '{exc.args[0]}'.")
             return None
 
         try:
@@ -244,61 +250,35 @@ class TranslatorCLI:
                 translation = "".join(chunks).strip()
 
             if not translation:
-                self.console.print("[bold red]Error: Received empty response from AI.[/bold red]")
+                self.ui.error("Error: received empty response from AI.")
                 return None
 
             if source_text.lower() in translation.lower():
-                self.console.print(
-                    "[bold yellow]Warning: AI response might be empty or suspicious:[/bold yellow]"
-                )
-                self.console.print(f"> {translation}")
-                if not self._confirm_yes_no("Accept this response anyway?", default=False):
+                self.ui.warning("AI response might be empty or suspicious:")
+                self.ui.info(f"> {translation}", accent="dim")
+                if not self.ui.confirm("Accept this response anyway?", default=False):
                     return None
 
             return translation
 
         except Exception as exc:  # pragma: no cover - defensive path
-            self.console.print(f"[bold red]An error occurred during AI query: {exc}[/bold red]")
+            self.ui.error(f"An error occurred during AI query: {exc}")
             return None
 
-    # ------------------------------------------------------------------
-    # Confirmation & persistence
-    # ------------------------------------------------------------------
-    def _confirm_yes_no(self, message: str, default: bool = True) -> bool:
-        default_choice = "y" if default else "n"
-        yes_tokens = {"y", "yes", "ja", "j", "oui", "o", "1", "true"}
-        no_tokens = {"n", "no", "nein", "non", "0", "false"}
-
-        while True:
-            try:
-                response = read_line(f"{message} [y/n] ", console=self.console)
-            except (EOFError, OSError):
-                response = Prompt.ask(
-                    f"{message} [y/n]",
-                    console=self.console,
-                    default=default_choice,
-                    show_default=False,
-                )
-            if response is None:
-                response = ""
-            normalized = response.strip() or default_choice
-            normalized = normalized.casefold()
-            if normalized in yes_tokens:
-                return True
-            if normalized in no_tokens:
-                return False
-            self.console.print("[bold yellow]Please enter Y or N.[/bold yellow]")
-
     def confirm_translation(self, source_text: str, target_text: str) -> bool:
-        # Confirmation panel: wrapped for focused decision-making
-        table = Table(title="Confirm Translation", show_header=False, box=None, padding=(0, 1))
+        # Confirmation preview: rendered without borders for easy copy/paste
+        header = Text("Confirm Translation", style="bold #E67E50")
+        table = Table(show_header=False, box=None, padding=(0, 1))
         table.add_column(style="dark_orange", no_wrap=True)
         table.add_column(style="white")
         table.add_row(f"{self.source_label}:", Text(source_text))
         table.add_row(f"{self.target_label}:", Text(target_text, style="bold #51cf66"))
 
-        self.console.print(Panel(table, border_style="dark_orange", box=box.ROUNDED, expand=False))
-        return self._confirm_yes_no(
+        self.console.print()
+        self.console.print(header)
+        self.console.print(table)
+        self.console.print()
+        return self.ui.confirm(
             f"Save this {self.source_label} → {self.target_label} translation?",
             default=True,
         )
@@ -338,21 +318,17 @@ class TranslatorCLI:
                     break
 
             if insert_index == -1:
-                self.console.print(
-                    "[bold red]Error: Could not find insertion point in LaTeX file.[/bold red]"
-                )
+                self.ui.error("Error: could not find insertion point in LaTeX file.")
                 return
 
             lines.insert(insert_index, f"{latex_entry}\n\n")
             with self.latex_file.open("w", encoding="utf-8") as file:
                 file.writelines(lines)
 
-            self.console.print(
-                f"[green]Successfully added entry to {self.latex_file}[/green]"
-            )
+            self.ui.success(f"Added entry to {self.latex_file}")
 
         except IOError as exc:
-            self.console.print(f"[bold red]Error writing to {self.latex_file}: {exc}[/bold red]")
+            self.ui.error(f"Error writing to {self.latex_file}: {exc}")
 
     def _add_entry_to_memory(self, source_text: str, target_text: str, normalized_key: str) -> None:
         self.pairs[normalized_key] = {"source": source_text, "target": target_text}
@@ -403,9 +379,7 @@ class TranslatorCLI:
 
         target_text = self.query_ai_for_translation(source_text)
         if not target_text:
-            self.console.print(
-                "[yellow]Skipping this entry due to AI query failure or empty response.[/yellow]"
-            )
+            self.ui.warning("Skipping this entry due to AI query failure or empty response.")
             return False
 
         if self.confirm_translation(source_text, target_text):
@@ -413,9 +387,9 @@ class TranslatorCLI:
             self._add_entry_to_file(latex_entry)
             self._add_entry_to_memory(source_text, target_text, normalized)
             self._log_saved_translation(source_text, target_text, normalized)
-            self.console.print("[bold green]Translation saved successfully![/bold green]")
+            self.ui.success("Translation saved successfully!")
         else:
-            self.console.print("[yellow]Translation discarded.[/yellow]")
+            self.ui.warning("Translation discarded.")
 
         return False
 
@@ -438,43 +412,73 @@ class TranslatorCLI:
             self._add_entry_to_file(latex_entry)
             self._add_entry_to_memory(source_text, target_text, normalized)
             self._log_saved_translation(source_text, target_text, normalized)
-            self.console.print("[bold green]Translation saved successfully![/bold green]")
+            self.ui.success("Translation saved successfully!")
             return True
 
-        self.console.print("[yellow]Save cancelled.[/yellow]")
+        self.ui.warning("Save cancelled.")
         return False
+
+    # ------------------------------------------------------------------
+    # Compatibility helpers
+    # ------------------------------------------------------------------
+    def _confirm_yes_no(self, message: str, default: bool = True) -> bool:
+        """Backward-compatible confirm helper retained for legacy tests."""
+        if not hasattr(self, "ui") or self.ui is None:
+            console = getattr(self, "console", Console())
+            self.ui = UIHelper(console)
+
+        default_choice = "y" if default else "n"
+        yes_tokens = {"y", "yes", "ja", "j", "oui", "o", "1", "true"}
+        no_tokens = {"n", "no", "nein", "non", "0", "false"}
+
+        while True:
+            try:
+                response = read_line(f"{message} [y/n] ", console=self.console)
+            except (EOFError, OSError):
+                response = Prompt.ask(
+                    f"{message} [y/n]",
+                    default=default_choice,
+                    show_default=False,
+                )
+            if response is None:
+                response = ""
+            normalized = (response.strip() or default_choice).casefold()
+            if normalized in yes_tokens:
+                return True
+            if normalized in no_tokens:
+                return False
+            self.ui.warning("Please enter Y or N.")
 
     def run(self) -> None:
         # Header panel: full-width for major section indicator
-        self.console.print(
-            Panel(
-                f"[bold #E67E50]{self.ui_title}[/bold #E67E50]\nCurrently managing {self.entry_count} pairs in {self.latex_file.name}",
-                border_style="dark_orange",
-                title="Translator Mode",
-                box=box.ROUNDED,
-                expand=True,  # Full-width for section headers
-            )
+        header = (
+            f"[bold #E67E50]{self.ui_title}[/bold #E67E50]\n"
+            f"Currently managing {self.entry_count} pairs in {self.latex_file.name}"
+        )
+        self.ui.panel(
+            header,
+            border_style="dark_orange",
+            title="Translator Mode",
+            expand=True,
+            box_style=box.ROUNDED,
         )
         self.run_single_translation()
-        self.console.print("Returning to main menu.")
+        self.ui.info("Returning to main menu.")
 
     def display_all_pairs(self) -> None:
         if not self.pairs:
-            self.console.print(
-                f"[bold yellow]No {self.source_label}-{self.target_label} pairs found.[/bold yellow]"
-            )
+            self.ui.warning(f"No {self.source_label}-{self.target_label} pairs found.")
             return
 
-        table = Table(
+        rows = [
+            [str(index), entry["source"], entry["target"]]
+            for index, (_, entry) in enumerate(sorted(self.pairs.items()), 1)
+        ]
+
+        self.ui.render_table(
             title=f"All {self.source_label}-{self.target_label} Pairs ({self.entry_count})",
-            expand=True,
+            columns=["No.", self.table_headers[0], self.table_headers[1]],
+            rows=rows,
+            column_styles=["cyan", "green", "magenta"],
         )
-        table.add_column("No.", style="cyan", justify="right", width=5)
-        table.add_column(self.table_headers[0], style="green", ratio=1)
-        table.add_column(self.table_headers[1], style="magenta", ratio=1)
-
-        for index, (key, entry) in enumerate(sorted(self.pairs.items()), 1):
-            table.add_row(str(index), entry["source"], entry["target"])
-
-        self.console.print(table)
         read_line("\nPress Enter to return...")

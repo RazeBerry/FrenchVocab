@@ -564,8 +564,8 @@ class ProviderManager:
         self.ui.panel(
             details,
             title=f"{metadata.display_name} Validation Failed",
-            border_style="red",
-            expand=False,
+            border_style="#ff6b6b",
+            expand=True,
         )
 
 

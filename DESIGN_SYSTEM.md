@@ -81,6 +81,18 @@ Panel(
 - **Metadata**: `[dim]` - Subtle, non-intrusive
 - **Body text**: Default white
 
+### Messaging Patterns
+- Route all status text through `UIHelper` (`self.ui.success/info/warning/error`) to ensure consistent symbols (`✓`, `ℹ`, `⚡`, `✗`).
+- Prefer `accent="dim"` on these helpers for secondary details (counts, timestamps) rather than embedding `[dim]` directly.
+- Critical multi-line context should use `self.ui.panel(..., border_style="#ff6b6b")` so errors remain prominent.
+- Success copy should lead with outcomes (e.g., `self.ui.success("Translation saved successfully!")`) and avoid manual Rich styling.
+
+### Dim Text Usage
+- ✅ Metadata, counts, keyboard shortcuts, or helpful asides.
+- ✅ Temporary capture feedback ("Captured 2 lines") where the primary action is already clear.
+- ❌ Primary instructions, warnings, or actions; keep those at full intensity for accessibility.
+- ❌ Replacing `self.ui.*` helpers—let the helper render base color, then pass `accent="dim"` when you truly need to soften tone.
+
 ---
 
 ## Border Styles
@@ -107,6 +119,8 @@ Panel(
 # Inactive item
 "  [dim]○[/] {label}"
 ```
+
+- Default menu helper text already renders “Use ↑ and ↓ to navigate. Press Enter to choose. Esc returns.”; keep per-menu copy concise so it complements (rather than duplicates) the baseline guidance.
 
 ### Panel Structure
 ```python
@@ -186,5 +200,5 @@ Panel(table, border_style="dark_orange", box=box.ROUNDED, expand=False)
 
 ---
 
-*Last updated: 2025-11-03*
+*Last updated: 2025-11-05*
 *Design inspired by Anthropic's brand guidelines*
