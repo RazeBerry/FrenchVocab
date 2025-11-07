@@ -386,31 +386,9 @@ class TranslatorCLI:
         source_text = self.get_source_input()
         if not source_text:
             return False
+        return self.translate_and_save(source_text)
 
-        normalized = self.normalize_text(source_text)
-        existing_entry = self.check_duplicate(normalized)
-
-        if existing_entry:
-            self.display_duplicate_warning(existing_entry)
-            return False
-
-        target_text = self.query_ai_for_translation(source_text)
-        if not target_text:
-            self.ui.warning("Skipping this entry due to AI query failure or empty response.")
-            return False
-
-        if self.confirm_translation(source_text, target_text):
-            latex_entry = self._format_latex_entry(source_text, target_text)
-            self._add_entry_to_file(latex_entry)
-            self._add_entry_to_memory(source_text, target_text, normalized)
-            self._log_saved_translation(source_text, target_text, normalized)
-            self.ui.success("Translation saved successfully!")
-        else:
-            self.ui.warning("Translation discarded.")
-
-        return False
-
-    def translate_and_save(self, source_text: str) -> bool:
+    def translate_and_save(self, source_text: str, *, provided_translation: Optional[str] = None) -> bool:
         if not source_text:
             return False
 
@@ -420,7 +398,10 @@ class TranslatorCLI:
             self.display_duplicate_warning(existing_entry)
             return True
 
-        target_text = self.query_ai_for_translation(source_text)
+        if provided_translation is not None:
+            target_text = provided_translation.strip()
+        else:
+            target_text = self.query_ai_for_translation(source_text)
         if not target_text:
             return False
 

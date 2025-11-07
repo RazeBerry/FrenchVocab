@@ -134,7 +134,7 @@ class TestSentenceFlow(unittest.TestCase):
         # Stub translator with a spy
         calls = {'n': 0}
         class _Spy:
-            def translate_and_save(self, text):
+            def translate_and_save(self, text, provided_translation=None):
                 calls['n'] += 1
                 return True
         b.fr_to_eng_translator = _Spy()

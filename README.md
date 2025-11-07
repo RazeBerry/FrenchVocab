@@ -88,6 +88,9 @@ Invalid values are ignored with an on-screen warning, after which the next sourc
 
 Pass `--verbose` for timing details, or `--provider claude` to select Anthropic directly.
 
+## Feature Flags
+- Intelligent translator is now on by default: the Translation menu shows an “auto” option that detects direction and routes to the right LaTeX file while still letting you confirm the save. Set `FRENCH_VOCAB_AUTO_TRANSLATOR=0` (or `false`) if you prefer to hide it and stick with the two explicit directions.
+
 ---
 
 ## Project Layout

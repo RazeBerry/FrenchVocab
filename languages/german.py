@@ -123,6 +123,22 @@ GERMAN_CARD_VERSION = compute_template_hash(
     GERMAN_CARD_CSS,
 )
 
+GERMAN_AUTO_TRANSLATOR_PROMPT = """
+You are an expert bilingual assistant for English and German. Detect whether the user text is written in English or German (no other languages) and translate it into the opposite language while preserving tone, register, punctuation, paragraphing, markdown, and inline code.
+
+Respond EXACTLY with:
+
+Direction: <english_to_german|german_to_english>
+Translation:
+<translation text preserving formatting>
+
+Notes:
+<optional short clarification; write "none" if there is nothing noteworthy>
+
+Input:
+{source_text}
+""".strip()
+
 
 GERMAN_CONFIG = LanguageConfig(
     code="de",
@@ -175,6 +191,9 @@ GERMAN_CONFIG = LanguageConfig(
         version_id=GERMAN_CARD_VERSION,
     ),
     aliases=("de-de", "german"),
+    auto_prompt_template=GERMAN_AUTO_TRANSLATOR_PROMPT,
+    auto_prompt_variable="source_text",
+    auto_direction_tokens=("english_to_german", "german_to_english"),
 )
 
 

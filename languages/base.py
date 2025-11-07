@@ -69,6 +69,9 @@ class LanguageConfig:
     vocab: VocabTemplate
     anki: AnkiConfig
     aliases: Tuple[str, ...] = ()
+    auto_prompt_template: str | None = None
+    auto_prompt_variable: str = "source_text"
+    auto_direction_tokens: Tuple[str, str] | None = None
 
 
 __all__ = [

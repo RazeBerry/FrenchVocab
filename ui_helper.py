@@ -56,7 +56,7 @@ class MessageType(Enum):
 
 
 DEFAULT_MENU_INSTRUCTIONS = (
-    "Use ↑ and ↓ to navigate. Press Enter to choose. Esc returns."
+    "[↑↓] Navigate • [Enter] Select • [Esc] Go back"
 )
 
 class UIHelper:

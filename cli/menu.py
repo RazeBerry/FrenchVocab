@@ -26,6 +26,14 @@ def main_menu_loop(app: "FrenchVocabBuilder") -> None:
 
         if choice == "translate":
             translation_choice = app.show_translation_menu()
+            if translation_choice == "auto":
+                if not app.ensure_llm_ready():
+                    continue
+                if app.auto_translator:
+                    app.auto_translator.run()
+                else:
+                    app.ui.error("Auto translator is unavailable because the AI provider could not be initialized.")
+                continue
             if translation_choice == "eng_to_target":
                 if not app.ensure_llm_ready():
                     continue

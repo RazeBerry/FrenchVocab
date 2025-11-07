@@ -103,6 +103,22 @@ FRENCH_CARD_VERSION = compute_template_hash(
     FRENCH_CARD_CSS,
 )
 
+FRENCH_AUTO_TRANSLATOR_PROMPT = """
+You are an expert bilingual assistant for English and French. Detect which language the user text is written in (English or French only) and translate it into the opposite language while preserving tone, register, and formatting (paragraphs, markdown, inline code, punctuation, quotes).
+
+Respond using exactly this template:
+
+Direction: <english_to_french|french_to_english>
+Translation:
+<translation text here, mirroring original formatting>
+
+Notes:
+<optional single paragraph with concise clarifications; write "none" if unnecessary>
+
+Input:
+{source_text}
+""".strip()
+
 
 FRENCH_CONFIG = LanguageConfig(
     code="fr",
@@ -155,6 +171,9 @@ FRENCH_CONFIG = LanguageConfig(
         version_id=FRENCH_CARD_VERSION,
     ),
     aliases=("fr-fr", "france"),
+    auto_prompt_template=FRENCH_AUTO_TRANSLATOR_PROMPT,
+    auto_prompt_variable="source_text",
+    auto_direction_tokens=("english_to_french", "french_to_english"),
 )
 
 

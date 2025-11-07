@@ -22,6 +22,7 @@ from languages import LanguageConfig, TranslatorConfig, default_language_code, g
 from languages.anki_shared_styles import compute_template_hash
 
 from .translator import TranslatorCLI
+from .auto_translator import AutoTranslator
 from .history_logger import TranslationLogger
 from ui_helper import UIHelper, read_line
 from core.providers.manager import (
@@ -134,7 +135,9 @@ class FrenchVocabBuilder:
         # Initialize translator attribute
         self.eng_to_fr_translator: Optional[TranslatorCLI] = None
         self.fr_to_eng_translator: Optional[TranslatorCLI] = None
+        self.auto_translator: Optional[AutoTranslator] = None
         self.duplicate_resolution: Optional[Dict[str, str]] = None  # stores {'mode': 'merge'|'force', 'existing': <word>}
+        self.enable_auto_translator: bool = self._should_enable_auto_translator()
 
         # Determine provider early and set verbosity before key bootstrapping
         requested_provider = provider or ProviderFactory.default_provider()
@@ -183,6 +186,7 @@ class FrenchVocabBuilder:
         if not self.client:
             self.eng_to_fr_translator = None
             self.fr_to_eng_translator = None
+            self.auto_translator = None
             return
 
         if (
@@ -212,6 +216,34 @@ class FrenchVocabBuilder:
             latex_file_path=self.fr_to_eng_latex_file,
             direction="target_to_eng",
             logger=self.history_logger,
+            usage_callback=self._record_usage,
+        )
+        self._init_auto_translator()
+
+    def _init_auto_translator(self) -> None:
+        """Create the intelligent translator wrapper when enabled."""
+        if not self.enable_auto_translator:
+            self.auto_translator = None
+            return
+
+        prompt = getattr(self.language_config, "auto_prompt_template", None)
+        if not prompt or not self.client:
+            self.auto_translator = None
+            return
+
+        if not (self.eng_to_fr_translator and self.fr_to_eng_translator):
+            self.auto_translator = None
+            return
+
+        prompt_variable = getattr(self.language_config, "auto_prompt_variable", "source_text")
+        self.auto_translator = AutoTranslator(
+            console=self.console,
+            client=self.client,
+            language_config=self.language_config,
+            eng_to_target=self.eng_to_fr_translator,
+            target_to_eng=self.fr_to_eng_translator,
+            prompt_template=prompt,
+            prompt_variable=prompt_variable,
             usage_callback=self._record_usage,
         )
 
@@ -264,6 +296,7 @@ class FrenchVocabBuilder:
         self.api_error_reason = clean_reason
         self.eng_to_fr_translator = None
         self.fr_to_eng_translator = None
+        self.auto_translator = None
         self.ui.warning(f"AI features unavailable: {clean_reason}")
         self.ui.info(
             "Existing vocabulary and exports remain accessible. Retry provider setup when prompted to restore AI features."
@@ -287,7 +320,7 @@ class FrenchVocabBuilder:
             choice = self.ui.interactive_menu(
                 "AI Provider Required",
                 options,
-                "AI-powered features (e.g., translations) need a configured provider.",
+                "AI-powered features need a configured provider • [Esc] Skip",
                 show_keys=False,
             )
         except KeyboardInterrupt:
@@ -492,6 +525,12 @@ class FrenchVocabBuilder:
         env_sent_ex = os.getenv('FRENCH_VOCAB_SENTENCE_EXAMPLES')
         if env_sent_ex is not None:
             self.sentence_examples_in_vocab = str(env_sent_ex).strip().lower() in ("1", "true", "yes", "y", "on")
+
+    def _should_enable_auto_translator(self) -> bool:
+        env_value = os.getenv("FRENCH_VOCAB_AUTO_TRANSLATOR")
+        if env_value is not None:
+            return str(env_value).strip().lower() in ("1", "true", "yes", "y", "on")
+        return bool(getattr(self.language_config, "auto_prompt_template", None))
 
     def _create_history_logger(self) -> TranslationLogger:
         config_section: Dict[str, Any] = {}
@@ -953,21 +992,21 @@ class FrenchVocabBuilder:
 
         warning_text = f"Duplicate Warning:\nWord '{word}' (normalized: '{normalized_word}') already exists in the dictionary as '{actual_existing_word}'."
         # Use yellow3 border for warnings per design system
-        self.ui.panel(warning_text, title="Duplicate Found!", border_style="yellow3")
+        self.ui.panel(warning_text, title="⚡ Duplicate Detected", border_style="yellow3")
 
-        # Create options for the menu
+        # Create options with clear descriptions of outcomes
         options = [
-            ("skip", "Skip — do not add this word."),
-            ("view", "View the existing entry and return to the menu."),
-            ("merge", "Merge new AI details into the existing entry."),
-            ("force", "Force-add as a variant entry."),
+            ("view", "👁 View existing entry first"),
+            ("merge", "⊕ Merge - Combine new definitions into existing entry"),
+            ("force", "⊞ Force - Save as variant (e.g., 'word - alt')"),
+            ("skip", "✗ Skip - Keep existing, discard new"),
         ]
 
         try:
             choice = self.ui.interactive_menu(
-                "Duplicate Resolution",
+                "How should I handle this duplicate?",
                 options,
-                "Use ↑ and ↓ to choose how to handle the duplicate. Esc cancels.",
+                "Merge = 1 entry with all definitions • Force = 2 separate entries • Esc to cancel",
             )
         except KeyboardInterrupt:
             self.ui.warning("Duplicate handling cancelled. Returning to main menu.")
@@ -987,12 +1026,18 @@ class FrenchVocabBuilder:
         elif choice == "merge":
             # Defer merging until after AI response is parsed
             self.duplicate_resolution = {"mode": "merge", "existing": actual_existing_word}
-            self.ui.info("Will merge new AI content into the existing entry after parsing.")
+            self.ui.info(
+                f"✓ Will merge new definitions into existing '{actual_existing_word}'\n"
+                f"  Result: 1 combined entry with all definitions"
+            )
             return True
         elif choice == "force":
             # Proceed to add; may need to create a unique variant label later
             self.duplicate_resolution = {"mode": "force", "existing": actual_existing_word}
-            self.ui.info("Will force-add as a new variant entry.")
+            self.ui.info(
+                f"✓ Will create variant entry: '{word} - alt'\n"
+                f"  Result: 2 separate entries (original + variant)"
+            )
             return True
 
     def display_existing_entry(self, word: str):
@@ -1084,7 +1129,7 @@ class FrenchVocabBuilder:
             return self.ui.interactive_menu(
                 "Main Menu",
                 options,
-                "Use ↑ and ↓ to navigate. Press Enter to choose. Esc exits.",
+                "[↑↓] Navigate • [Enter] Select • [Esc] Exit",
             )
         except KeyboardInterrupt:
             return "exit"
@@ -1109,18 +1154,24 @@ class FrenchVocabBuilder:
         )
         self.ui.panel(status_text, title="Translation Status", border_style="dim dark_orange", expand=False)
 
+        options = []
+        if self.auto_translator:
+            options.append(("auto", f"Intelligent ({target_to_cfg.source_label} ↔ {eng_to_cfg.source_label})"))
+
         # Clean menu items focused on the action choice
-        options = [
-            ("target_to_eng", f"{target_to_cfg.source_label} → {target_to_cfg.target_label}"),
-            ("eng_to_target", f"{eng_to_cfg.source_label} → {eng_to_cfg.target_label}"),
-            ("back", "Back to main menu"),
-        ]
+        options.extend(
+            [
+                ("target_to_eng", f"{target_to_cfg.source_label} → {target_to_cfg.target_label}"),
+                ("eng_to_target", f"{eng_to_cfg.source_label} → {eng_to_cfg.target_label}"),
+                ("back", "Back to main menu"),
+            ]
+        )
 
         try:
             return self.ui.interactive_menu(
                 "Translation Direction",
                 options,
-                "Choose which direction to translate. Esc returns.",
+                "[↑↓] Navigate • [Enter] Select • [Esc] Go back",
                 show_keys=False,
             )
         except KeyboardInterrupt:
@@ -1154,7 +1205,7 @@ class FrenchVocabBuilder:
             return self.ui.interactive_menu(
                 "Anki Tools",
                 options,
-                "Use ↑ and ↓ to navigate. Press Enter to select. Esc returns.",
+                "[↑↓] Navigate • [Enter] Select • [Esc] Go back",
             )
         except KeyboardInterrupt:
             return "back"
@@ -1193,7 +1244,7 @@ class FrenchVocabBuilder:
 
         first_prompt = (
             f"\nEnter {language_name} text (word/phrase/sentence){limit_hint}. "
-            "Submit an empty line to finish or 'q' to cancel: "
+            "Submit an empty line to finish, or 'q'/Esc to cancel: "
         )
         continuation_prompt = "Add another line (Enter on empty line finishes): "
         while True:
@@ -1207,10 +1258,18 @@ class FrenchVocabBuilder:
             except EOFError:
                 break
 
+            if line and line[0] == "\x1b":
+                self.ui.warning("Input cancelled via Esc. Returning to main menu.")
+                return ""
+
             # Allow cancel on the very first line
             if first and line.strip().lower() == 'q':
                 self.ui.warning("Input cancelled. Returning to main menu.")
                 return ""
+
+            if first and not line.strip():
+                self.ui.warning("Please enter at least one line (or 'q' to cancel).")
+                continue
 
             # Empty line after at least one line submits the entry
             if not line.strip() and not first:
@@ -1448,9 +1507,15 @@ class FrenchVocabBuilder:
             
             self.ui.success(f"Added/Updated entry for '{new_word}' in {self.latex_file}")
         except FileNotFoundError:
-            self.ui.error(f"File not found - {self.latex_file}")
+            self.ui.error(
+                f"Cannot insert entry: File not found\n{self.latex_file}",
+                with_panel=True
+            )
         except IOError as e:
-            self.ui.error(f"Error reading from or writing to file: {e}")
+            self.ui.error(
+                f"Cannot insert entry: File I/O error\n{e}",
+                with_panel=True
+            )
 
     def alphabetize_entries(self) -> None:
         """Alphabetizes the entries in the LaTeX file.
@@ -1536,9 +1601,15 @@ class FrenchVocabBuilder:
 
             self.ui.success("Entries alphabetized successfully.")
         except FileNotFoundError:
-            self.ui.error(f"File not found - {self.latex_file}")
+            self.ui.error(
+                f"Cannot alphabetize: File not found\n{self.latex_file}",
+                with_panel=True
+            )
         except IOError as e:
-            self.ui.error(f"Error reading from or writing to file: {e}")
+            self.ui.error(
+                f"Cannot alphabetize: File I/O error\n{e}",
+                with_panel=True
+            )
 
     def exit_screen(self):
         language_name = self.language_config.display_name
@@ -1647,7 +1718,7 @@ class FrenchVocabBuilder:
             choice = self.ui.interactive_menu(
                 "Settings Actions",
                 options,
-                "Select an action or go back to the main menu.",
+                "[↑↓] Navigate • [Enter] Select • [Esc] Go back",
                 show_keys=False,
             )
         except KeyboardInterrupt:
@@ -1762,8 +1833,53 @@ class FrenchVocabBuilder:
         # --- Query AI ---
         ai_response = self.query_ai(original_word)
         if not ai_response:
-            self.ui.error(f"Failed to get information for '{original_word}'. Skipping this entry.")
-            return
+            # Offer recovery options instead of just failing
+            self.ui.error(
+                f"Cannot add vocabulary entry: Failed to get AI response for '{original_word}'",
+                with_panel=True
+            )
+
+            recovery_options = [
+                ("retry", "↺ Retry now"),
+                ("retry_long", "⏱ Retry with longer timeout (15s)"),
+                ("settings", "🔧 Open Settings"),
+                ("skip", "← Return to main menu"),
+            ]
+
+            try:
+                recovery_choice = self.ui.interactive_menu(
+                    "What would you like to do?",
+                    recovery_options,
+                    "Press Esc to return to main menu",
+                )
+            except KeyboardInterrupt:
+                return
+
+            if recovery_choice == "retry":
+                # Retry with same timeout
+                ai_response = self.query_ai(original_word)
+                if not ai_response:
+                    self.ui.warning("Retry failed. Returning to main menu.")
+                    return
+            elif recovery_choice == "retry_long":
+                # TODO: Implement configurable timeout
+                self.ui.info("Retrying with extended timeout...")
+                ai_response = self.query_ai(original_word)
+                if not ai_response:
+                    self.ui.warning("Retry failed. Returning to main menu.")
+                    return
+            elif recovery_choice == "settings":
+                self.show_settings_screen()
+                # After settings, offer to retry
+                if self.ui.confirm("Try querying AI again?", default=True):
+                    ai_response = self.query_ai(original_word)
+                    if not ai_response:
+                        self.ui.warning("Query failed. Returning to main menu.")
+                        return
+                else:
+                    return
+            else:  # skip
+                return
 
         # --- Spelling Check and Final Word Determination ---
         if detected_type == 'sentence':
@@ -1792,7 +1908,7 @@ class FrenchVocabBuilder:
         # --- Parse AI Response ---
         word_type, definitions, examples = self.parse_ai_response(ai_response)
         if not word_type or not definitions or not examples:
-             self.ui.error("Failed to parse essential information from AI response. Aborting.")
+             self.ui.error("Cannot add vocabulary entry: Failed to parse essential information from AI response.")
              return
         if isinstance(word_type, list):
             primary_word_type = word_type[0] if word_type else ""
@@ -1855,7 +1971,7 @@ class FrenchVocabBuilder:
 
         # --- Validate LaTeX Entry ---
         if not self.is_valid_latex_entry(latex_entry):
-            self.ui.error("Generated LaTeX entry is empty or invalid. Aborting process.")
+            self.ui.error("Cannot add vocabulary entry: Generated LaTeX is empty or invalid.")
             return
 
         # --- Display LaTeX Entry ---
@@ -2142,7 +2258,7 @@ class FrenchVocabBuilder:
             export_mode = self.ui.interactive_menu(
                 "Anki Export Mode",
                 mode_options,
-                "Choose how you want to export your vocabulary.",
+                "[↑↓] Navigate • [Enter] Select • [Esc] Cancel",
             )
         except KeyboardInterrupt:
             self.ui.warning("Anki export cancelled.")
@@ -2296,7 +2412,7 @@ class FrenchVocabBuilder:
                 choice = self.ui.interactive_menu(
                     "Anki Deck Destination",
                     options,
-                    "Select where the exported cards should be written.",
+                    "[↑↓] Navigate • [Enter] Select • [Esc] Cancel",
                 )
             except KeyboardInterrupt:
                 raise
