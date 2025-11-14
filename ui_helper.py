@@ -1,3 +1,4 @@
+import os
 import sys
 
 from rich.console import Console
@@ -26,6 +27,7 @@ except ImportError:  # pragma: no cover - optional dependency
     KeyBindings = None  # type: ignore[assignment]
 
 _ESCAPE_SENTINEL = "\x1b"
+_ESC_SEQUENCE_TIMEOUT = float(os.environ.get("FRENCHVOCAB_ESC_SEQUENCE_TIMEOUT", "0.03") or "0.03")
 
 def _configure_timeout(app) -> None:
     """Force prompt_toolkit to dispatch ESC immediately."""
@@ -35,7 +37,7 @@ def _configure_timeout(app) -> None:
         pass
     try:
         if hasattr(app, "ttimeoutlen"):
-            app.ttimeoutlen = 0  # type: ignore[attr-defined]
+            app.ttimeoutlen = max(0.0, _ESC_SEQUENCE_TIMEOUT)  # type: ignore[attr-defined]
     except Exception:  # pragma: no cover
         pass
 

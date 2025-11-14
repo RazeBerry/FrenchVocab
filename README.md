@@ -100,6 +100,8 @@ tail -f ~/.frenchvocab/esc_latency.log
 
 Tip: you can also pass `--esc-debug` (and `--esc-debug-log=/tmp/esc_latency.log`) when launching `FrenchVocab.py` to set these environment variables automatically for that session.
 
+If you need to fine-tune how long the CLI waits for multi-byte escape sequences (arrow keys, etc.), set `FRENCHVOCAB_ESC_SEQUENCE_TIMEOUT` (default `0.03` seconds). Smaller values make bare `Esc` faster but can interfere with arrow keys if set to zero.
+
 Unset the environment variable to disable tracing once you have collected enough data.
 
 ---

@@ -1,11 +1,28 @@
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from time import perf_counter
+import logging
 import os
 from typing import Any, Dict, Optional
 # Fix the imports for Google Generative AI
 from google import genai
 from google.genai import types
+
+
+class _SuppressGenAIWarnings(logging.Filter):
+    """Filter noisy SDK warnings about non-text parts."""
+
+    MESSAGE_SNIPPETS = (
+        "non-text parts in the response",
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:  # type: ignore[override]
+        msg = record.getMessage()
+        return not any(snippet in msg for snippet in self.MESSAGE_SNIPPETS)
+
+
+for _logger_name in ("google.genai", "google_genai.types"):
+    logging.getLogger(_logger_name).addFilter(_SuppressGenAIWarnings())
 
 
 class LLMClient(ABC):
