@@ -73,6 +73,17 @@ class TestSentenceFlow(unittest.TestCase):
             __builtins__['input'] = orig_input
         self.assertEqual(out, "Première ligne\nDeuxième ligne")
 
+    def test_get_word_input_escape_cancels(self):
+        b = self._builder(client=_FakeLLMClient())
+        import core.vocab as vocab_module
+        original_read_line = vocab_module.read_line
+        try:
+            vocab_module.read_line = lambda prompt="": "\x1b"
+            result = b.get_word_input()
+        finally:
+            vocab_module.read_line = original_read_line
+        self.assertEqual(result, "")
+
     def test_check_spelling_records_suggestion(self):
         b = self._builder(client=_FakeLLMClient())
         ai_resp = (

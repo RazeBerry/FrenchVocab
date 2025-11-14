@@ -80,6 +80,30 @@ Invalid values are ignored with an on-screen warning, after which the next sourc
 
 ---
 
+## Diagnostics
+
+### ESC Latency Trace
+If you suspect the ESC key is laggy inside the Rich/Prompt‑Toolkit prompts, enable the ad-hoc tracer:
+
+```bash
+export FRENCHVOCAB_ESC_DEBUG=1
+# optional: choose a custom path
+# export FRENCHVOCAB_ESC_DEBUG_LOG=/tmp/esc_latency.log
+python FrenchVocab.py --language fr
+```
+
+While the flag is set the CLI writes lifecycle events (prompt start, escape handler invocation, prompt exit) to `~/.frenchvocab/esc_latency.log` by default. Tail the file to inspect raw timings:
+
+```bash
+tail -f ~/.frenchvocab/esc_latency.log
+```
+
+Tip: you can also pass `--esc-debug` (and `--esc-debug-log=/tmp/esc_latency.log`) when launching `FrenchVocab.py` to set these environment variables automatically for that session.
+
+Unset the environment variable to disable tracing once you have collected enough data.
+
+---
+
 ## Everyday CLI Actions
 - `python FrenchVocab.py --language de` → add new vocab entries (default menu option 1).
 - Translator modes (options 2 and 3) capture multi-line input and preview results before saving.

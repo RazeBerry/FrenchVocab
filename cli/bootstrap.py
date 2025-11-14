@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List, Tuple
+from typing import Iterable, List, Tuple, TYPE_CHECKING
 
 from rich.console import Console
 
-from core import FrenchVocabBuilder
 from languages import available_language_codes, get_language_config
+
+if TYPE_CHECKING:  # pragma: no cover - avoid circular imports
+    from core import FrenchVocabBuilder
 
 from .navigation import interactive_select
 
@@ -20,6 +22,8 @@ def build_app(
     verbose: bool = False,
 ) -> FrenchVocabBuilder:
     """Instantiate the vocabulary builder for a specific language."""
+    from core import FrenchVocabBuilder  # Local import to avoid circular dependency
+
     return FrenchVocabBuilder(
         latex_file=latex_file,
         provider=provider,
@@ -28,7 +32,13 @@ def build_app(
     )
 
 
-def run_cli(argv: Iterable[str] | None = None) -> None:  # noqa: ARG001 - legacy signature
+def run_cli(
+    argv: Iterable[str] | None = None,  # noqa: ARG001 - legacy signature
+    *,
+    latex_file: str | None = None,
+    provider: str | None = None,
+    verbose: bool = False,
+) -> None:
     """Launch the app after prompting for the desired language."""
     console = Console()
 
@@ -38,7 +48,12 @@ def run_cli(argv: Iterable[str] | None = None) -> None:  # noqa: ARG001 - legacy
         console.print("\n[yellow]Launch cancelled by user.[/yellow]")
         return
 
-    app = build_app(language_code)
+    app = build_app(
+        language_code,
+        latex_file=latex_file,
+        provider=provider,
+        verbose=verbose,
+    )
     app.run()
 
 

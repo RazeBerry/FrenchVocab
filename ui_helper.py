@@ -2,27 +2,70 @@ import sys
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.padding import Padding
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
 from rich import box
 from typing import List, Dict, Any, Optional, Tuple, Sequence
 from enum import Enum
 
+try:
+    from diagnostics import esc_latency
+except ImportError:  # pragma: no cover - diagnostics are optional
+    esc_latency = None  # type: ignore[assignment]
+
 try:  # Optional enhanced CLI input (shared across the app)
     from prompt_toolkit import PromptSession
     from prompt_toolkit.history import InMemoryHistory
     from prompt_toolkit.patch_stdout import patch_stdout
+    from prompt_toolkit.key_binding import KeyBindings
 except ImportError:  # pragma: no cover - optional dependency
     PromptSession = None  # type: ignore[assignment]
     InMemoryHistory = None  # type: ignore[assignment]
     patch_stdout = None  # type: ignore[assignment]
+    KeyBindings = None  # type: ignore[assignment]
+
+_ESCAPE_SENTINEL = "\x1b"
+
+def _configure_timeout(app) -> None:
+    """Force prompt_toolkit to dispatch ESC immediately."""
+    try:
+        app.timeoutlen = 0  # type: ignore[attr-defined]
+    except Exception:  # pragma: no cover - defensive for prompt_toolkit internals
+        pass
+    try:
+        if hasattr(app, "ttimeoutlen"):
+            app.ttimeoutlen = 0  # type: ignore[attr-defined]
+    except Exception:  # pragma: no cover
+        pass
+
 
 if PromptSession and InMemoryHistory:
     _PROMPT_HISTORY = InMemoryHistory()
-    _PROMPT_SESSION = PromptSession(history=_PROMPT_HISTORY)
+    _KEY_BINDINGS = KeyBindings() if KeyBindings else None
+    _ESC_TRACER = esc_latency.tracer() if esc_latency else None
+
+    if _KEY_BINDINGS is not None:
+        @_KEY_BINDINGS.add("escape", eager=True)
+        def _handle_escape(event) -> None:
+            """Allow bare ESC presses to exit the prompt immediately."""
+            if _ESC_TRACER:
+                _ESC_TRACER.log_escape_handler("key_binding")
+            event.app.exit(result=_ESCAPE_SENTINEL)
+
+    _PROMPT_SESSION = PromptSession(
+        history=_PROMPT_HISTORY,
+        key_bindings=_KEY_BINDINGS,
+    )
+    try:
+        _configure_timeout(_PROMPT_SESSION.app)
+    except Exception:  # pragma: no cover - defensive for prompt_toolkit internals
+        pass
 else:  # pragma: no cover - executed when prompt_toolkit is unavailable
     _PROMPT_HISTORY = None  # type: ignore[assignment]
     _PROMPT_SESSION = None  # type: ignore[assignment]
+    _KEY_BINDINGS = None  # type: ignore[assignment]
+    _ESC_TRACER = esc_latency.tracer() if esc_latency else None
 
 
 def read_line(prompt: str = "", *, console: Optional[Console] = None) -> str:
@@ -34,16 +77,32 @@ def read_line(prompt: str = "", *, console: Optional[Console] = None) -> str:
     )
     if use_prompt_toolkit:
         try:
+            if _ESC_TRACER:
+                _ESC_TRACER.mark_prompt_start(prompt)
+            session = _PROMPT_SESSION
+            try:
+                _configure_timeout(session.app)
+            except Exception:  # pragma: no cover - defensive for prompt_toolkit internals
+                pass
             with patch_stdout(raw=True):
-                return _PROMPT_SESSION.prompt(prompt)
+                result = session.prompt(prompt)
+            if _ESC_TRACER:
+                _ESC_TRACER.mark_prompt_end(result)
+            return result
         except EOFError:
+            if _ESC_TRACER:
+                _ESC_TRACER.mark_prompt_end("EOFError")
             pass
 
     if console is not None:
         console_input = getattr(console, "input", None)
         if callable(console_input):
+            if _ESC_TRACER:
+                _ESC_TRACER.log_fallback("console.input")
             return console_input(prompt)
 
+    if _ESC_TRACER:
+        _ESC_TRACER.log_fallback("builtins.input")
     return input(prompt)
 
 class MessageType(Enum):
@@ -65,15 +124,27 @@ class UIHelper:
     def __init__(self, console: Optional[Console] = None):
         self.console = console or Console()
         self._progress_stack = []  # Reserved for future progress integrations
+        self._message_indent = 2  # Consistent gutter for inline status text
     
     # ========== Basic Message Methods ==========
     
-    def message(self, text: str, msg_type: MessageType, *, accent: str | None = None) -> None:
+    def message(
+        self,
+        text: str,
+        msg_type: MessageType,
+        *,
+        accent: str | None = None,
+        indent: bool = True,
+    ) -> None:
         """Display a formatted message based on type"""
         style, _, _ = msg_type.value
+        rendered = text
         if accent:
-            text = f"[{accent}]{text}[/{accent}]"
-        self.console.print(f"[{style}]{text}[/{style}]")
+            rendered = f"[{accent}]{rendered}[/{accent}]"
+        rendered = f"[{style}]{rendered}[/{style}]"
+        if indent and self._message_indent:
+            rendered = Padding(rendered, (0, 0, 0, self._message_indent))
+        self.console.print(rendered)
 
     def error(self, text: str, with_panel: bool = False, *, accent: str | None = None) -> None:
         """Display error message with symbol, optionally in a panel.
@@ -147,9 +218,22 @@ class UIHelper:
     
     # ========== Table Methods ==========
     
-    def create_table(self, title: str = "", columns: List[Dict[str, str]] = None) -> Table:
-        """Create a table with specified columns"""
-        table = Table(title=title)
+    def create_table(
+        self,
+        title: str = "",
+        columns: List[Dict[str, str]] = None,
+        *,
+        expand: bool = False,
+        box_style=None,
+        show_header: bool = True,
+    ) -> Table:
+        """Create a table with specified columns and shared defaults."""
+        table = Table(
+            title=title,
+            expand=expand,
+            box=box_style,
+            show_header=show_header,
+        )
         if columns:
             for col in columns:
                 table.add_column(
@@ -251,29 +335,43 @@ class UIHelper:
     
     # ========== Specialized Display Methods ==========
     
-    def display_word_entry(self, word: str, word_type: str, 
-                          definitions: List[str], examples: List[Tuple[str, str]]) -> None:
-        """Display a vocabulary entry in a formatted table"""
+    def display_word_entry(
+        self,
+        word: str,
+        word_type: str,
+        definitions: List[str],
+        examples: List[Tuple[str, str]],
+    ) -> None:
+        """Display a vocabulary entry using the shared full-width section layout."""
         table = self.create_table(
-            title=f"Information for [bold green]{word.capitalize()}[/bold green]",
             columns=[
                 {"name": "Category", "style": "cyan", "no_wrap": True},
-                {"name": "Information", "style": "magenta"}
-            ]
+                {"name": "Information", "style": "magenta"},
+            ],
+            expand=True,
+            box_style=None,
         )
-        
+
         table.add_row("Word Type", word_type)
-        
+
         def_str = "\n".join([f"• {d}" for d in definitions])
         table.add_row("Definitions", def_str)
-        
+
         ex_str = "\n".join([
             f"• {f}\n  {e if e.startswith('(') and e.endswith(')') else f'({e})'}" 
             for f, e in examples
         ])
         table.add_row("Examples", ex_str)
-        
-        self.display_table(table)
+
+        panel = Panel(
+            table,
+            title=f"[bold #E67E50]Information for {word.capitalize()}[/]",
+            border_style="dark_orange",
+            box=box.ROUNDED,
+            expand=True,
+            padding=(0, 1),
+        )
+        self.console.print(panel)
     
     def display_latex_entry(self, latex_entry: str) -> None:
         """Display a LaTeX entry in a panel"""
