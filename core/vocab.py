@@ -1522,7 +1522,8 @@ class FrenchVocabBuilder:
             except EOFError:
                 break
 
-            if line and line[0] == "\x1b":
+            # Treat any ESC sequence as an immediate cancel (even mid multiline).
+            if line and "\x1b" in line:
                 self.ui.warning("Input cancelled via Esc. Returning to main menu.")
                 return ""
 
