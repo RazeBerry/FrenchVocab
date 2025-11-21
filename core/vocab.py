@@ -1784,7 +1784,7 @@ class FrenchVocabBuilder:
                 with_panel=True
             )
 
-    def alphabetize_entries(self) -> None:
+    def alphabetize_entries(self, *, silent: bool = False) -> None:
         """Alphabetizes the entries in the LaTeX file.
 
         This method reads the LaTeX file, identifies the section containing 
@@ -1839,7 +1839,8 @@ class FrenchVocabBuilder:
             entry_matches = list(re.finditer(entry_pattern, entries_section, re.VERBOSE | re.DOTALL))
             
             if not entry_matches:
-                self.ui.warning("No entries found to alphabetize.")
+                if not silent:
+                    self.ui.warning("No entries found to alphabetize.")
                 return
             
             # Extract full entry text and word for sorting
@@ -1866,7 +1867,8 @@ class FrenchVocabBuilder:
             with self.latex_file.open("w", encoding="utf-8") as file:
                 file.write(sorted_content)
 
-            self.ui.success("Entries alphabetized successfully.")
+            if not silent:
+                self.ui.success("Entries alphabetized successfully.")
         except FileNotFoundError:
             self.ui.error(
                 f"Cannot alphabetize: File not found\n{self.latex_file}",
@@ -2292,7 +2294,7 @@ class FrenchVocabBuilder:
         )
 
         # --- Alphabetize ---
-        self.alphabetize_entries()
+        self.alphabetize_entries(silent=True)
 
         self.duplicate_resolution = None
 

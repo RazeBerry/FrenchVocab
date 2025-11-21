@@ -266,7 +266,7 @@ class TestSentenceFlow(unittest.TestCase):
 
         added_words = []
         b.add_word_to_entries = lambda word, *_args: added_words.append(word)
-        b.alphabetize_entries = lambda: None
+        b.alphabetize_entries = lambda *args, **kwargs: None
         b.ui.interactive_menu = lambda *args, **kwargs: "menu"  # Return to menu after save
 
         b.handle_new_word_entry()
