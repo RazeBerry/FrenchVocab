@@ -20,6 +20,7 @@ def build_app(
     latex_file: str | None = None,
     provider: str | None = None,
     verbose: bool = False,
+    eager_provider: bool = False,
 ) -> FrenchVocabBuilder:
     """Instantiate the vocabulary builder for a specific language."""
     from core import FrenchVocabBuilder  # Local import to avoid circular dependency
@@ -29,6 +30,7 @@ def build_app(
         provider=provider,
         verbose=verbose,
         language=language_code,
+        eager_provider=eager_provider,
     )
 
 
@@ -38,6 +40,7 @@ def run_cli(
     latex_file: str | None = None,
     provider: str | None = None,
     verbose: bool = False,
+    eager_provider: bool = False,
 ) -> None:
     """Launch the app after prompting for the desired language."""
     console = Console()
@@ -53,6 +56,7 @@ def run_cli(
         latex_file=latex_file,
         provider=provider,
         verbose=verbose,
+        eager_provider=eager_provider,
     )
     app.run()
 

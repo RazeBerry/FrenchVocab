@@ -84,6 +84,9 @@ class ProviderManager:
     def __init__(self, ui: UIHelper, project_root: Path):
         self.ui = ui
         self.project_root = Path(project_root)
+        # Allow skipping keyring probing for faster startup in CI/containers.
+        skip = os.environ.get("FRENCHVOCAB_SKIP_KEYRING", "")
+        self._keyring_enabled = str(skip).strip().lower() not in {"1", "true", "yes", "y"}
 
     # Public API ---------------------------------------------------------
     def get_metadata(self, provider: Optional[str]) -> ProviderMetadata:
@@ -104,6 +107,18 @@ class ProviderManager:
         os.environ[metadata.env_var] = api_key
         origin = source or "configuration"
         self.ui.success(f"{metadata.display_name} API key ready ({origin}).")
+        return ProviderResolution(metadata=metadata, api_key=api_key, source=source)
+
+    def resolve_provider_silently(self, metadata: ProviderMetadata) -> Optional[ProviderResolution]:
+        """Attempt non-interactive credential resolution (env/keyring only).
+
+        Returns None when credentials are missing or invalid, so callers can
+        decide whether to fall back to interactive flows.
+        """
+        self._load_env_file()
+        api_key, source = self._resolve_api_key(metadata)
+        if not api_key:
+            return None
         return ProviderResolution(metadata=metadata, api_key=api_key, source=source)
 
     def change_provider(self, current: ProviderMetadata) -> Optional[ProviderResolution]:
@@ -180,10 +195,11 @@ class ProviderManager:
             )
 
         stored_key = None
-        try:
-            stored_key = get_password("french_vocab_builder", metadata.keyring_name)
-        except KeyringError as exc:
-            self.ui.error(f"Error accessing system keyring: {exc}")
+        if self._keyring_enabled:
+            try:
+                stored_key = get_password("french_vocab_builder", metadata.keyring_name)
+            except KeyringError as exc:
+                self.ui.error(f"Error accessing system keyring: {exc}")
 
         if stored_key:
             result = self._validate_api_key(metadata, stored_key, perform_connection_test=False)
@@ -453,6 +469,15 @@ class ProviderManager:
         return ValidationFeedback(True, "Key validated successfully!")
 
     def _store_api_key_to_keyring(self, metadata: ProviderMetadata, api_key: str) -> str:
+        if not self._keyring_enabled:
+            destination = self._write_env_file(metadata, api_key)
+            if destination:
+                return destination
+            os.environ[metadata.env_var] = api_key
+            self.ui.warning(
+                "Stored key in current session only. You'll need to set it up again next time."
+            )
+            return "session environment"
         try:
             set_password("french_vocab_builder", metadata.keyring_name, api_key)
             self.ui.success("✓ API key securely saved to system keychain.")
@@ -489,7 +514,7 @@ class ProviderManager:
         return choice
 
     def _store_api_key(self, metadata: ProviderMetadata, api_key: str) -> str:
-        keyring_available = True
+        keyring_available = bool(self._keyring_enabled)
         while True:
             choice = self._choose_storage_destination(metadata, keyring_available=keyring_available)
             if choice == "keyring":

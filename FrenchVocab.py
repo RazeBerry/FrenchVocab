@@ -69,6 +69,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--esc-debug-log",
         help="Custom log file for ESC latency tracing (defaults to ~/.frenchvocab/esc_latency.log).",
     )
+    parser.add_argument(
+        "--eager-llm",
+        action="store_true",
+        help="Initialize the AI provider at startup (default is lazy, first-use setup).",
+    )
     return parser.parse_args(argv)
 
 
@@ -88,6 +93,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "latex_file": args.latex_file,
         "provider": args.provider,
         "verbose": args.verbose,
+        "eager_provider": args.eager_llm,
     }
 
     if args.language:
@@ -100,4 +106,3 @@ def main(argv: Sequence[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -4,9 +4,6 @@ from time import perf_counter
 import logging
 import os
 from typing import Any, Dict, Optional
-# Fix the imports for Google Generative AI
-from google import genai
-from google.genai import types
 
 
 class _SuppressGenAIWarnings(logging.Filter):
@@ -46,6 +43,12 @@ class GeminiClient(LLMClient):
         key = api_key or os.getenv("GEMINI_API_KEY")
         if not key:
             raise RuntimeError("GEMINI_API_KEY is not set")
+
+        # Lazy import to avoid heavy SDK cost at process startup.
+        from google import genai
+        from google.genai import types
+
+        self._types = types
         self._client = genai.Client(api_key=key)
 
     def stream(self, prompt: str):
@@ -55,6 +58,7 @@ class GeminiClient(LLMClient):
         Returns a dictionary with performance metrics upon generator completion.
         Example return: {'ttft': 0.5, 'tps': 50.0, 'tokens_out': 100, 'usage': {...}}
         """
+        types = self._types
         client = self._client
         model_name = self.MODEL_NAME
 
@@ -205,59 +209,54 @@ class GeminiClient(LLMClient):
                     break
         return summary
 
-# Optional Claude client implementation for backward compatibility
-# To restore Claude support, users can simply switch to this client
-try:
-    import anthropic
-    
-    class ClaudeClient(LLMClient):
-        MODEL_NAME = "claude-3-5-sonnet-20240620"
-        
-        def __init__(self, api_key: str | None = None):
-            key = api_key or os.getenv("ANTHROPIC_API_KEY")
-            if not key:
-                raise RuntimeError("ANTHROPIC_API_KEY is not set")
-            self._client = anthropic.Anthropic(api_key=key)
-            
-        def stream(self, prompt: str):
-            with self._client.messages.stream(
-                model=self.MODEL_NAME,
-                max_tokens=8192,
-                temperature=0.1,
-                messages=[
-                    {"role": "user", "content": [{"type": "text", "text": prompt}]}
-                ],
-                extra_headers={
-                    "anthropic-beta": "max-tokens-3-5-sonnet-2024-07-15"
-                },
-            ) as stream:
-                for text in stream.text_stream:
-                    yield text
+class ClaudeClient(LLMClient):
+    MODEL_NAME = "claude-3-5-sonnet-20240620"
 
-        def model_label(self) -> str:
-            return f"Anthropic Claude ({self.MODEL_NAME})"
-
-        def verify_credentials(self, timeout: float = 5.0) -> None:
-            def _probe() -> None:
-                self._client.models.list()
-
-            executor = ThreadPoolExecutor(max_workers=1)
-            future = executor.submit(_probe)
-            try:
-                future.result(timeout=timeout)
-            except FuturesTimeoutError as exc:
-                future.cancel()
-                raise TimeoutError("Claude validation timed out") from exc
-            finally:
-                executor.shutdown(wait=False, cancel_futures=True)
-except ImportError:
-    # If anthropic is not installed, provide a stub that raises an informative error
-    class ClaudeClient(LLMClient):
-        def __init__(self, *args, **kwargs):
+    def __init__(self, api_key: str | None = None):
+        try:
+            import anthropic
+        except ImportError as exc:  # pragma: no cover - optional dependency
             raise ImportError(
                 "The anthropic package is not installed. "
                 "To use Claude, install it with: pip install anthropic"
-            )
+            ) from exc
+
+        key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        if not key:
+            raise RuntimeError("ANTHROPIC_API_KEY is not set")
+        self._client = anthropic.Anthropic(api_key=key)
+
+    def stream(self, prompt: str):
+        with self._client.messages.stream(
+            model=self.MODEL_NAME,
+            max_tokens=8192,
+            temperature=0.1,
+            messages=[
+                {"role": "user", "content": [{"type": "text", "text": prompt}]}
+            ],
+            extra_headers={
+                "anthropic-beta": "max-tokens-3-5-sonnet-2024-07-15"
+            },
+        ) as stream:
+            for text in stream.text_stream:
+                yield text
+
+    def model_label(self) -> str:
+        return f"Anthropic Claude ({self.MODEL_NAME})"
+
+    def verify_credentials(self, timeout: float = 5.0) -> None:
+        def _probe() -> None:
+            self._client.models.list()
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(_probe)
+        try:
+            future.result(timeout=timeout)
+        except FuturesTimeoutError as exc:
+            future.cancel()
+            raise TimeoutError("Claude validation timed out") from exc
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
         
         def stream(self, prompt: str):
             yield ""
