@@ -2824,10 +2824,13 @@ class FrenchVocabBuilder:
             )
             while True:
                 selection = read_line("Show full definitions for #: ")
-                if not selection.strip():
+                choice = selection.strip()
+                if not choice:
                     break
-                if selection.strip().isdigit():
-                    entry_number = int(selection.strip())
+                if choice.lower() in {"q", "quit", "exit", "0"}:
+                    break
+                if choice.isdigit():
+                    entry_number = int(choice)
                     full_text = truncated_definitions.get(entry_number)
                     if full_text is None:
                         self.ui.warning("Please enter a valid entry number with truncated definitions.")
@@ -2839,7 +2842,7 @@ class FrenchVocabBuilder:
                         expand=True,
                     )
                 else:
-                    self.ui.warning("Please enter a number or press Enter to finish.")
+                    self.ui.warning("Please enter a number, 'q' to quit, or press Enter to finish.")
 
         search_query = self.ui.prompt(
             "Search vocabulary (press Enter to skip)",
