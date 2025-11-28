@@ -314,4 +314,112 @@ def _read_key_posix() -> str:
     return "escape"
 
 
-__all__ = ["interactive_select"]
+def interactive_confirm(
+    console: Console,
+    message: str,
+    *,
+    default: bool = True,
+    yes_label: str = "Yes",
+    no_label: str = "No",
+) -> bool:
+    """Present an interactive yes/no confirmation dialog.
+
+    Args:
+        console: Rich console to render the dialog.
+        message: The confirmation question to display.
+        default: Default selection (True=Yes, False=No).
+        yes_label: Label for the affirmative option.
+        no_label: Label for the negative option.
+
+    Returns:
+        True if Yes was selected, False if No was selected.
+    """
+    if not getattr(sys.stdin, "isatty", lambda: False)():
+        return _fallback_confirm(console, message, default=default)
+
+    selected = default  # True = Yes selected, False = No selected
+
+    console.show_cursor(False)
+    try:
+        with _raw_mode(sys.stdin):
+            renderable = _confirm_renderable(console, message, selected, yes_label, no_label)
+            with Live(renderable, console=console, refresh_per_second=24, transient=True) as live:
+                while True:
+                    key = _read_key()
+
+                    if key in {"left", "up"}:
+                        selected = True
+                    elif key in {"right", "down"}:
+                        selected = False
+                    elif key == "enter":
+                        return selected
+                    elif key == "escape":
+                        return default
+                    elif key in {"y", "Y"}:
+                        return True
+                    elif key in {"n", "N"}:
+                        return False
+                    elif key == "ctrl_c":
+                        raise KeyboardInterrupt
+
+                    live.update(_confirm_renderable(console, message, selected, yes_label, no_label))
+    finally:
+        console.show_cursor(True)
+
+
+def _confirm_renderable(
+    console: Console,
+    message: str,
+    selected: bool,
+    yes_label: str,
+    no_label: str,
+) -> Any:
+    """Render the confirmation dialog with horizontal Yes/No options."""
+    if selected:
+        yes_styled = f"[black on dark_orange] → {yes_label} [/]"
+        no_styled = f"   {no_label}  "
+    else:
+        yes_styled = f"   {yes_label}  "
+        no_styled = f"[black on dark_orange] → {no_label} [/]"
+
+    options_line = f"{yes_styled}    {no_styled}"
+    instructions = "[dim]← → select • Enter confirm[/dim]"
+
+    content = f"{message}\n\n{options_line}\n\n{instructions}"
+
+    max_width = max(40, min(console.size.width - 6, 80))
+    panel = Panel(
+        content,
+        border_style="dark_orange",
+        box=box.ROUNDED,
+        expand=False,
+        width=max_width,
+        padding=(1, 2),
+    )
+    return Align.center(panel, vertical="middle")
+
+
+def _fallback_confirm(
+    console: Console,
+    message: str,
+    *,
+    default: bool = True,
+) -> bool:
+    """Fallback confirmation for non-TTY environments using text input."""
+    yes_tokens = {"y", "yes", "ja", "j", "oui", "o", "1", "true"}
+    no_tokens = {"n", "no", "nein", "non", "0", "false"}
+    default_choice = "y" if default else "n"
+    suffix = "[Y/n]" if default else "[y/N]"
+
+    while True:
+        console_input = getattr(console, "input", None)
+        raw = console_input(f"{message} {suffix} ") if callable(console_input) else input(f"{message} {suffix} ")
+        normalized = raw.strip().casefold() or default_choice
+        if normalized in yes_tokens:
+            return True
+        if normalized in no_tokens:
+            return False
+        console.print("[bold #ff6b6b]✗ Please enter Y or N.[/bold #ff6b6b]")
+
+
+__all__ = ["interactive_select", "interactive_confirm"]

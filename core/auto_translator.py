@@ -113,9 +113,8 @@ class AutoTranslator:
     def _collect_multiline_input(self) -> Optional[str]:
         instructions = (
             "[#E67E50]Enter text to translate.[/#E67E50]\n"
-            "[dim]- Type or paste your text.\n"
-            "- Enter 'q' or press Esc on the first line to cancel.\n"
-            "- Press Enter on an empty line to finish.[/dim]"
+            "[dim]- Type or paste your text, then press Enter.\n"
+            "- Press Esc to cancel.[/dim]"
         )
         self.ui.panel(
             instructions,
@@ -124,41 +123,22 @@ class AutoTranslator:
             box_style=box.ROUNDED,
         )
 
-        lines: list[str] = []
-        while True:
-            prompt = "Text (or 'q' to cancel): " if not lines else "Add more (blank line to finish): "
-            try:
-                line = read_line(prompt)
-            except EOFError:
-                break
-
-            if line and line[0] == "\x1b":
-                self.ui.warning("Auto translation cancelled via Esc.")
-                return None
-
-            if not lines:
-                stripped = line.strip()
-                if stripped.lower() == "q":
-                    self.ui.warning("Translation cancelled.")
-                    return None
-                if not stripped:
-                    self.ui.warning("Please enter at least one line (or 'q' to cancel).")
-                    continue
-            else:
-                if line == "":
-                    break
-
-            lines.append(line.rstrip("\n"))
-            plural = "line" if len(lines) == 1 else "lines"
-            self.ui.info(f"Captured {len(lines)} {plural}. Blank line to finish.", accent="dim")
-
-        if not lines:
+        try:
+            line = read_line("Text (Esc to cancel): ")
+        except EOFError:
+            self.ui.warning("Translation cancelled.")
+            return None
+        except KeyboardInterrupt:
             self.ui.warning("Translation cancelled.")
             return None
 
-        text = "\n".join(lines).strip()
+        if line and "\x1b" in line:
+            self.ui.warning("Auto translation cancelled via Esc.")
+            return None
+
+        text = line.strip()
         if not text:
-            self.ui.error("Cannot continue: input cannot be empty.")
+            self.ui.warning("Translation cancelled.")
             return None
         return text
 

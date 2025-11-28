@@ -61,17 +61,16 @@ class TestSentenceFlow(unittest.TestCase):
         _ = b.query_ai("Ligne 1\nLigne 2")
         self.assertIn("Detected Input Type: sentence", fake.last_prompt or "")
 
-    def test_get_word_input_multiline(self):
+    def test_get_word_input_single_line(self):
         b = self._builder(client=_FakeLLMClient())
-        # Patch builtins.input to simulate multiline input followed by empty line
-        seq = iter(["Première ligne", "Deuxième ligne", ""])  # empty line to submit
+        # Patch builtins.input to simulate single line input - Enter submits immediately
         orig_input = __builtins__['input']
         try:
-            __builtins__['input'] = lambda prompt='': next(seq)
+            __builtins__['input'] = lambda prompt='': "bonjour"
             out = b.get_word_input()
         finally:
             __builtins__['input'] = orig_input
-        self.assertEqual(out, "Première ligne\nDeuxième ligne")
+        self.assertEqual(out, "bonjour")
 
     def test_get_word_input_escape_cancels(self):
         b = self._builder(client=_FakeLLMClient())
@@ -145,10 +144,13 @@ class TestSentenceFlow(unittest.TestCase):
         # Stub translator with a spy
         calls = {'n': 0}
         class _Spy:
+            entry_count = 0
             def translate_and_save(self, text, provided_translation=None):
                 calls['n'] += 1
                 return True
         b.fr_to_eng_translator = _Spy()
+        # Stub interactive_menu to return "menu" (go back to main menu)
+        b.ui.interactive_menu = lambda *args, **kwargs: "menu"
 
         # Make get_word_input return a sentence
         b.get_word_input = lambda: "Ceci est une phrase."

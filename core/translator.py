@@ -170,10 +170,9 @@ class TranslatorCLI:
     def _collect_multiline_input(self, language_label: str) -> Optional[str]:
         # Instructions panel: wrapped for contextual info
         instructions = (
-            f"[#E67E50]Enter {language_label} text to translate.[/#E67E50]\n"
-            "[dim]- Type or paste your text.\n"
-            "- Enter 'q' on the first line to cancel.\n"
-            "- Press Enter on an empty line to finish.[/dim]"
+            f"[#E67E50]Enter text to translate.[/#E67E50]\n"
+            "[dim]- Type or paste your text, then press Enter.\n"
+            "- Press Esc to cancel.[/dim]"
         )
         self.ui.panel(
             instructions,
@@ -182,43 +181,23 @@ class TranslatorCLI:
             box_style=box.ROUNDED,
         )
 
-        lines: list[str] = []
-
-        while True:
-            prompt = (
-                f"{language_label} text (or 'q' to cancel): "
-                if not lines
-                else "Add more text (press Enter to finish): "
-            )
-
-            try:
-                line = read_line(prompt)
-            except EOFError:
-                break
-
-            if not lines:
-                stripped = line.strip()
-                if stripped.lower() == "q":
-                    self.ui.warning("Translation cancelled.")
-                    return None
-                if not stripped:
-                    self.ui.warning("Please enter at least one line (or 'q' to cancel).")
-                    continue
-            else:
-                if line == "":
-                    break
-
-            lines.append(line.rstrip("\n"))
-            plural = "line" if len(lines) == 1 else "lines"
-            self.ui.info(f"Captured {len(lines)} {plural}. Blank line to finish.", accent="dim")
-
-        if not lines:
+        try:
+            line = read_line("Text (Esc to cancel): ")
+        except EOFError:
+            self.ui.warning("Translation cancelled.")
+            return None
+        except KeyboardInterrupt:
             self.ui.warning("Translation cancelled.")
             return None
 
-        text = "\n".join(lines).strip()
+        # Detect ESC sequence and cancel
+        if line and "\x1b" in line:
+            self.ui.warning("Translation cancelled via Esc.")
+            return None
+
+        text = line.strip()
         if not text:
-            self.ui.error("Cannot continue: input cannot be empty.")
+            self.ui.warning("Translation cancelled.")
             return None
         return text
 

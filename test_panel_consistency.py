@@ -29,9 +29,8 @@ def test_panel_consistency():
     console.print("\n[bold]2. Wrapped Instructions Panel (expand=False):[/]\n")
     instructions = (
         "[#E67E50]Enter German text to translate.[/#E67E50]\n"
-        "[dim]- Type or paste your text.\n"
-        "- Enter 'q' on the first line to cancel.\n"
-        "- Press Enter on an empty line to finish.[/dim]"
+        "[dim]- Type or paste your text, then press Enter.\n"
+        "- Press Esc to cancel.[/dim]"
     )
     console.print(Panel(instructions, border_style="dark_orange", box=box.ROUNDED, expand=False))
 

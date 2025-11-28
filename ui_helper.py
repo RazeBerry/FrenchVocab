@@ -439,21 +439,7 @@ class UIHelper:
         return response
 
     def confirm(self, message: str, *, default: bool = True) -> bool:
-        """Prompt user for a yes/no confirmation with shared input helper."""
-        yes_tokens = {"y", "yes", "ja", "j", "oui", "o", "1", "true"}
-        no_tokens = {"n", "no", "nein", "non", "0", "false"}
-        default_choice = "y" if default else "n"
-        suffix = "[Y/n]" if default else "[y/N]"
+        """Prompt user for a yes/no confirmation using visual selector."""
+        from cli.navigation import interactive_confirm
 
-        while True:
-            try:
-                response = read_line(f"{message} {suffix} ", console=self.console)
-            except (EOFError, OSError):
-                return Confirm.ask(message, default=default, console=self.console)
-
-            normalized = response.strip().casefold() or default_choice
-            if normalized in yes_tokens:
-                return True
-            if normalized in no_tokens:
-                return False
-            self.warning("Please enter Y or N.")
+        return interactive_confirm(self.console, message, default=default)

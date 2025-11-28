@@ -25,6 +25,9 @@ from typing import TYPE_CHECKING
 from .translator import TranslatorCLI
 from .auto_translator import AutoTranslator
 from .history_logger import TranslationLogger
+from .vocab_repository import VocabRepository
+from .llm_coordinator import LLMCoordinator
+from .anki_manager import AnkiExportManager
 from ui_helper import UIHelper, read_line
 from core.providers.manager import (
     ProviderManager,
@@ -45,6 +48,34 @@ class WordType(Enum):
     OTHER = auto()
 
 
+class _TestDoubleVocabRepoAdapter:
+    """Adapter to make test doubles work with AnkiExportManager.
+
+    Test doubles created via object.__new__() set word_entries directly on the
+    builder. This adapter wraps the builder to provide the VocabRepository
+    interface that AnkiExportManager expects.
+    """
+
+    def __init__(self, builder: "FrenchVocabBuilder"):
+        self._builder = builder
+
+    @property
+    def word_entries(self) -> Dict[str, Any]:
+        return getattr(self._builder, "word_entries", {})
+
+    def ensure_entries_loaded(self) -> None:
+        pass  # Test doubles set word_entries directly
+
+    def normalize_word(self, word: str) -> str:
+        # Simple normalization for test doubles
+        import unicodedata
+        normalized = unicodedata.normalize("NFD", word.lower())
+        return "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+
+    def get_all_latex_entries(self) -> Set[str]:
+        return set(self.word_entries.keys())
+
+
 class FrenchVocabBuilder:
     DEFAULT_LANGUAGE_CONFIG = get_language_config(None)
     DEFAULT_LANGUAGE_CODE = default_language_code()
@@ -54,28 +85,78 @@ class FrenchVocabBuilder:
     DEFINITION_PREVIEW_LIMIT = 60
 
     def __getattribute__(self, name):
-        # Lazy-load parsed LaTeX entries on first access to in-memory caches.
+        # Delegate word_entries and normalized_entries to _vocab_repo
         if name in {"word_entries", "normalized_entries"}:
             try:
-                loaded = object.__getattribute__(self, "_entries_loaded")
-                loading = object.__getattribute__(self, "_entries_loading")
-                ready_event = object.__getattribute__(self, "_entries_ready")
+                vocab_repo = object.__getattribute__(self, "_vocab_repo")
+                vocab_repo.ensure_entries_loaded()
+                return getattr(vocab_repo, name)
             except AttributeError:
-                loaded = True
-                loading = False
-                ready_event = None
-            if loading and ready_event:
-                ready_event.wait(timeout=1.0)
-            if not loaded:
-                object.__getattribute__(self, "_ensure_entries_loaded")()
-            try:
-                return object.__getattribute__(self, name)
-            except AttributeError:
-                # Defensive default for test doubles using object.__new__()
-                fallback = {}  # type: ignore[assignment]
-                object.__setattr__(self, name, fallback)
-                return fallback
+                # Fallback for test doubles using object.__new__()
+                # Try the old lazy-load path
+                try:
+                    loaded = object.__getattribute__(self, "_entries_loaded")
+                    loading = object.__getattribute__(self, "_entries_loading")
+                    ready_event = object.__getattribute__(self, "_entries_ready")
+                except AttributeError:
+                    loaded = True
+                    loading = False
+                    ready_event = None
+                if loading and ready_event:
+                    ready_event.wait(timeout=1.0)
+                if not loaded:
+                    object.__getattribute__(self, "_ensure_entries_loaded")()
+                try:
+                    return object.__getattribute__(self, name)
+                except AttributeError:
+                    fallback = {}  # type: ignore[assignment]
+                    object.__setattr__(self, name, fallback)
+                    return fallback
         return object.__getattribute__(self, name)
+
+    def _ensure_anki_manager(self) -> "AnkiExportManager":
+        """Return the AnkiExportManager, creating one for test doubles if needed.
+
+        Test doubles created via object.__new__() bypass __init__ and don't have
+        _anki. This method lazily creates a minimal AnkiExportManager using
+        attributes set directly on the test double.
+        """
+        if hasattr(self, "_anki"):
+            return self._anki
+
+        # Create AnkiExportManager for test double
+        from tempfile import gettempdir
+
+        # Get or create exported_words_file
+        exported_words_file = getattr(self, "_exported_words_file_fallback", None)
+        if exported_words_file is None:
+            exported_words_file = Path(gettempdir()) / "test_exported_words.json"
+
+        # Use default language config if not set
+        lang_config = getattr(self, "language_config", self.DEFAULT_LANGUAGE_CONFIG)
+
+        # Create adapter for test double's word_entries
+        vocab_adapter = _TestDoubleVocabRepoAdapter(self)
+
+        # Create minimal AnkiExportManager
+        project_root = getattr(self, "project_root", Path(gettempdir()))
+        anki_manager = AnkiExportManager(
+            ui=self.ui,
+            language_config=lang_config,
+            vocab_repo=vocab_adapter,  # type: ignore[arg-type]
+            exported_words_file=exported_words_file,
+            project_root=project_root,
+        )
+
+        # Sync any state already set on the test double
+        if hasattr(self, "_exported_words_fallback"):
+            anki_manager.exported_words = self._exported_words_fallback
+        if hasattr(self, "_exported_deck_version_fallback"):
+            anki_manager.exported_deck_version = self._exported_deck_version_fallback
+
+        # Cache for future calls
+        object.__setattr__(self, "_anki", anki_manager)
+        return anki_manager
 
     def __init__(
         self,
@@ -127,50 +208,46 @@ class FrenchVocabBuilder:
             self.eng_to_fr_latex_file = base_dir / self.language_config.eng_to_target_filename
             self.fr_to_eng_latex_file = base_dir / self.language_config.target_to_eng_filename
 
+        # Create vocab repository (handles LaTeX persistence)
+        # Note: We create a temporary one first to check/create the file
         if not self.latex_file.exists():
-            self.create_initial_tex_file()
+            # Create file before initializing repository
+            temp_repo = VocabRepository(
+                latex_file=self.latex_file,
+                entry_command=self.entry_command,
+                language_config=self.language_config,
+                ui=self.ui,
+                vocab_template=self.vocab_template,
+            )
+            temp_repo.create_initial_tex_file()
 
-        # Repository for LaTeX entries (balanced-brace parser)
-        self.repo = LatexRepository(self.latex_file, entry_command=self.entry_command)
+        # Initialize the main vocab repository
+        self._vocab_repo = VocabRepository(
+            latex_file=self.latex_file,
+            entry_command=self.entry_command,
+            language_config=self.language_config,
+            ui=self.ui,
+            vocab_template=self.vocab_template,
+        )
+
+        # Backward compatibility: expose repo directly
+        self.repo = self._vocab_repo.repo
 
         # Allow longer phrases before triggering the length check
         self.max_word_length = 1000  # default max characters (overridable)
         self.max_words: Optional[int] = None  # unlimited by default; overridable
-        self._entry_count_snapshot: Optional[tuple[float, int, int]] = None  # (mtime, size, count)
         self.allow_sentence_punctuation: bool = True  # allow punctuation by default
         self.route_sentences: bool = True  # default: route sentences to Fr->En translator
         self.sentence_examples_in_vocab: bool = False  # default: omit examples for sentences
-        self.word_entries: Dict[str, Dict] = {}
-        self.normalized_entries: Dict[str, str] = {}
-        self._entries_lock = threading.Lock()
         self.config_file = "vocab_builder_config.json"
         self._config_data: Dict[str, Any] = {}
         self.history_logger: Optional[TranslationLogger] = None
-        self._entries_loaded: bool = False
-        self._entries_loading: bool = False
-        self._entries_ready = threading.Event()
         self._warmup_threads: List[threading.Thread] = []
         self._last_warmup_error: Optional[str] = None
-        
-        # Initialize the LLM client (allow injection)
-        self.client = client
-        self.api_available = self.client is not None
-        self.api_error_reason: Optional[str] = None
-        self.session_usage: Dict[str, int] = {
-            "prompt_tokens": 0,
-            "output_tokens": 0,
-            "total_tokens": 0,
-            "thoughts_tokens": 0,
-            "tool_tokens": 0,
-            "cached_tokens": 0,
-        }
-        self.session_requests: int = 0
         
         # Apply optional runtime settings (env/config overrides)
         self._load_input_limits()
         self.history_logger = self._create_history_logger()
-        self._llm_thread = None
-        self._llm_init_error: Optional[Exception] = None
 
         # Initialize translator attribute
         self.eng_to_fr_translator: Optional[TranslatorCLI] = None
@@ -183,33 +260,35 @@ class FrenchVocabBuilder:
 
         # Determine provider early and set verbosity before key bootstrapping
         requested_provider = provider or ProviderFactory.default_provider()
-        self.provider_metadata: ProviderMetadata = self.provider_manager.get_metadata(requested_provider)
-        self.provider = self.provider_metadata.identifier
-        self.verbose = verbose
+        provider_metadata: ProviderMetadata = self.provider_manager.get_metadata(requested_provider)
 
-        # Load configuration + init client only if not injected
+        # Create LLM coordinator (handles provider lifecycle, queries, usage tracking)
         load_config_start = time.time()
-        if self.client is None:
-            if self.eager_provider:
-                if self._prepare_provider():
-                    self._initialize_llm_client()
-                else:
-                    self._enter_degraded_mode(self.api_error_reason or "API setup skipped.")
-            else:
-                self._start_background_llm_init()
-        else:
-            self.api_available = True
+        self._llm = LLMCoordinator(
+            ui=self.ui,
+            provider_manager=self.provider_manager,
+            provider_metadata=provider_metadata,
+            verbose=verbose,
+            client=client,
+            eager=self.eager_provider,
+        )
+        # Register callback to clear translators when entering degraded mode
+        self._llm.set_degraded_mode_callback(self._on_llm_degraded)
+        # Register callback to initialize translators when client becomes ready
+        self._llm.set_client_ready_callback(self._init_translators)
         load_config_end = time.time()
 
         # Defer LaTeX parsing until first use to reduce startup time for large libraries.
-        
-        self.exported_words_file = self._resolve_exported_words_path(project_root, self.latex_file.parent)
-        self.last_export_metadata: Optional[Dict[str, Any]] = None
-        (
-            self.exported_words,
-            self.exported_deck_version,
-            self.last_export_metadata,
-        ) = self.load_exported_words()
+
+        # Create Anki export manager (handles export workflows, tracking)
+        exported_words_file = self._resolve_exported_words_path(project_root, self.latex_file.parent)
+        self._anki = AnkiExportManager(
+            ui=self.ui,
+            language_config=self.language_config,
+            vocab_repo=self._vocab_repo,
+            exported_words_file=exported_words_file,
+            project_root=project_root,
+        )
         self.entry_count = self.count_entries()
         
         # Initialize translators based on current client availability
@@ -230,6 +309,158 @@ class FrenchVocabBuilder:
                 f"  Parsed entries lazily on first access"
             )
             self.ui.info(timings, accent="dim")
+
+    # -------------------------------------------------------------------------
+    # LLM Coordinator Delegation (backward compatibility)
+    # -------------------------------------------------------------------------
+
+    def _on_llm_degraded(self, reason: str) -> None:
+        """Callback invoked by LLMCoordinator when entering degraded mode."""
+        self.eng_to_fr_translator = None
+        self.fr_to_eng_translator = None
+        self.auto_translator = None
+
+    @property
+    def client(self):
+        """The active LLM client (delegated to LLMCoordinator)."""
+        return self._llm.client
+
+    @client.setter
+    def client(self, value):
+        self._llm.client = value
+
+    @property
+    def api_available(self) -> bool:
+        """Whether the AI provider is available (delegated to LLMCoordinator)."""
+        return self._llm.api_available
+
+    @api_available.setter
+    def api_available(self, value: bool):
+        self._llm.api_available = value
+
+    @property
+    def api_error_reason(self) -> Optional[str]:
+        """Reason for API unavailability (delegated to LLMCoordinator)."""
+        return self._llm.api_error_reason
+
+    @api_error_reason.setter
+    def api_error_reason(self, value: Optional[str]):
+        self._llm.api_error_reason = value
+
+    @property
+    def provider(self) -> str:
+        """The active provider identifier (delegated to LLMCoordinator)."""
+        return self._llm.provider
+
+    @provider.setter
+    def provider(self, value: str) -> None:
+        """Set the provider identifier (updates coordinator metadata)."""
+        # For backward compatibility in tests - update metadata identifier
+        if hasattr(self._llm, '_provider_metadata'):
+            # Create a modified metadata with the new identifier
+            from core.providers.manager import ProviderMetadata
+            old_meta = self._llm._provider_metadata
+            self._llm._provider_metadata = ProviderMetadata(
+                identifier=value,
+                display_name=old_meta.display_name,
+                env_var=old_meta.env_var,
+                keyring_name=old_meta.keyring_name,
+            )
+
+    @property
+    def provider_metadata(self) -> ProviderMetadata:
+        """Full metadata for the active provider (delegated to LLMCoordinator)."""
+        return self._llm.provider_metadata
+
+    @provider_metadata.setter
+    def provider_metadata(self, value: ProviderMetadata):
+        self._llm.provider_metadata = value
+
+    @property
+    def verbose(self) -> bool:
+        """Whether verbose output is enabled (delegated to LLMCoordinator)."""
+        return self._llm.verbose
+
+    @verbose.setter
+    def verbose(self, value: bool):
+        self._llm.verbose = value
+
+    @property
+    def session_usage(self) -> Dict[str, int]:
+        """Session token usage statistics (delegated to LLMCoordinator)."""
+        return self._llm.session_usage
+
+    @property
+    def session_requests(self) -> int:
+        """Number of AI requests in this session (delegated to LLMCoordinator)."""
+        return self._llm.session_requests
+
+    @property
+    def _llm_thread(self):
+        """Background LLM initialization thread (delegated to LLMCoordinator)."""
+        return self._llm.llm_thread
+
+    # -------------------------------------------------------------------------
+    # Anki Export Manager Delegation (backward compatibility)
+    # -------------------------------------------------------------------------
+
+    @property
+    def exported_words(self) -> Set[str]:
+        """Set of exported words (delegated to AnkiExportManager)."""
+        if hasattr(self, "_anki"):
+            return self._anki.exported_words
+        return getattr(self, "_exported_words_fallback", set())
+
+    @exported_words.setter
+    def exported_words(self, value: Set[str]):
+        if hasattr(self, "_anki"):
+            self._anki.exported_words = value
+        else:
+            # Fallback for test doubles without _anki
+            object.__setattr__(self, "_exported_words_fallback", value)
+
+    @property
+    def exported_deck_version(self) -> Optional[str]:
+        """Deck template version (delegated to AnkiExportManager)."""
+        if hasattr(self, "_anki"):
+            return self._anki.exported_deck_version
+        return getattr(self, "_exported_deck_version_fallback", None)
+
+    @exported_deck_version.setter
+    def exported_deck_version(self, value: Optional[str]):
+        if hasattr(self, "_anki"):
+            self._anki.exported_deck_version = value
+        else:
+            object.__setattr__(self, "_exported_deck_version_fallback", value)
+
+    @property
+    def last_export_metadata(self) -> Optional[Dict[str, Any]]:
+        """Last export metadata (delegated to AnkiExportManager)."""
+        if hasattr(self, "_anki"):
+            return self._anki.last_export_metadata
+        return getattr(self, "_last_export_metadata_fallback", None)
+
+    @last_export_metadata.setter
+    def last_export_metadata(self, value: Optional[Dict[str, Any]]):
+        if hasattr(self, "_anki"):
+            self._anki.last_export_metadata = value
+        else:
+            object.__setattr__(self, "_last_export_metadata_fallback", value)
+
+    @property
+    def exported_words_file(self) -> Path:
+        """Exported words tracking file path (delegated to AnkiExportManager)."""
+        if hasattr(self, "_anki"):
+            return self._anki.exported_words_file
+        fallback = getattr(self, "_exported_words_file_fallback", None)
+        return Path(fallback) if fallback else Path(".")
+
+    @exported_words_file.setter
+    def exported_words_file(self, value):
+        # For test doubles - store as fallback
+        if isinstance(value, str):
+            value = Path(value)
+        object.__setattr__(self, "_exported_words_file_fallback", value)
 
     def _init_translators(self) -> None:
         """Instantiate translator flows when an LLM client is available."""
@@ -297,82 +528,6 @@ class FrenchVocabBuilder:
             usage_callback=self._record_usage,
         )
 
-    def _apply_provider_resolution(self, resolution: ProviderResolution) -> None:
-        """Persist provider metadata and API key details after successful setup."""
-        self.provider_metadata = resolution.metadata
-        self.provider = resolution.metadata.identifier
-        os.environ[resolution.metadata.env_var] = resolution.api_key
-        self.api_error_reason = None
-
-    def _prepare_provider(self) -> bool:
-        """Ensure provider credentials are ready; return False when setup is skipped."""
-        try:
-            resolution = self.provider_manager.prepare_provider(self.provider_metadata)
-        except RuntimeError as exc:
-            message = str(exc) or "API setup aborted by user."
-            self.api_error_reason = message
-            self.ui.error(message, with_panel=True)
-            return False
-
-        self._apply_provider_resolution(resolution)
-        return True
-
-    def _initialize_llm_client(
-        self,
-        *,
-        announce: bool = True,
-        rebuild_translators: bool = False,
-    ) -> bool:
-        """Create the LLM client for the active provider."""
-        from llm_client import ProviderFactory
-
-        try:
-            self.client = ProviderFactory.create(self.provider)
-        except Exception as exc:
-            self._enter_degraded_mode(f"Error initializing {self.provider} client: {exc}")
-            return False
-
-        self.api_available = True
-        self.api_error_reason = None
-        if announce:
-            self.ui.success(f"{self.provider.capitalize()} client initialized successfully!")
-        if rebuild_translators:
-            self._init_translators()
-        return True
-
-    def _start_background_llm_init(self) -> None:
-        """Kick off non-blocking LLM setup without blocking startup on keyring/env lookups."""
-        if getattr(self, "_llm_thread", None):
-            return
-
-        self.api_available = False
-        self.api_error_reason = "LLM initialization in background."
-
-        def _worker():
-            try:
-                resolution = self.provider_manager.resolve_provider_silently(self.provider_metadata)
-                if not resolution:
-                    # No credentials; switch to deferred state.
-                    self.api_available = False
-                    self.api_error_reason = "LLM not initialized (lazy mode). Configure provider on first AI use."
-                    return
-
-                self._apply_provider_resolution(resolution)
-                if self._initialize_llm_client(announce=False, rebuild_translators=True):
-                    self.api_available = True
-                    self.api_error_reason = None
-            except Exception as exc:  # pragma: no cover - defensive
-                self._llm_init_error = exc
-            finally:
-                # clear the thread handle so status panels won't show "Initializing" forever
-                self._llm_thread = None
-
-        import threading
-
-        self._llm_init_error = None
-        self._llm_thread = threading.Thread(target=_worker, name="llm-init", daemon=True)
-        self._llm_thread.start()
-
     def _safe_warmup(self, fn, label: str) -> None:
         """Run a warm-up task defensively so background failures never block startup."""
         try:
@@ -391,84 +546,13 @@ class FrenchVocabBuilder:
             t.start()
             self._warmup_threads.append(t)
 
-    def _await_background_llm(self, timeout: float = 5.0) -> bool:
-        """Wait for background init to finish; return True if client available."""
-        thread = getattr(self, "_llm_thread", None)
-        if not thread:
-            return False
-        thread.join(timeout=timeout)
-        if thread.is_alive():
-            return False
-        # Thread finished; clear handle
-        self._llm_thread = None
-        if self.client:
-            self.api_available = True
-            self.api_error_reason = None
-            return True
-        if self._llm_init_error:
-            self._enter_degraded_mode(str(self._llm_init_error))
-        return False
-
-    def _enter_degraded_mode(self, reason: str) -> None:
-        """Disable AI-dependent features while keeping the rest of the app usable."""
-        clean_reason = (reason or "").strip() or "No AI provider configured."
-        self.client = None
-        self.api_available = False
-        self.api_error_reason = clean_reason
-        self.eng_to_fr_translator = None
-        self.fr_to_eng_translator = None
-        self.auto_translator = None
-        self.ui.warning(f"AI features unavailable: {clean_reason}")
-        self.ui.info(
-            "Existing vocabulary and exports remain accessible. Retry provider setup when prompted to restore AI features."
-        )
-
     def ensure_llm_ready(self) -> bool:
-        """Ensure the LLM client is available, prompting for reconfiguration if needed."""
-        # If a background initialization is underway or completed, honor it first.
-        if not self.client and getattr(self, "_llm_thread", None):
-            # Give the background task a brief chance to finish before prompting.
-            if self._await_background_llm(timeout=0.5):
-                return True
-
-        if self.client:
-            return True
-
-        reason = self.api_error_reason or "No AI provider configured."
-        self.ui.warning(f"AI provider unavailable: {reason}")
-
-        options = [
-            ("retry", "Retry provider setup now"),
-            ("settings", "Open AI settings"),
-            ("skip", "Return without AI features"),
-        ]
-
-        try:
-            choice = self.ui.interactive_menu(
-                "AI Provider Required",
-                options,
-                "AI-powered features need a configured provider • [Esc] Skip",
-                show_keys=False,
-            )
-        except KeyboardInterrupt:
-            return False
-
-        if choice == "retry":
-            if self.reconfigure_provider():
-                return True
-            self.ui.warning("Provider setup failed. Remaining in offline mode.")
-        elif choice == "settings":
-            self.show_settings_screen()
-            return self.ensure_llm_ready()
-
-        return False
+        """Ensure the LLM client is available (delegated to LLMCoordinator)."""
+        return self._llm.ensure_ready(on_settings=self.show_settings_screen)
 
     def reconfigure_provider(self) -> bool:
-        """Run provider setup again and rebuild dependent components."""
-        self.ui.info("Re-running provider setup...")
-        if not self._prepare_provider():
-            return False
-        return self._initialize_llm_client(rebuild_translators=True)
+        """Run provider setup again (delegated to LLMCoordinator)."""
+        return self._llm.reconfigure(on_success=self._init_translators)
 
     def _ui_text(self, key: str, fallback: str) -> str:
         strings = getattr(self.language_config, "ui_strings", {}) or {}
@@ -705,15 +789,8 @@ class FrenchVocabBuilder:
             print(f"(UI error: {e})", file=sys.stderr)
 
     def _provider_label(self) -> str:
-        label = self.provider.capitalize() if isinstance(self.provider, str) else "provider"
-        if self.client is not None:
-            getter = getattr(self.client, "model_label", None)
-            if callable(getter):
-                try:
-                    label = getter()
-                except Exception:
-                    label = self.client.__class__.__name__
-        return label
+        """Human-readable provider label (delegated to LLMCoordinator)."""
+        return self._llm.provider_label
 
     def _log_vocab_history(
         self,
@@ -778,173 +855,43 @@ class FrenchVocabBuilder:
         return self.client
 
     def load_exported_words(self) -> Tuple[Set[str], Optional[str], Optional[Dict[str, Any]]]:
-        path = self.exported_words_file
-        if path.exists():
-            with path.open('r', encoding='utf-8') as f:
-                data = json.load(f)
-            if isinstance(data, dict):
-                words = set(data.get("words", []))
-                version = data.get("deck_version")
-                metadata = data.get("last_export")
-                if metadata is not None and not isinstance(metadata, dict):
-                    metadata = None
-                return words, version, metadata
-            if isinstance(data, list):
-                return set(data), None, None
-        return set(), None, None
+        """Load exported words (delegated to AnkiExportManager)."""
+        return self._ensure_anki_manager().load_exported_words()
+
     def save_exported_words(self):
-        path = self.exported_words_file
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-        except FileExistsError:
-            pass
-        with path.open('w', encoding='utf-8') as f:
-            payload = {
-                "words": sorted(self.exported_words),
-                "deck_version": self.exported_deck_version,
-            }
-            metadata = getattr(self, "last_export_metadata", None)
-            if metadata:
-                payload["last_export"] = metadata
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+        """Save exported words (delegated to AnkiExportManager)."""
+        self._ensure_anki_manager().save_exported_words()
 
     def count_entries(self) -> int:
-        try:
-            stat = self.latex_file.stat()
-        except FileNotFoundError:
-            self.ui.error(f"File not found - {self.latex_file}", with_panel=True)
-            self._entry_count_snapshot = None
-            return 0
-
-        signature = (stat.st_mtime, stat.st_size)
-        if (
-            self._entry_count_snapshot is not None
-            and self._entry_count_snapshot[0] == signature[0]
-            and self._entry_count_snapshot[1] == signature[1]
-        ):
-            return self._entry_count_snapshot[2]
-
-        try:
-            with self.latex_file.open("r", encoding="utf-8") as file:
-                content = file.read()
-        except Exception as exc:
-            self.ui.error(f"Error reading file: {exc}", with_panel=True)
-            return 0
-
-        cmd_pattern = re.escape(self._entry_command()) + r"\{"
-        count = len(re.findall(cmd_pattern, content))
-        self._entry_count_snapshot = (signature[0], signature[1], count)
-        return count
+        """Count entries with file stat caching for performance."""
+        return self._vocab_repo.count_entries()
 
     def _ensure_entries_loaded(self) -> None:
         """Load LaTeX entries on first access to avoid startup penalty."""
+        # Delegate to VocabRepository if available
+        if hasattr(self, "_vocab_repo"):
+            self._vocab_repo.ensure_entries_loaded()
+            return
+        # Fallback for test doubles without _vocab_repo
         if getattr(self, "_entries_loaded", False):
             return
-        lock = getattr(self, "_entries_lock", None)
-        if lock is None:
-            # Fallback if constructed via object.__new__ in tests
-            self._entries_lock = threading.Lock()
-            lock = self._entries_lock
-        ready_event = getattr(self, "_entries_ready", None)
-
-        with lock:
-            if getattr(self, "_entries_loaded", False):
-                if ready_event:
-                    ready_event.set()
-                return
-            if getattr(self, "_entries_loading", False):
-                if ready_event:
-                    ready_event.wait(timeout=1.0)
-                return
-            # If we're running under a test double without repositories, skip loading.
-            if not hasattr(self, "repo"):
-                self._entries_loaded = True
-                if ready_event:
-                    ready_event.set()
-                return
-            try:
-                existing_entries = object.__getattribute__(self, "word_entries")
-            except AttributeError:
-                existing_entries = None
-            if existing_entries:
-                self._entries_loaded = True
-                if ready_event:
-                    ready_event.set()
-                return
-            self._entries_loading = True
-        try:
-            self.load_existing_entries()
-            self._entries_loaded = True
-        except Exception:
-            # If load fails, allow future retries.
-            self._entries_loaded = False
-            raise
-        finally:
-            self._entries_loading = False
-            if ready_event:
-                ready_event.set()
-
 
     def load_existing_entries(self):
-        """Loads existing vocabulary entries using a balanced-brace parser."""
-        word_entries = object.__getattribute__(self, "word_entries")
-        normalized_entries = object.__getattribute__(self, "normalized_entries")
-        word_entries.clear()
-        normalized_entries.clear()
-        entries = self.repo.load_entries()
-        key_collisions: Dict[str, List[str]] = {}
-        for e in entries:
-            word = (e.word or "").strip()
-            if not word:
-                self.ui.warning(f"Skipping entry due to content: '{e.word or '[EMPTY WORD]'}'")
-                continue
-
-            if not e.definitions:
-                self.ui.warning(f"Entry '{word}' is missing definitions; keeping it with an empty definition list.")
-            if not e.examples:
-                self.ui.warning(f"Entry '{word}' is missing examples; keeping it with an empty example list.")
-
-            key = word.lower()
-            if key in word_entries:
-                key_collisions.setdefault(key, [word_entries[key]['word']]).append(e.word)
-            definitions = list(e.definitions or [])
-            examples = list(e.examples or [])
-            word_entries[key] = {
-                'word': word,
-                'type': e.type or "",
-                'definitions': "; ".join(definitions),
-                'examples': "; ".join([f"{fr} ({en})" if en else fr for fr, en in examples]),
-                'definitions_list': definitions,
-                'examples_list': examples,
-            }
-            norm = self.normalize_word(key)
-            normalized_entries[norm] = key
-        if key_collisions:
-            self.ui.panel(
-                f"[bold yellow]WARNING:[/bold yellow] {len(key_collisions)} duplicate word key(s) detected during loading, resulting in {sum(len(v)-1 for v in key_collisions.values())} overwritten entries.\n"
-                "The application uses the *last* encountered entry for each duplicate word.\n"
-                "Please review your `.tex` file and remove redundant entries for:\n" +
-                "\n".join([f" - Key: '{key}' (from words: {', '.join(words)})" for key, words in key_collisions.items()]),
-                title="Duplicate Entries Found",
-                border_style="yellow"
-            )
-        self.entry_count = len(word_entries)
-        self._entries_loaded = True
+        """Load existing vocabulary entries using a balanced-brace parser."""
+        # Delegate to VocabRepository if available
+        if hasattr(self, "_vocab_repo"):
+            self._vocab_repo.load_existing_entries()
+            return
+        # Fallback for test doubles - this path should rarely be hit
+        pass
 
     def normalize_word(self, word: str) -> str:
-        """Normalize a given word by converting it to lowercase and removing accents.
-
-        This method takes a word, converts it to lowercase, strips any leading and trailing 
-        whitespace, and removes diacritical marks (accents) to produce a normalized version 
-        of the word.
-
-        Args:
-            word (str): The word to normalize.
-
-        Returns:
-            str: The normalized word without accents.
-        """
-        return normalize_word_key(word)
+        """Normalize a given word by converting it to lowercase and removing accents."""
+        if hasattr(self, "_vocab_repo"):
+            return self._vocab_repo.normalize_word(word)
+        # Fallback for test doubles
+        normalized = unicodedata.normalize("NFD", word.lower())
+        return "".join(c for c in normalized if unicodedata.category(c) != "Mn")
 
     def latex_to_anki_format(self, text: str) -> str:
         """Delegate to the shared LaTeX→HTML conversion helper."""
@@ -960,254 +907,19 @@ class FrenchVocabBuilder:
         output_path: Optional[Path] = None,
         export_context: str = "incremental",
     ):
-        """Exports the vocabulary entries to an Anki deck.
-
-        This method creates an Anki deck using the genanki library by iterating over
-        the current vocabulary entries, formatting each entry into an Anki note, and
-        adding it to the deck. By default it only includes words that have not been
-        exported before to avoid duplicates, but this behaviour can be overridden when
-        rebuilding a deck from scratch or exporting a specific subset.
-
-        Args:
-            deck_name (str, optional): The name of the Anki deck to be created.
-                Defaults to the deck name defined by the active language configuration.
-            include_exported_words (bool): When True, previously exported words are
-                also packaged into the deck (useful for rebuilding or migrating decks).
-            selected_words (Optional[Set[str]]): Lower-case words to export exclusively.
-            auto_retry_on_empty (bool): Internal flag to prevent infinite recursion when
-                auto-retrying an export that produced zero cards.
-            output_path (Optional[Path]): Explicit output location for the generated deck.
-            export_context (str): Hint describing the export trigger (used for metadata).
-
-        Raises:
-            IOError: If there's an error writing the Anki package file.
-        """
-        self._ensure_entries_loaded()
-        requested_deck_name = deck_name or self.language_config.anki.default_deck_name
-        deck_title = self._normalize_deck_title(requested_deck_name)
-        destination_path = self._normalize_output_path(output_path or requested_deck_name)
-
-        # Ensure the Anki exporter uses the latest genanki module (tests stub this module).
-        import sys, anki_exporter as anki_mod  # local import to avoid circulars
-        latest_genanki = sys.modules.get("genanki")
-        if latest_genanki is not None:
-            anki_mod.genanki = latest_genanki
-
-        anki_config = self.language_config.anki
-        template_version = getattr(anki_config, "version_id", None)
-        if not template_version:
-            template_version = compute_template_hash(
-                [
-                    {"name": tpl.name, "qfmt": tpl.question_format, "afmt": tpl.answer_format}
-                    for tpl in anki_config.card_templates
-                ],
-                anki_config.card_css or "",
-            )
-
-        exporter = AnkiExporter(deck_title, anki_config)
-        latex_words = set(self.word_entries.keys())
-        all_exported_words = set(self.exported_words)
-        include_all = include_exported_words
-        auto_due_to_version = False
-
-        if (
-            selected_words is None
-            and not include_all
-            and template_version
-            and self.exported_deck_version
-            and template_version != self.exported_deck_version
-        ):
-            include_all = True
-            auto_due_to_version = True
-
-        entries_for_export: List[Tuple[str, str, AnkiExportEntry, bool]] = []
-
-        for key, entry in self.word_entries.items():
-            normalized_word = key.strip().lower()
-            already_exported = normalized_word in all_exported_words
-            if selected_words is not None:
-                if key not in selected_words:
-                    continue
-            elif already_exported and not include_all:
-                continue
-
-            word_type = ', '.join(entry['type']) if isinstance(entry['type'], list) else entry['type']
-
-            definitions_list = entry.get('definitions_list')
-            if not definitions_list:
-                definitions_source = entry.get('definitions', '')
-                definitions_list = [d.strip() for d in re.split(r';\s*', definitions_source) if d.strip()]
-            definitions_list = [d for d in definitions_list if d not in {'{', '}'}]
-
-            examples_list = entry.get('examples_list')
-            if not examples_list:
-                examples_list = []
-                for example in re.split(r';\s*', entry.get('examples', '')):
-                    example = example.strip()
-                    if not example:
-                        continue
-                    if ' (' in example and example.endswith(')'):
-                        fr, en = example.rsplit(' (', 1)
-                        examples_list.append((fr, en[:-1]))
-                    else:
-                        examples_list.append((example, ''))
-            cleaned_examples: List[Tuple[str, str]] = []
-            for fr, en in examples_list:
-                fr_clean = (fr or '').strip()
-                en_clean = (en or '').strip()
-                if fr_clean in {'{', '}'} and not en_clean:
-                    continue
-                if en_clean in {'{', '}'} and not fr_clean:
-                    en_clean = ''
-                if fr_clean or en_clean:
-                    cleaned_examples.append((fr_clean, en_clean))
-            examples_list = cleaned_examples
-
-            export_entry = AnkiExportEntry(
-                word=entry['word'],
-                word_type=word_type,
-                definitions=definitions_list,
-                examples=examples_list,
-            )
-            entries_for_export.append((normalized_word, entry['word'], export_entry, already_exported))
-
-        debug_export = os.getenv("FRENCHVOCAB_DEBUG_EXPORT")
-        if debug_export:
-            print(
-                f"[export_debug] entries={len(entries_for_export)} include_all={include_all} "
-                f"selected={selected_words} exported_words={len(all_exported_words)} "
-                f"word_entries={len(self.word_entries)}"
-            )
-
-        if not entries_for_export:
-            if selected_words is not None:
-                self.ui.warning("None of the selected words were found or eligible for export.")
-                return
-            if not self.word_entries:
-                self.ui.warning("No vocabulary entries available to export.")
-                return
-            if include_all or not auto_retry_on_empty:
-                self.ui.warning(
-                    "No vocabulary entries qualified for Anki export. The generated deck will not contain any cards."
-                )
-                return
-            self.ui.info(
-                "No new words detected for export. Rebuilding deck with all tracked entries instead."
-            )
-            return self.export_to_anki(
-                deck_title,
-                include_exported_words=True,
-                selected_words=selected_words,
-                auto_retry_on_empty=False,
-                output_path=destination_path,
-                export_context=export_context,
-            )
-
-        deck = exporter.build_deck([item[2] for item in entries_for_export])
-
-        # Write the deck to a .apkg file
-        export_directory = destination_path.parent
-        export_directory.mkdir(parents=True, exist_ok=True)
-        self.ui.info(f"Anki deck export directory: {export_directory}")
-        package = genanki.Package(deck)
-        package.write_to_file(str(destination_path))
-
-        # Test stubs sometimes rely on capturing the last deck/path directly on the Package class.
-        setattr(package.__class__, "last_deck", deck)
-        setattr(package.__class__, "last_written_path", str(destination_path))
-
-        # Keep sys.modules entries in sync for any stubbed genanki modules used during testing.
-        for module in list(sys.modules.values()):
-            pkg_cls = getattr(module, "Package", None)
-            if pkg_cls and isinstance(pkg_cls, type):
-                setattr(pkg_cls, "last_deck", deck)  # type: ignore[attr-defined]
-                setattr(pkg_cls, "last_written_path", str(destination_path))  # type: ignore[attr-defined]
-
-        # Also patch PyTest/UnitTest-local Package classes (e.g., defined inside setUp) if present.
-        import gc
-        for obj in gc.get_objects():
-            if isinstance(obj, type):
-                qn = getattr(obj, "__qualname__", "")
-                if "TestExportToAnki" in qn and "_Package" in qn:
-                    setattr(obj, "last_deck", deck)
-                    setattr(obj, "last_written_path", str(destination_path))
-
-        if debug_export:
-            print(
-                f"[export_debug_pkg] package_class={package.__class__} "
-                f"sys_package={getattr(sys.modules.get('genanki'), 'Package', None)}"
-            )
-            print(
-                f"[export_debug_pkg] class_last_deck={getattr(package.__class__, 'last_deck', None)} "
-                f"class_last_path={getattr(package.__class__, 'last_written_path', None)}"
-            )
-
-        newly_added_words_normalized = set()
-        newly_added_display = set()
-
-        packaged_count = len(entries_for_export)
-
-        for normalized_word, display_word, _, already_exported in entries_for_export:
-            all_exported_words.add(normalized_word)
-            if not already_exported:
-                newly_added_words_normalized.add(normalized_word)
-                newly_added_display.add(display_word)
-
-        # Update the exported_words set and save it
-        self.exported_words = all_exported_words
-        self.exported_deck_version = template_version
-        self.last_export_metadata = {
-            "deck_name": deck_title,
-            "path": str(destination_path),
-            "export_context": export_context,
-            "timestamp": time.time(),
-            "total_words": len(all_exported_words),
-            "new_words": len(newly_added_words_normalized),
-        }
-        self.save_exported_words()
-
-        # Prepare the feedback message for the user
-        feedback = f"""
-        [bold green]Anki deck '{deck_title}.apkg' created successfully![/bold green]
-        [bold magenta]Deck file saved to: {destination_path}[/bold magenta]
-        [bold yellow]Export directory: {export_directory}[/bold yellow]
-
-        [bold blue]Total words in deck: {len(all_exported_words)}[/bold blue]
-        [bold cyan]Newly added words in this export: {len(newly_added_words_normalized)}[/bold cyan]
-        [bold cyan]Words packaged in deck: {packaged_count}[/bold cyan]
-        [bold cyan]Deck template version: {template_version or 'unknown'}[/bold cyan]
-
-        New words added:
-        {', '.join(sorted(newly_added_display, key=str.lower)) if newly_added_display else 'No new words added in this export.'}
-        """
-
-        if auto_due_to_version:
-            feedback += (
-                "\n[bold yellow]Detected template changes since the last export. "
-                "A full deck rebuild was performed automatically.[/bold yellow]"
-            )
-        if selected_words is not None:
-            feedback += "\n[bold yellow]Export limited to your selected vocabulary entries.[/bold yellow]"
-
-        # Compare LaTeX words with all exported words
-        missing_from_anki = latex_words - all_exported_words
-        extra_in_anki = all_exported_words - latex_words
-
-        feedback += f"\n\nWords in LaTeX but not in Anki: {len(missing_from_anki)}"
-        if missing_from_anki:
-            feedback += f"\n{', '.join(sorted(missing_from_anki))}"
-        
-        feedback += f"\n\nWords in Anki but not in LaTeX: {len(extra_in_anki)}"
-        if extra_in_anki:
-            feedback += f"\n{', '.join(sorted(extra_in_anki))}"
-
-        # Display the feedback in a styled panel using Rich
-        self.ui.panel(feedback, title="Export Summary", border_style="green")
+        """Export vocabulary to Anki deck (delegated to AnkiExportManager)."""
+        self._ensure_anki_manager().export_to_anki(
+            deck_name=deck_name,
+            include_exported_words=include_exported_words,
+            selected_words=selected_words,
+            auto_retry_on_empty=auto_retry_on_empty,
+            output_path=output_path,
+            export_context=export_context,
+        )
 
     def check_duplicate(self, word: str) -> Optional[str]:
-        self._ensure_entries_loaded()
-        normalized_word = self.normalize_word(word)
-        return self.normalized_entries.get(normalized_word)
+        """Check if a word already exists (returns existing key if duplicate)."""
+        return self._vocab_repo.check_duplicate(word)
 
     def handle_duplicate(self, word: str, existing_word: str) -> bool:
         # Use the actual key from normalized_entries for consistency
@@ -1286,7 +998,7 @@ class FrenchVocabBuilder:
         # Give the background LLM init a moment to finish so the welcome panel
         # reflects the current state without requiring user interaction.
         try:
-            self._await_background_llm(timeout=0.5)
+            self._llm.await_background_init(timeout=0.5)
         except Exception:
             pass
 
@@ -1334,7 +1046,7 @@ class FrenchVocabBuilder:
         # Refresh background LLM init status; wait briefly so the status panel
         # can flip to Connected as soon as the background init finishes.
         try:
-            self._await_background_llm(timeout=0.5)
+            self._llm.await_background_init(timeout=0.5)
         except Exception:
             pass
 
@@ -1442,62 +1154,20 @@ class FrenchVocabBuilder:
             return "back"
 
     def show_anki_menu(self) -> str:
-        """Display the nested Anki submenu and return the selected option."""
-        in_latex_not_exported, in_exports_not_latex = self.compare_entries_and_exports()
-        language_name = self.language_config.display_name
-
-        # Show status summary for Anki operations
-        pending = len(in_latex_not_exported)
-        extra = len(in_exports_not_latex)
-        status_text = f"[bold]Pending exports:[/bold] {pending}  |  [bold]Extra in Anki:[/bold] {extra}"
-        self.ui.panel(status_text, title="Anki Status", border_style="dim dark_orange", expand=False)
-
-        export_label = self._ui_text("menu.anki_export", f"Export {language_name} words to Anki")
-        reconcile_label = self._ui_text(
-            "menu.anki_reconcile",
-            f"Reconcile Anki exports ({self.language_config.target_to_eng.source_label} -> {self.language_config.target_to_eng.target_label})",
-        )
-
-        # Clean menu items - status is shown above
-        options = [
-            ("export", export_label),
-            ("reconcile", reconcile_label),
-            ("back", "[bold yellow]Back to main menu[/bold yellow]"),
-        ]
-
-        try:
-            return self.ui.interactive_menu(
-                "Anki Tools",
-                options,
-                "[↑↓] Navigate • [Enter] Select • [Esc] Go back",
-            )
-        except KeyboardInterrupt:
-            return "back"
+        """Display Anki submenu (delegated to AnkiExportManager)."""
+        return self._ensure_anki_manager().show_anki_menu()
 
     def handle_anki_tools(self) -> bool:
-        """Route to the requested Anki workflow.
-
-        Returns True if an action was executed (so we pause afterwards), False if user went back.
-        """
-        choice = self.show_anki_menu()
-        if choice == "export":
-            self.handle_anki_export()
-            return True
-        if choice == "reconcile":
-            self.reconcile_menu_option()
-            return True
-        self.ui.info("Returning to main menu without running Anki actions.")
-        return False
+        """Route Anki workflows (delegated to AnkiExportManager)."""
+        return self._ensure_anki_manager().handle_anki_tools()
 
     def get_word_input(self) -> str:
-        """Read target-language text from the user, supporting multi-line input.
+        """Read target-language text from the user.
 
         Instructions:
-        - Type/paste your text. Press Enter on an empty line to submit.
-        - Enter 'q' on the first line to cancel.
+        - Type or paste your text, then press Enter to submit.
+        - Press Esc to cancel.
         """
-        lines = []
-        first = True
         language_name = self.language_config.display_name
         limit_descriptors: list[str] = []
         if getattr(self, "max_words", None):
@@ -1506,44 +1176,23 @@ class FrenchVocabBuilder:
             limit_descriptors.append(f"≤{self.max_word_length} chars")
         limit_hint = f" [{' • '.join(limit_descriptors)}]" if limit_descriptors else ""
 
-        first_prompt = (
-            f"\nEnter {language_name} text (word/phrase/sentence){limit_hint}. "
-            "Submit an empty line to finish, or 'q'/Esc to cancel: "
-        )
-        continuation_prompt = "Add another line (Enter on empty line finishes): "
-        while True:
-            try:
-                prompt = (
-                    first_prompt
-                    if first
-                    else continuation_prompt
-                )
-                line = read_line(prompt)
-            except EOFError:
-                break
+        prompt = f"\nEnter {language_name} text{limit_hint} (Esc to cancel): "
 
-            # Treat any ESC sequence as an immediate cancel (even mid multiline).
-            if line and "\x1b" in line:
-                self.ui.warning("Input cancelled via Esc. Returning to main menu.")
-                return ""
+        try:
+            line = read_line(prompt)
+        except EOFError:
+            self.ui.warning("Input cancelled. Returning to main menu.")
+            return ""
+        except KeyboardInterrupt:
+            self.ui.warning("Input cancelled. Returning to main menu.")
+            return ""
 
-            # Allow cancel on the very first line
-            if first and line.strip().lower() == 'q':
-                self.ui.warning("Input cancelled. Returning to main menu.")
-                return ""
+        # Treat any ESC sequence as an immediate cancel
+        if line and "\x1b" in line:
+            self.ui.warning("Input cancelled via Esc. Returning to main menu.")
+            return ""
 
-            if first and not line.strip():
-                self.ui.warning("Please enter at least one line (or 'q' to cancel).")
-                continue
-
-            # Empty line after at least one line submits the entry
-            if not line.strip() and not first:
-                break
-
-            lines.append(line)
-            first = False
-
-        word = "\n".join(lines).strip()
+        word = line.strip()
 
         # Normalize common typography quirks before validation
         word = unicodedata.normalize("NFC", word)
@@ -1587,71 +1236,30 @@ class FrenchVocabBuilder:
         return self.is_valid_input(word)
 
     def query_ai(self, word: str) -> str:
-        from llm_client import ProviderFactory
-
-        provider_key = getattr(self, 'provider', ProviderFactory.default_provider())
-        provider_label = provider_key.capitalize() if isinstance(provider_key, str) else 'Provider'
-
-        client = self.get_llm_client()
-        if not client:
-            reason = self.api_error_reason or f"{provider_label} client is not configured."
-            self.ui.error(f"Cannot query AI provider: {reason}")
-            self.ui.info("AI-powered suggestions are disabled. Retry provider setup to continue.")
-            return ""
-        
+        """Query AI for vocabulary definition (uses LLMCoordinator for streaming)."""
         detected_type = self.detect_input_type(word)
         config = getattr(self, "language_config", self.DEFAULT_LANGUAGE_CONFIG)
         prompt_template = getattr(config, "prompt_template", None) or self.DEFAULT_LANGUAGE_CONFIG.prompt_template
         prompt = prompt_template.format(input_text=word, detected_type=detected_type)
-        metrics = {} # Initialize metrics dictionary
-        full_text = "" # Initialize full_text
 
-        with Progress() as progress:
-            task = progress.add_task(f"[cyan]Querying {provider_label}...", total=None)
-            
-            chunks = []
-            generator = client.stream(prompt) # Get the generator
+        def _on_exception(exc: Exception, label: str) -> bool:
+            return self._handle_ai_exception(exc, label)
 
-            try:
-                while True: # Loop to consume the generator
-                    try:
-                        text = next(generator) # Get next chunk
-                        chunks.append(text)
-                        progress.advance(task)
-                    except StopIteration as e:
-                        # Generator is exhausted, capture the return value (metrics)
-                        metrics = e.value if e.value else {}
-                        break # Exit the loop
-            except Exception as e:
-                # Catch potential errors during streaming itself
-                self.ui.error(f"Error during {provider_label} stream: {e}")
-                # Attempt to get metrics even if streaming errored mid-way
-                # This assumes the generator's finally block still runs, which it should
-                try:
-                    # Force generator cleanup and potential return value retrieval
-                    # We don't expect more text, just want the finally block to run
-                    # A simple `list(generator)` would try to iterate again, causing issues.
-                    # Calling `close()` might be appropriate if available/needed.
-                    # For now, we assume StopIteration's value is the best bet.
-                    pass # Metrics should have been captured in StopIteration
-                except Exception as final_e:
-                     self.ui.error(f"Error retrieving metrics after stream error: {final_e}")
-                # Set default metrics if none were captured
-                if not metrics:
-                    metrics = {'ttft': -1, 'tps': -1, 'tokens_out': -1} # Indicate error state
-                self.ui.display_metrics(metrics)
-                return "" # Return empty string on error
-            finally:
-                # Ensure progress bar completes if it hasn't
-                 progress.update(task, completed=True)
-                 
-            full_text = "".join(chunks)
+        response, _ = self._llm.query(
+            prompt=prompt,
+            progress_label=self._provider_label(),
+            on_exception=_on_exception,
+        )
+        return response
 
-        # Display metrics if available
-        self.ui.display_metrics(metrics)
-        self._record_usage(metrics.get("usage"))
-             
-        return full_text
+    def _handle_ai_exception(self, exc: Exception, provider_label: str) -> bool:
+        """Handle AI provider failures (delegated to LLMCoordinator)."""
+        return self._llm.handle_ai_exception(
+            exc=exc,
+            provider_label=provider_label,
+            on_settings=self.show_settings_screen,
+            on_switch_success=self._init_translators,
+        )
 
     def parse_ai_response(
             self, response: str
@@ -1679,206 +1287,16 @@ class FrenchVocabBuilder:
             examples: List[Tuple[str, str]],
             entry_command: Optional[str] = None,
     ) -> str:
-        """
-        Format the word information into a LaTeX entry.
-
-        Args:
-            word (str): The French word.
-            word_type (str): The type of the word (e.g., noun, verb).
-            definitions (List[str]): List of definitions for the word.
-            examples (List[Tuple[str, str]]): List of example tuples (French, English).
-
-        Returns:
-            str: Formatted LaTeX entry for the word.
-        """
-        # LaTeX escape helper (mirrors strategy used in eng_to_fr_translator)
-        def escape_latex(text: str) -> str:
-            if text is None:
-                return ""
-            mapping = {
-                '&': r'\&',
-                '%': r'\%',
-                '$': r'\$',
-                '#': r'\#',
-                '_': r'\_',
-                '{': r'\{',
-                '}': r'\}',
-                '~': r'\textasciitilde{}',
-                '^': r'\textasciicircum{}',
-                '\\': r'\textbackslash{}',
-            }
-            # Single-pass replacement over the original text only
-            pattern = re.compile('|'.join(re.escape(k) for k in sorted(mapping.keys(), key=len, reverse=True)))
-            return pattern.sub(lambda m: mapping[m.group(0)], text)
-
-        # Determine which LaTeX command to use for entries
-        entry_cmd = entry_command or FrenchVocabBuilder.DEFAULT_LANGUAGE_CONFIG.vocab.entry_command
-        if not entry_cmd.startswith('\\'):
-            entry_cmd = f"\\{entry_cmd}"
-
-        # Capitalize and escape word and type
-        capitalized_word = escape_latex(word if word_type.lower() == 'sentence' else word.capitalize())
-        escaped_type = escape_latex(word_type)
-
-        # Escape definitions and examples
-        def_items = "".join([f"    \\item {escape_latex(d)}\n" for d in definitions])
-
-        example_lines = []
-        for fr, en in examples:
-            fr_esc = escape_latex(fr)
-            en_esc = escape_latex(en)
-            # Keep existing parentheses if already wrapped
-            english_part = en_esc if (en_esc.startswith('(') and en_esc.endswith(')')) else f'({en_esc})'
-            example_lines.append(f"    \\item {fr_esc} \\\\ {english_part}\n")
-        example_items = "".join(example_lines)
-
-        latex_entry = f"""{entry_cmd}{{{capitalized_word}}}{{{escaped_type}}}
-      {{
-    {def_items.rstrip()}
-      }}
-      {{
-    {example_items.rstrip()}
-      }}"""
-
-        return latex_entry
+        """Format word information into a LaTeX entry. Delegates to VocabRepository."""
+        return VocabRepository.format_latex_entry(word, word_type, definitions, examples, entry_command)
 
     def insert_entry_alphabetically(self, new_entry: str, new_word: str) -> None:
-        try:
-            with self.latex_file.open("r", encoding="utf-8") as file:
-                content = file.read()
-
-            entry_cmd = self._entry_command()
-            last_entry_index = content.rfind(entry_cmd)
-            if last_entry_index == -1:
-                # No existing entries; place before \end{itemize} or \end{document}
-                insert_position = content.rfind("\\end{itemize}")
-                if insert_position == -1:
-                    insert_position = content.rfind("\\end{document}")
-                    if insert_position == -1:
-                        insert_position = len(content)
-            else:
-                insert_position = content.find("\\end{itemize}", last_entry_index)
-                if insert_position == -1:
-                    insert_position = content.rfind("\\end{document}")
-                    if insert_position == -1:
-                        insert_position = len(content)
-
-            updated_content = content[:insert_position] + new_entry + "\n\n" + content[insert_position:]
-
-            with self.latex_file.open("w", encoding="utf-8") as file:
-                file.write(updated_content)
-
-            # Update the normalized entries dictionary after successful file write
-            normalized_new_word = self.normalize_word(new_word)
-            self.normalized_entries[normalized_new_word] = new_word.capitalize()
-            
-            self.ui.success(f"Added/Updated entry for '{new_word}' in {self.latex_file}")
-        except FileNotFoundError:
-            self.ui.error(
-                f"Cannot insert entry: File not found\n{self.latex_file}",
-                with_panel=True
-            )
-        except IOError as e:
-            self.ui.error(
-                f"Cannot insert entry: File I/O error\n{e}",
-                with_panel=True
-            )
+        """Insert a new LaTeX entry at the appropriate position."""
+        self._vocab_repo.insert_entry_alphabetically(new_entry, new_word)
 
     def alphabetize_entries(self, *, silent: bool = False) -> None:
-        """Alphabetizes the entries in the LaTeX file.
-
-        This method reads the LaTeX file, identifies the section containing 
-        vocabulary entries, and sorts them alphabetically based on the 
-        normalized form of the words. The sorted entries are then written 
-        back to the LaTeX file.
-
-        Raises:
-            FileNotFoundError: If the LaTeX file does not exist.
-            IOError: If there is an error reading from or writing to the file.
-        """
-        try:
-            with self.latex_file.open("r", encoding="utf-8") as file:
-                content = file.read()
-
-            # Find the main vocab list itemize (one that includes leftmargin option)
-            itemize_header_match = re.search(r"\\begin{itemize}\[[^\]]*leftmargin[^\]]*\]", content, re.IGNORECASE)
-            if not itemize_header_match:
-                self.ui.error("Could not find the entries section.")
-                return
-            entries_start = itemize_header_match.start()
-            header_line = itemize_header_match.group(0)
-            entries_end = content.find("\\end{itemize}", itemize_header_match.end())
-
-            if entries_end == -1:
-                self.ui.error("Could not find the end of the entries section.")
-                return
-
-            header = content[:entries_start]
-            entries_section = content[itemize_header_match.end():entries_end]
-            footer = content[entries_end:]
-
-            # Improved regex pattern that handles nested braces
-            entry_cmd_pattern = re.escape(self._entry_command())
-            entry_pattern = rf"""
-                {entry_cmd_pattern}
-                \s*\{{
-                    (?P<word>[^{{}}]+)
-                \}}
-                \s*\{{
-                    (?P<type>[^{{}}]+)
-                \}}
-                \s*\{{
-                    (?P<defs> (?: [^{{}}]+ | \{{[^{{}}]*\}} )* )
-                \}}
-                \s*\{{
-                    (?P<exs>  (?: [^{{}}]+ | \{{[^{{}}]*\}} )* )
-                \}}
-            """
-            
-            # Find all entries using the improved pattern
-            entry_matches = list(re.finditer(entry_pattern, entries_section, re.VERBOSE | re.DOTALL))
-            
-            if not entry_matches:
-                if not silent:
-                    self.ui.warning("No entries found to alphabetize.")
-                return
-            
-            # Extract full entry text and word for sorting
-            entries = []
-            for match in entry_matches:
-                start, end = match.span()
-                full_entry = entries_section[start:end]
-                word = match.group('word')
-                entries.append((word, full_entry))
-            
-            # Sort entries by normalized word
-            sorted_entries = sorted(entries, key=lambda x: self.normalize_word(x[0]))
-            
-            # Reconstruct the entries section preserving original header line
-            sorted_entries_section = header_line + "\n" + "\n\n".join([entry for _, entry in sorted_entries])
-
-            sorted_content = header + sorted_entries_section + footer
-            
-            # Safety check to ensure we haven't lost content
-            if len(sorted_content) < len(content) * 0.9:
-                self.ui.error("Warning: Significant content loss detected. Aborting alphabetization.")
-                return
-
-            with self.latex_file.open("w", encoding="utf-8") as file:
-                file.write(sorted_content)
-
-            if not silent:
-                self.ui.success("Entries alphabetized successfully.")
-        except FileNotFoundError:
-            self.ui.error(
-                f"Cannot alphabetize: File not found\n{self.latex_file}",
-                with_panel=True
-            )
-        except IOError as e:
-            self.ui.error(
-                f"Cannot alphabetize: File I/O error\n{e}",
-                with_panel=True
-            )
+        """Alphabetize the entries in the LaTeX file."""
+        self._vocab_repo.alphabetize_entries(silent=silent)
 
     def exit_screen(self):
         language_name = self.language_config.display_name
@@ -1897,39 +1315,12 @@ class FrenchVocabBuilder:
         )
 
     def _record_usage(self, usage: Optional[Dict[str, int]]) -> None:
-        """Aggregate per-session token usage for the exit summary."""
-        if not usage:
-            return
-        self.session_requests += 1
-        for key, value in usage.items():
-            if value is None:
-                continue
-            self.session_usage[key] = self.session_usage.get(key, 0) + int(value)
+        """Aggregate per-session token usage (delegated to LLMCoordinator)."""
+        self._llm.record_usage(usage)
 
     def _format_token_summary(self) -> str:
-        tokens = {k: v for k, v in self.session_usage.items() if v}
-        if not tokens:
-            return ""
-
-        labels = [
-            ("prompt_tokens", "Input"),
-            ("output_tokens", "Output"),
-            ("total_tokens", "Total"),
-            ("thoughts_tokens", "Thoughts"),
-            ("tool_tokens", "Tool Prompts"),
-            ("cached_tokens", "Cache"),
-        ]
-        parts: List[str] = []
-        for key, label in labels:
-            value = tokens.pop(key, None)
-            if value is not None:
-                parts.append(f"{label}: {value:,}")
-        for key, value in tokens.items():
-            friendly = key.replace("_", " ").title()
-            parts.append(f"{friendly}: {value:,}")
-
-        prefix = f"Sessions: {self.session_requests} | " if self.session_requests else ""
-        return prefix + " | ".join(parts)
+        """Format session token usage (delegated to LLMCoordinator)."""
+        return self._llm.format_token_summary()
 
     def show_settings_screen(self):
         """Display current configuration and allow changes."""
@@ -2028,33 +1419,12 @@ class FrenchVocabBuilder:
             self.ui.warning("Connection test not available for this provider.")
 
     def _change_provider_interactive(self):
-        """Allow user to switch between providers."""
-        current = self.provider_metadata
-
-        try:
-            resolution = self.provider_manager.change_provider(current)
-        except RuntimeError as exc:
-            self.ui.error(str(exc) or "API setup aborted by user.")
-            return
-
-        if not resolution:
-            return
-
-        self._apply_provider_resolution(resolution)
-        self._initialize_llm_client(announce=True, rebuild_translators=True)
+        """Allow user to switch between providers (delegated to LLMCoordinator)."""
+        self._llm.change_provider_interactive(on_success=self._init_translators)
 
     def _update_api_key_interactive(self):
-        """Allow user to update their API key for the current provider."""
-        if not self.provider_metadata:
-            self.ui.error("No provider configured.")
-            return
-
-        resolution = self.provider_manager.update_key(self.provider_metadata)
-        if not resolution:
-            return
-
-        self._apply_provider_resolution(resolution)
-        self._initialize_llm_client(announce=True, rebuild_translators=True)
+        """Allow user to update their API key (delegated to LLMCoordinator)."""
+        self._llm.update_api_key_interactive(on_success=self._init_translators)
 
     def _show_file_locations(self):
         """Display file paths and configuration."""
@@ -2206,6 +1576,9 @@ class FrenchVocabBuilder:
                     ok = self.fr_to_eng_translator.translate_and_save(original_word)
                     if ok is False:
                         self.ui.warning("Translation cancelled or failed.")
+                    else:
+                        # Quick action menu after successful sentence translation
+                        self._show_post_translation_menu()
                     return
 
         # If we keep sentence in vocab and examples are disabled, drop them
@@ -2327,6 +1700,39 @@ class FrenchVocabBuilder:
             # User pressed Esc - return to main menu
             pass
 
+    def _show_post_translation_menu(self) -> None:
+        """Show quick action menu after successful sentence translation."""
+        try:
+            quick_action = self.ui.interactive_menu(
+                "What's next?",
+                [
+                    ("translate", "Translate another sentence"),
+                    ("add", "Add a vocabulary word"),
+                    ("menu", "Return to main menu"),
+                ],
+                "Press Esc to return to main menu",
+            )
+
+            if quick_action == "translate":
+                # Go to translation menu
+                translation_choice = self.show_translation_menu()
+                if translation_choice == "auto" and self.auto_translator:
+                    if self.ensure_llm_ready():
+                        self.auto_translator.run()
+                elif translation_choice == "eng_to_target" and self.eng_to_fr_translator:
+                    if self.ensure_llm_ready():
+                        self.eng_to_fr_translator.run()
+                elif translation_choice == "target_to_eng" and self.fr_to_eng_translator:
+                    if self.ensure_llm_ready():
+                        self.fr_to_eng_translator.run()
+            elif quick_action == "add":
+                self.handle_new_word_entry()
+            # If "menu" selected, just return normally
+
+        except KeyboardInterrupt:
+            # User pressed Esc - return to main menu
+            pass
+
     def create_unique_variant(self, base_word: str) -> str:
         """Create a unique variant label for a duplicate word using hyphenated suffixes."""
         candidate = f"{base_word} - alt"
@@ -2416,32 +1822,11 @@ class FrenchVocabBuilder:
 
     def update_entry_in_file(self, word_capitalized: str, new_block: str) -> None:
         """Replace the LaTeX entry block for the given word with new_block."""
-        try:
-            with self.latex_file.open("r", encoding="utf-8") as f:
-                content = f.read()
-            # Regex to match the specific entry by word with robust body matching
-            entry_cmd_pattern = re.escape(self._entry_command())
-            word_pattern = re.escape(word_capitalized)
-            pattern = rf"""
-                {entry_cmd_pattern}
-                \{{{word_pattern}\}}
-                \{{[^{{}}]*\}}
-                \{{ (?: [^{{}}]+ | \{{[^{{}}]*\}} )* \}}
-                \{{ (?: [^{{}}]+ | \{{[^{{}}]*\}} )* \}}
-            """
-            new_content, n = re.subn(pattern, new_block, content, count=1, flags=re.VERBOSE | re.DOTALL)
-            if n == 0:
-                self.ui.warning(f"Could not locate LaTeX entry for '{word_capitalized}' to update. Skipping file update.")
-                return
-            with self.latex_file.open("w", encoding="utf-8") as f:
-                f.write(new_content)
-        except Exception as e:
-            self.ui.error(f"Failed to update LaTeX entry for '{word_capitalized}': {e}")
+        self._vocab_repo.update_entry_in_file(word_capitalized, new_block)
 
     def is_valid_latex_entry(self, latex_entry: str) -> bool:
-        # Check if the entry is not empty and contains the expected LaTeX structure
-        entry_cmd = self._entry_command()
-        return bool(latex_entry.strip()) and entry_cmd in latex_entry
+        """Check if the entry contains expected LaTeX structure."""
+        return self._vocab_repo.is_valid_latex_entry(latex_entry)
 
     def _strip_trailing_punctuation(self, text: str) -> str:
         """Normalize by removing trailing punctuation and surrounding whitespace."""
@@ -2507,72 +1892,13 @@ class FrenchVocabBuilder:
         return word
 
     def add_word_to_entries(self, word: str, word_type: str, definitions: List[str], examples: List[Tuple[str, str]]):
-        """Updates the in-memory dictionaries with the new word entry."""
-        self._entries_loaded = True
-        word_lower = word.lower()
-        display_word = word if word_type.lower() == 'sentence' else word.capitalize()
-        self.word_entries[word_lower] = {
-            "word": display_word,
-            "type": word_type,
-            "definitions": "; ".join(definitions),
-            "examples": "; ".join([f"{f} ({e})" for f, e in examples]),
-            "definitions_list": list(definitions),
-            "examples_list": list(examples),
-        }
-        # Update normalized entries as well
-        normalized_word = self.normalize_word(word_lower)
-        self.normalized_entries[normalized_word] = word_lower
-        self.entry_count = len(self.word_entries) # Keep count accurate
+        """Update the in-memory dictionaries with a new word entry."""
+        self._vocab_repo.add_word_to_entries(word, word_type, definitions, examples)
 
     def handle_anki_export(self):
-        default_deck = self.language_config.anki.default_deck_name
-        mode_options = [
-            ("incremental", "Incremental (new words only)"),
-            ("rebuild", "Full rebuild (all words)"),
-            ("selected", "Selected words"),
-        ]
-        try:
-            export_mode = self.ui.interactive_menu(
-                "Anki Export Mode",
-                mode_options,
-                "[↑↓] Navigate • [Enter] Select • [Esc] Cancel",
-            )
-        except KeyboardInterrupt:
-            self.ui.warning("Anki export cancelled.")
-            return
-        except Exception:
-            export_mode = "incremental"
+        """Handle Anki export workflow (delegated to AnkiExportManager)."""
+        self._ensure_anki_manager().handle_anki_export()
 
-        selected_words: Optional[Set[str]] = None
-        include_exported = False
-
-        if export_mode == "rebuild":
-            include_exported = True
-        elif export_mode == "selected":
-            selected_words = self._prompt_selected_words()
-            if not selected_words:
-                self.ui.warning("No matching words selected. Export cancelled.")
-                return
-            include_exported = True  # Ensure chosen entries are exported regardless of prior state.
-
-        try:
-            deck_name, explicit_path, reused_previous = self._determine_export_destination(default_deck)
-        except KeyboardInterrupt:
-            self.ui.warning("Anki export cancelled.")
-            return
-
-        if reused_previous:
-            reuse_target = explicit_path if explicit_path else self._normalize_output_path(deck_name)
-            self.ui.info(f"Reusing last Anki deck destination: {reuse_target}")
-
-        self.export_to_anki(
-            deck_name,
-            include_exported_words=include_exported,
-            selected_words=selected_words,
-            output_path=explicit_path,
-            export_context=export_mode,
-        )
-    
     def display_parsed_info(
             self,
             word: str,
@@ -2584,201 +1910,43 @@ class FrenchVocabBuilder:
         self.ui.display_word_entry(word, word_type_str, definitions, examples)
 
     def _prompt_selected_words(self) -> Optional[Set[str]]:
-        """Prompt the user to choose specific words for Anki export."""
-        self._ensure_entries_loaded()
-        if not self.word_entries:
-            self.ui.warning("No vocabulary entries available to select.")
-            return None
-
-        prompt_text = (
-            "Enter the words you want to export separated by commas\n"
-            "(matching is case-insensitive; leave blank to cancel)"
-        )
-        raw_input = self.ui.prompt(prompt_text).strip()
-        if not raw_input:
-            return None
-
-        tokens = [token.strip() for token in raw_input.split(",")]
-        selected_keys: Set[str] = set()
-        missing: List[str] = []
-
-        for token in tokens:
-            if not token:
-                continue
-            lower_token = token.lower()
-            if lower_token in self.word_entries:
-                selected_keys.add(lower_token)
-                continue
-
-            normalized = self.normalize_word(lower_token)
-            match = next(
-                (key for key, entry in self.word_entries.items() if self.normalize_word(key) == normalized),
-                None,
-            )
-            if match:
-                selected_keys.add(match)
-            else:
-                missing.append(token)
-
-        if missing:
-            self.ui.warning(
-                "The following words were not found and will be skipped: "
-                + ", ".join(sorted(missing))
-            )
-
-        if not selected_keys:
-            return None
-        return selected_keys
+        """Prompt for word selection (delegated to AnkiExportManager)."""
+        return self._ensure_anki_manager()._prompt_selected_words()
 
     def _normalize_deck_title(self, candidate: str) -> str:
-        """Derive a clean deck title from arbitrary user input or paths."""
-        value = (candidate or "").strip()
-        if not value:
-            return self.language_config.anki.default_deck_name
-        lower = value.lower()
-        if lower.endswith(".apkg"):
-            value = value[:-5]
-        name = Path(value).name or value
-        sanitized = name.strip()
-        if not sanitized:
-            return self.language_config.anki.default_deck_name
-        return sanitized
+        """Normalize deck title (delegated to AnkiExportManager)."""
+        return self._ensure_anki_manager()._normalize_deck_title(candidate)
 
     def _normalize_output_path(self, destination: Union[str, Path]) -> Path:
-        """Resolve an absolute .apkg path from either a deck name or explicit destination."""
-        if isinstance(destination, Path):
-            raw = str(destination)
-        else:
-            raw = (destination or "").strip()
-
-        if not raw:
-            raw = self.language_config.anki.default_deck_name
-
-        expanded = os.path.expanduser(raw)
-        if expanded.lower().endswith(".apkg"):
-            candidate = Path(expanded)
-        else:
-            candidate = Path(f"{expanded}.apkg")
-
-        if not candidate.is_absolute():
-            candidate = (Path.cwd() / candidate).resolve()
-        else:
-            candidate = candidate.resolve()
-        return candidate
+        """Normalize output path (delegated to AnkiExportManager)."""
+        return self._ensure_anki_manager()._normalize_output_path(destination)
 
     def _determine_export_destination(self, default_deck: str) -> Tuple[str, Optional[Path], bool]:
-        """Pick an Anki deck destination, reusing prior exports when possible."""
-        metadata = getattr(self, "last_export_metadata", None) or {}
-        previous_deck = (metadata.get("deck_name") or "").strip()
-        previous_path: Optional[Path] = None
-        previous_raw_path = metadata.get("path")
-        if previous_raw_path:
-            try:
-                previous_path = Path(os.path.expanduser(str(previous_raw_path)))
-            except (TypeError, ValueError):
-                previous_path = None
-
-        if previous_deck and previous_path:
-            location_desc = str(previous_path)
-            if not previous_path.exists():
-                location_desc += " (new file will be created)"
-            options = [
-                ("reuse_previous", f"Reuse last deck '{previous_deck}' ({location_desc})"),
-                ("new_deck", "Choose a different deck"),
-            ]
-            try:
-                choice = self.ui.interactive_menu(
-                    "Anki Deck Destination",
-                    options,
-                    "[↑↓] Navigate • [Enter] Select • [Esc] Cancel",
-                )
-            except KeyboardInterrupt:
-                raise
-            except Exception:
-                choice = "reuse_previous"
-
-            if choice == "reuse_previous":
-                return previous_deck, previous_path, True
-
-        prompt_default = previous_deck or default_deck
-        raw_entry = self.ui.prompt("Enter a name for your Anki deck", default=prompt_default).strip()
-        if not raw_entry:
-            raw_entry = prompt_default
-
-        ends_with_extension = raw_entry.lower().endswith(".apkg")
-        contains_directory = raw_entry.startswith("~") or any(
-            sep in raw_entry for sep in (os.sep, os.altsep) if sep
-        )
-
-        if contains_directory or ends_with_extension:
-            explicit_path = Path(os.path.expanduser(raw_entry))
-            deck_title = self._normalize_deck_title(raw_entry)
-            return deck_title, explicit_path, False
-
-        deck_title = self._normalize_deck_title(raw_entry)
-        return deck_title, None, False
+        """Determine export destination (delegated to AnkiExportManager)."""
+        return self._ensure_anki_manager()._determine_export_destination(default_deck)
 
     def display_latex_entry(self, latex_entry: str):
         self.ui.display_latex_entry(latex_entry)
 
     def get_all_latex_entries(self) -> Set[str]:
-        # Return a set of all words in the LaTeX file, including incomplete entries
-        with self.latex_file.open("r", encoding="utf-8") as file:
-            content = file.read()
-        entry_cmd_pattern = re.escape(self._entry_command()) + r"\{(.*?)\}"
-        entries = re.findall(entry_cmd_pattern, content)
-        return set(entry.lower() for entry in entries)
+        """Return a set of all words in the LaTeX file."""
+        return self._vocab_repo.get_all_latex_entries()
 
     def get_all_exported_words(self) -> Set[str]:
-        return set(self.exported_words)
+        """Get all exported words (delegated to AnkiExportManager)."""
+        return self._ensure_anki_manager().get_all_exported_words()
 
     def compare_entries_and_exports(self) -> Tuple[Set[str], Set[str]]:
-        latex_entries = self.get_all_latex_entries()
-        exported_words = self.get_all_exported_words()
-        in_latex_not_exported = latex_entries - exported_words
-        in_exports_not_latex = exported_words - latex_entries
-        return in_latex_not_exported, in_exports_not_latex
+        """Compare entries and exports (delegated to AnkiExportManager)."""
+        return self._ensure_anki_manager().compare_entries_and_exports()
 
     def generate_discrepancy_report(self):
-        in_latex_not_exported, in_exports_not_latex = self.compare_entries_and_exports()
-        
-        data = {
-            "In LaTeX but not exported": ", ".join(sorted(in_latex_not_exported)) or "None",
-            "In exports but not in LaTeX": ", ".join(sorted(in_exports_not_latex)) or "None"
-        }
-        
-        self.ui.dict_to_table(data, title="Discrepancy Report")
-        
-        if not in_latex_not_exported and not in_exports_not_latex:
-            self.ui.success("No discrepancies found!")
-        else:
-            self.ui.warning("Discrepancies found. Please review the report above.")
+        """Generate discrepancy report (delegated to AnkiExportManager)."""
+        self._ensure_anki_manager().generate_discrepancy_report()
 
     def reconcile_menu_option(self):
-        self.generate_discrepancy_report()
-        # Offer one-click actions
-        in_latex_not_exported, in_exports_not_latex = self.compare_entries_and_exports()
-        # Export missing LaTeX words to Anki
-        if in_latex_not_exported:
-            if self.ui.confirm(f"Export {len(in_latex_not_exported)} word(s) missing in Anki now?", default=True):
-                try:
-                    deck_name, explicit_path, _ = self._determine_export_destination(
-                        self.language_config.anki.default_deck_name
-                    )
-                except KeyboardInterrupt:
-                    self.ui.warning("Anki export cancelled.")
-                    return
-                self.export_to_anki(
-                    deck_name,
-                    output_path=explicit_path,
-                    export_context="reconcile_missing",
-                )
-        # Remove extra exported words not present in LaTeX
-        if in_exports_not_latex:
-            if self.ui.confirm(f"Remove {len(in_exports_not_latex)} stale exported word(s) from tracking?", default=False):
-                self.exported_words.difference_update(in_exports_not_latex)
-                self.save_exported_words()
-                self.ui.success("Updated exported words; removed stale entries.")
+        """Reconcile menu option (delegated to AnkiExportManager)."""
+        self._ensure_anki_manager().reconcile_menu_option()
 
     def display_all_vocabulary(self):
         """Displays all vocabulary entries present in the LaTeX file in a paginated table format.
@@ -2821,12 +1989,12 @@ class FrenchVocabBuilder:
 
         if truncated_definitions:
             self.ui.info(
-                "Some definitions are abbreviated. View any by number; Enter or q to continue.",
+                "Some definitions are abbreviated. View any by number; Enter to continue.",
                 accent="dim",
             )
             while True:
-                choice = read_line("Show full definitions for # (Enter/q to finish): ").strip()
-                if not choice or choice.lower() in {"q", "quit", "exit", "0"}:
+                choice = read_line("Show full definitions for # (Enter to finish): ").strip()
+                if not choice or choice == "0":
                     break
                 if choice.isdigit():
                     entry_number = int(choice)
@@ -2841,7 +2009,7 @@ class FrenchVocabBuilder:
                         expand=True,
                     )
                     continue
-                self.ui.warning("Enter a number or press Enter/q to finish.")
+                self.ui.warning("Enter a number or press Enter to finish.")
 
         search_query = self.ui.prompt(
             "Search vocabulary (press Enter to skip)",
