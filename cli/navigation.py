@@ -34,6 +34,34 @@ _ESC_SEQUENCE_TIMEOUT = 0.03  # follow-up polling window once a sequence begins
 _MAX_ESCAPE_SEQUENCE_BYTES = 5
 
 
+def _flush_stdin() -> None:
+    """Flush any buffered input from stdin to prevent accidental keypresses."""
+    if sys.platform.startswith("win"):
+        try:
+            import msvcrt
+            while msvcrt.kbhit():
+                msvcrt.getwch()
+        except Exception:
+            pass
+        return
+
+    try:
+        import termios
+        fd = sys.stdin.fileno()
+        termios.tcflush(fd, termios.TCIFLUSH)
+    except Exception:
+        # Fallback: drain with non-blocking select
+        try:
+            fd = sys.stdin.fileno()
+            while True:
+                ready, _, _ = select.select([fd], [], [], 0)
+                if not ready:
+                    break
+                os.read(fd, 1024)
+        except Exception:
+            pass
+
+
 def interactive_select(
     console: Console,
     title: str,
@@ -70,6 +98,10 @@ def interactive_select(
             instructions,
             show_keys=show_keys,
         )
+
+    # Flush any buffered input to prevent accidental double-Enter from
+    # auto-selecting during spinners or previous prompts
+    _flush_stdin()
 
     instructions = instructions or _INSTRUCTION_DEFAULT
     index = 0
@@ -336,6 +368,10 @@ def interactive_confirm(
     """
     if not getattr(sys.stdin, "isatty", lambda: False)():
         return _fallback_confirm(console, message, default=default)
+
+    # Flush any buffered input to prevent accidental double-Enter from
+    # auto-selecting during spinners or previous prompts
+    _flush_stdin()
 
     selected = default  # True = Yes selected, False = No selected
 

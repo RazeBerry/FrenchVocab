@@ -5,10 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - for type hints only
-    from core import FrenchVocabBuilder
+    from core.protocols import VocabAppProtocol
 
 
-def main_menu_loop(app: "FrenchVocabBuilder") -> None:
+def main_menu_loop(app: "VocabAppProtocol") -> None:
     """Interactive menu loop driving the CLI session."""
     app.welcome_screen()
     while True:

@@ -84,6 +84,7 @@ class ProviderManager:
     def __init__(self, ui: UIHelper, project_root: Path):
         self.ui = ui
         self.project_root = Path(project_root)
+        self._env_path = self._determine_env_path(self.project_root)
         # Allow skipping keyring probing for faster startup in CI/containers.
         skip = os.environ.get("FRENCHVOCAB_SKIP_KEYRING", "")
         self._keyring_enabled = str(skip).strip().lower() not in {"1", "true", "yes", "y"}
@@ -94,6 +95,41 @@ class ProviderManager:
 
     def available_providers(self) -> Iterable[ProviderMetadata]:
         return _PROVIDER_REGISTRY.values()
+
+    # Helper: decide where to read/write the .env file
+    def _determine_env_path(self, project_root: Path) -> Path:
+        """Choose a writable .env location, preferring project root, with fallbacks.
+
+        Order of preference:
+        1) FRENCHVOCAB_CONFIG_DIR/.env (explicit override)
+        2) project_root/.env if writable
+        3) ~/.frenchvocab/.env
+        """
+
+        # 1) Explicit override for tests or custom deployments
+        env_dir_override = os.environ.get("FRENCHVOCAB_CONFIG_DIR")
+        if env_dir_override:
+            env_dir = Path(env_dir_override).expanduser()
+            try:
+                env_dir.mkdir(parents=True, exist_ok=True)
+                return env_dir / ".env"
+            except OSError as exc:  # pragma: no cover - defensive
+                self.ui.warning(f"Failed to create config dir {env_dir}: {exc}. Falling back to defaults.")
+
+        # 2) Project root, if writable
+        project_env = Path(project_root) / ".env"
+        project_parent = project_env.parent
+        if project_env.exists():
+            if project_env.is_file() and os.access(project_env, os.W_OK):
+                return project_env
+        else:
+            if os.access(project_parent, os.W_OK):
+                return project_env
+
+        # 3) User config dir (always attempt to create)
+        fallback_dir = Path.home() / ".frenchvocab"
+        fallback_dir.mkdir(parents=True, exist_ok=True)
+        return fallback_dir / ".env"
 
     def prepare_provider(self, metadata: ProviderMetadata) -> ProviderResolution:
         """Ensure an API key exists for the given provider, prompting if needed."""
@@ -145,12 +181,16 @@ class ProviderManager:
             border_style="yellow",
         )
 
-        api_key = self._prompt_for_api_key(metadata)
-        validation = self._validate_api_key(metadata, api_key, perform_connection_test=True)
+        while True:
+            api_key = self._prompt_for_api_key(metadata)
+            validation = self._validate_api_key(metadata, api_key, perform_connection_test=True)
 
-        if not validation.valid:
+            if validation.valid:
+                break
+
             self._display_validation_failure(metadata, validation)
-            return None
+            if not self.ui.confirm("Try entering the key again?", default=True):
+                return None
 
         storage = self._store_api_key_to_keyring(metadata, api_key)
         os.environ[metadata.env_var] = api_key
@@ -162,7 +202,7 @@ class ProviderManager:
 
     # Private helpers ----------------------------------------------------
     def _load_env_file(self) -> Optional[Path]:
-        env_path = self.project_root / ".env"
+        env_path = self._env_path
         if load_dotenv is None:
             if env_path.exists():
                 self.ui.warning(
@@ -185,15 +225,8 @@ class ProviderManager:
         return None
 
     def _resolve_api_key(self, metadata: ProviderMetadata) -> Tuple[Optional[str], Optional[str]]:
-        env_value = os.environ.get(metadata.env_var)
-        if env_value:
-            result = self._validate_api_key(metadata, env_value, perform_connection_test=False)
-            if result.valid:
-                return env_value, "environment variable"
-            self.ui.warning(
-                f"Ignoring invalid {metadata.env_var} from environment: {result.message}"
-            )
-
+        # Prefer persisted credentials (keyring) over ambient environment variables so that
+        # a stray exported key cannot silently override the saved one.
         stored_key = None
         if self._keyring_enabled:
             try:
@@ -208,6 +241,19 @@ class ProviderManager:
                 return stored_key, "system keyring"
             self.ui.warning(
                 "Stored keyring credential failed validation; starting setup wizard."
+            )
+
+        env_value = os.environ.get(metadata.env_var)
+        if env_value:
+            result = self._validate_api_key(metadata, env_value, perform_connection_test=False)
+            if result.valid:
+                self.ui.warning(
+                    f"Found {metadata.env_var} in environment; using it for this session. "
+                    "Saved keyring/.env credentials are ignored until you unset it."
+                )
+                return env_value, "environment variable"
+            self.ui.warning(
+                f"Ignoring invalid {metadata.env_var} from environment: {result.message}"
             )
 
         return None, None
@@ -543,9 +589,15 @@ class ProviderManager:
                 return "session environment"
 
     def _write_env_file(self, metadata: ProviderMetadata, api_key: str) -> Optional[str]:
-        env_path = self.project_root / ".env"
+        env_path = self._env_path
         if env_path.exists() and not env_path.is_file():
             self.ui.error("Cannot write .env file because the path exists and is not a file.")
+            return None
+
+        try:
+            env_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self.ui.error(f"Failed to create config directory {env_path.parent}: {exc}")
             return None
 
         lines: List[str] = []

@@ -105,3 +105,19 @@ def test_prepare_provider_reads_env_file(tmp_path, monkeypatch):
     success_messages = ui.messages["success"]
     assert any(metadata.display_name in msg for msg in success_messages)
     monkeypatch.delenv(metadata.env_var, raising=False)
+
+
+def test_store_api_key_respects_config_dir_env(tmp_path, monkeypatch):
+    cfg_dir = tmp_path / "cfg"
+    monkeypatch.setenv("FRENCHVOCAB_CONFIG_DIR", str(cfg_dir))
+    monkeypatch.setenv("FRENCHVOCAB_SKIP_KEYRING", "1")
+
+    manager, _ = _make_manager(tmp_path)
+    metadata = _get_provider_metadata("gemini")
+
+    storage = manager._store_api_key_to_keyring(metadata, "AIza" + "x" * 36)
+
+    env_path = cfg_dir / ".env"
+    assert env_path.exists()
+    assert "GEMINI_API_KEY=AIza" in env_path.read_text(encoding="utf-8")
+    assert storage.startswith(".env")

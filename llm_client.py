@@ -64,21 +64,35 @@ class GeminiClient(LLMClient):
 
         t0 = perf_counter()
         contents = [
-            types.Content(
+            self._types.Content(
                 role="user",
-                parts=[types.Part.from_text(text=prompt)]
+                parts=[self._types.Part.from_text(text=prompt)]
             )
         ]
-        cfg = types.GenerateContentConfig(
+        cfg = self._types.GenerateContentConfig(
             response_mime_type="text/plain",
-            thinking_config=types.ThinkingConfig(thinking_budget=-1),
+            thinking_config=self._types.ThinkingConfig(thinking_budget=-1),
         )
 
-        stream = client.models.generate_content_stream(
-            model=model_name,
-            contents=contents,
-            config=cfg,
-        )
+        try:
+            stream = client.models.generate_content_stream(
+                model=model_name,
+                contents=contents,
+                config=cfg,
+            )
+        except Exception as exc:
+            if self._is_leaked_key_error(exc):
+                raise RuntimeError(
+                    "Your Gemini API key has been revoked by Google (flagged as leaked). "
+                    "This usually means the key was exposed in a public place (e.g., GitHub). "
+                    "Generate a NEW key at https://aistudio.google.com/apikey"
+                ) from exc
+            if self._is_region_block_error(exc):
+                raise RuntimeError(
+                    "Gemini is not available in your current region. "
+                    "Choose a different provider or try from a supported location."
+                ) from exc
+            raise
 
         t_first = 0.0
         ttft = 0.0
@@ -110,6 +124,19 @@ class GeminiClient(LLMClient):
                 ttft = t_first - t0
                 print("[Warning] Model returned no tokens.")
                 return dict(ttft=ttft, tps=0.0, tokens_out=0)
+        except Exception as exc:
+            if self._is_leaked_key_error(exc):
+                raise RuntimeError(
+                    "Your Gemini API key has been revoked by Google (flagged as leaked). "
+                    "This usually means the key was exposed in a public place (e.g., GitHub). "
+                    "Generate a NEW key at https://aistudio.google.com/apikey"
+                ) from exc
+            if self._is_region_block_error(exc):
+                raise RuntimeError(
+                    "Gemini is not available in your current region. "
+                    "Choose a different provider or try from a supported location."
+                ) from exc
+            raise
         finally:
             t_last = perf_counter()
             full_text = "".join(pieces)
@@ -133,9 +160,9 @@ class GeminiClient(LLMClient):
             if not out_tokens and full_text:
                 try:
                     token_payload = [
-                        types.Content(
+                        self._types.Content(
                             role="user",
-                            parts=[types.Part.from_text(text=full_text)],
+                            parts=[self._types.Part.from_text(text=full_text)],
                         )
                     ]
                     token_info = client.models.count_tokens(
@@ -171,9 +198,9 @@ class GeminiClient(LLMClient):
     def verify_credentials(self, timeout: float = 5.0) -> None:
         def _probe() -> None:
             payload = [
-                types.Content(
+                self._types.Content(
                     role="user",
-                    parts=[types.Part.from_text(text="credential-check")],
+                    parts=[self._types.Part.from_text(text="credential-check")],
                 )
             ]
             self._client.models.count_tokens(model=self.MODEL_NAME, contents=payload)
@@ -185,6 +212,19 @@ class GeminiClient(LLMClient):
         except FuturesTimeoutError as exc:
             future.cancel()
             raise TimeoutError("Gemini validation timed out") from exc
+        except Exception as exc:
+            if self._is_leaked_key_error(exc):
+                raise RuntimeError(
+                    "Your Gemini API key has been revoked by Google (flagged as leaked). "
+                    "This usually means the key was exposed in a public place (e.g., GitHub). "
+                    "Generate a NEW key at https://aistudio.google.com/apikey"
+                ) from exc
+            if self._is_region_block_error(exc):
+                raise RuntimeError(
+                    "Gemini is not available in your current region (FAILED_PRECONDITION). "
+                    "Choose a different provider (e.g., Claude) or try again from a supported location."
+                ) from exc
+            raise
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
@@ -208,6 +248,20 @@ class GeminiClient(LLMClient):
                     summary[label] = int(value)
                     break
         return summary
+
+    @staticmethod
+    def _is_region_block_error(exc: Exception) -> bool:
+        """Detect Gemini geo restrictions from error text."""
+        msg = str(exc).lower()
+        return "location is not supported" in msg or "failed_precondition" in msg
+
+    @staticmethod
+    def _is_leaked_key_error(exc: Exception) -> bool:
+        """Detect when Google has flagged an API key as leaked/compromised."""
+        msg = str(exc).lower()
+        return "leaked" in msg or (
+            "permission_denied" in msg and "api key" in msg
+        )
 
 class ClaudeClient(LLMClient):
     MODEL_NAME = "claude-3-5-sonnet-20240620"
@@ -257,18 +311,7 @@ class ClaudeClient(LLMClient):
             raise TimeoutError("Claude validation timed out") from exc
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
-        
-        def stream(self, prompt: str):
-            yield ""
 
-        def model_label(self) -> str:
-            return "Anthropic Claude (unavailable)"
-
-        def verify_credentials(self, timeout: float = 5.0) -> None:  # noqa: ARG002
-            raise ImportError(
-                "The anthropic package is not installed. "
-                "Install it with: pip install anthropic"
-            )
 
 class ProviderFactory:
     """Factory to create different LLM client implementations."""

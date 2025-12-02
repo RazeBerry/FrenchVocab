@@ -142,6 +142,8 @@ The test suite uses stubs for external services; no real API calls are made.
 ## Troubleshooting Checklist
 - **"No API key found"** – run `python FrenchVocab.py --language fr` and walk through the wizard, or export the key via `export GEMINI_API_KEY=…`.
 - **Keyring errors** – your OS keychain may be locked or unsupported; choose the `.env` or session option when prompted.
+- **Where is the `.env` stored?** – we try the project directory first; if it's read-only we fall back to `~/.frenchvocab/.env`. Override with `FRENCHVOCAB_CONFIG_DIR=/path/to/dir` when needed.
+- **Environment variable overrides** – if `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` is set in your shell, that value is used for the session and any saved keyring/.env entries are ignored.
 - **Timeout during validation** – indicates provider connectivity issues. Verify the key is active and try again.
 
 ---

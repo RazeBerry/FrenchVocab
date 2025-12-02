@@ -15,7 +15,16 @@ exported_words.json
 
 *.pdf
 
-# Ignore JetBrains IDE settings
+# Secrets and environment files - NEVER COMMIT
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+credentials.json
+
+# JetBrains IDE settings
 .idea/
 
 # Ignore compiled Python bytecode

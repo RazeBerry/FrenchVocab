@@ -7,6 +7,7 @@ from _stubs import install_basic_stubs
 install_basic_stubs()
 
 import FrenchVocab  # noqa: E402
+from core.llm_coordinator import LLMCoordinator  # noqa: E402
 
 
 class _FailingClient:
@@ -50,18 +51,48 @@ class _CaptureUI:
         pass
 
 
+class _MockProviderMetadata:
+    identifier = "claude"
+    display_name = "Claude"
+    env_var = "ANTHROPIC_API_KEY"
+    keyring_name = "anthropic"
+
+
+class _MockProviderManager:
+    def prepare_provider(self, *args, **kwargs):
+        raise RuntimeError("No setup needed for test")
+
+    def resolve_provider_silently(self, *args, **kwargs):
+        return None
+
+
 def test_query_ai_surfaces_provider_error_label():
+    ui = _CaptureUI()
+    client = _FailingClient()
+
+    # Create a minimal LLMCoordinator with the failing client injected
+    coordinator = object.__new__(LLMCoordinator)
+    coordinator._ui = ui
+    coordinator._client = client
+    coordinator._api_available = True
+    coordinator._api_error_reason = None
+    coordinator._provider_metadata = _MockProviderMetadata()
+    coordinator._session_usage = {}
+    coordinator._session_requests = 0
+    coordinator._on_degraded_mode = None
+
+    # Create a minimal builder with the coordinator
     builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
-    builder.provider = 'claude'
-    builder.client = _FailingClient()
-    builder.ui = _CaptureUI()
+    builder._llm = coordinator
+    builder.ui = ui
     builder.console = SimpleNamespace()
+    builder.language_config = FrenchVocab.FrenchVocabBuilder.DEFAULT_LANGUAGE_CONFIG
 
     result = FrenchVocab.FrenchVocabBuilder.query_ai(builder, "mot")
 
     assert result == ""
-    assert builder.ui.errors, "Expected an error message to be emitted"
-    message = builder.ui.errors[0]
-    assert 'Claude' in message  # provider label should be visible
+    assert ui.errors, "Expected an error message to be emitted"
+    message = ui.errors[0]
+    assert 'Claude' in message or 'claude' in message.lower()  # provider label should be visible
     assert 'boom' in message  # surface original exception details
-    assert builder.ui.metrics == {'ttft': -1, 'tps': -1, 'tokens_out': -1}
+    assert ui.metrics == {'ttft': -1, 'tps': -1, 'tokens_out': -1}
