@@ -227,7 +227,7 @@ class TranslatorCLI:
         try:
             with self.console.status("[cyan]Querying AI for translation..."):
                 chunks = []
-                stream = self.client.stream(prompt)
+                stream = self.client.stream(prompt, thinking_level="medium")
                 while True:
                     try:
                         chunk = next(stream)
@@ -440,7 +440,28 @@ class TranslatorCLI:
             box_style=box.ROUNDED,
         )
         self.run_single_translation()
-        self.ui.info("Returning to main menu.")
+
+        # Quick action menu - allow users to continue without returning to main menu
+        while True:
+            try:
+                quick_action = self.ui.interactive_menu(
+                    "What's next?",
+                    [
+                        ("another", "Translate another sentence"),
+                        ("view", "View all translations"),
+                        ("menu", "Return to main menu"),
+                    ],
+                    "Press Esc to return to main menu",
+                )
+            except KeyboardInterrupt:
+                break  # User pressed Esc
+
+            if quick_action == "another":
+                self.run_single_translation()
+            elif quick_action == "view":
+                self.display_all_pairs()
+            else:  # "menu"
+                break
 
     def display_all_pairs(self) -> None:
         if not self.pairs:

@@ -13,6 +13,7 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+from core.file_safety import atomic_write_text
 from latex_repository import LatexRepository
 from models import normalize_word_key
 from languages import LanguageConfig, get_language_config
@@ -100,34 +101,43 @@ class VocabRepository:
 
     def ensure_entries_loaded(self) -> None:
         """Load LaTeX entries on first access to avoid startup penalty."""
-        if self._entries_loaded:
+        # Thread-safe fast path using Event (avoids lock for common case)
+        if self._entries_ready.is_set():
             return
 
+        should_load = False
         with self._entries_lock:
-            if self._entries_loaded:
-                self._entries_ready.set()
-                return
-            if self._entries_loading:
-                self._entries_ready.wait(timeout=1.0)
+            # Re-check under lock
+            if self._entries_ready.is_set():
                 return
 
-            # Check if entries already populated
-            if self.word_entries:
+            if self._entries_loading:
+                # Another thread is loading - we'll wait outside the lock
+                pass
+            elif self.word_entries:
+                # Entries already populated (shouldn't happen, but be safe)
                 self._entries_loaded = True
                 self._entries_ready.set()
                 return
+            else:
+                # We're the loading thread
+                self._entries_loading = True
+                should_load = True
 
-            self._entries_loading = True
-
-        try:
-            self.load_existing_entries()
-            self._entries_loaded = True
-        except Exception:
-            self._entries_loaded = False
-            raise
-        finally:
-            self._entries_loading = False
-            self._entries_ready.set()
+        if should_load:
+            try:
+                self.load_existing_entries()
+                self._entries_loaded = True
+            except Exception:
+                self._entries_loaded = False
+                raise
+            finally:
+                self._entries_loading = False
+                self._entries_ready.set()
+        else:
+            # Wait for loading thread to finish (30s timeout for large files)
+            if not self._entries_ready.wait(timeout=30.0):
+                raise TimeoutError("Timed out waiting for vocabulary entries to load")
 
     def load_existing_entries(self) -> None:
         """Load existing vocabulary entries using a balanced-brace parser."""
@@ -283,8 +293,7 @@ class VocabRepository:
 
             updated_content = content[:insert_position] + new_entry + "\n\n" + content[insert_position:]
 
-            with self.latex_file.open("w", encoding="utf-8") as file:
-                file.write(updated_content)
+            atomic_write_text(self.latex_file, updated_content, create_backup=True)
 
             # Update the normalized entries dictionary after successful file write
             normalized_new_word = self.normalize_word(new_word)
@@ -369,13 +378,20 @@ class VocabRepository:
             sorted_entries_section = header_line + "\n" + "\n\n".join([entry for _, entry in sorted_entries])
             sorted_content = header + sorted_entries_section + footer
 
-            # Safety check
-            if len(sorted_content) < len(content) * 0.9:
-                self.ui.error("Warning: Significant content loss detected. Aborting alphabetization.")
+            # Safety check: verify entry count matches (not just byte size)
+            original_entry_count = len(entry_matches)
+            sorted_entry_count = len(sorted_entries)
+
+            if sorted_entry_count != original_entry_count:
+                loss_count = original_entry_count - sorted_entry_count
+                self.ui.error(
+                    f"Entry count mismatch detected: {original_entry_count} entries before, "
+                    f"{sorted_entry_count} after ({loss_count} would be lost). "
+                    "Aborting alphabetization to prevent data loss."
+                )
                 return
 
-            with self.latex_file.open("w", encoding="utf-8") as file:
-                file.write(sorted_content)
+            atomic_write_text(self.latex_file, sorted_content, create_backup=True)
 
             if not silent:
                 self.ui.success("Entries alphabetized successfully.")
@@ -409,8 +425,7 @@ class VocabRepository:
             if n == 0:
                 self.ui.warning(f"Could not locate LaTeX entry for '{word_capitalized}' to update. Skipping file update.")
                 return
-            with self.latex_file.open("w", encoding="utf-8") as f:
-                f.write(new_content)
+            atomic_write_text(self.latex_file, new_content, create_backup=True)
         except Exception as e:
             self.ui.error(f"Failed to update LaTeX entry for '{word_capitalized}': {e}")
 

@@ -92,7 +92,8 @@ class LLMCoordinator:
         self._provider_metadata = provider_metadata or self._provider_manager.get_metadata(None)
         self._verbose = verbose
 
-        # Client state
+        # Client state (protected by _state_lock for thread safety)
+        self._state_lock = threading.Lock()
         self._client: Optional["LLMClient"] = client
         self._api_available: bool = client is not None
         self._api_error_reason: Optional[str] = None
@@ -123,11 +124,12 @@ class LLMCoordinator:
                 if self._prepare_provider():
                     self._initialize_client()
                 else:
-                    self._enter_degraded_mode(self._api_error_reason or "API setup skipped.")
+                    self._enter_degraded_mode(self.api_error_reason or "API setup skipped.")
             else:
                 self._start_background_init()
         else:
-            self._api_available = True
+            with self._state_lock:
+                self._api_available = True
 
     # -------------------------------------------------------------------------
     # Properties
@@ -142,29 +144,34 @@ class LLMCoordinator:
     def client(self, value: Optional["LLMClient"]) -> None:
         """Set the LLM client directly."""
         self._client = value
-        self._api_available = value is not None
-        if value is not None:
-            self._api_error_reason = None
+        with self._state_lock:
+            self._api_available = value is not None
+            if value is not None:
+                self._api_error_reason = None
 
     @property
     def api_available(self) -> bool:
         """Whether the AI provider is available for queries."""
-        return self._api_available
+        with self._state_lock:
+            return self._api_available
 
     @api_available.setter
     def api_available(self, value: bool) -> None:
         """Set API availability directly."""
-        self._api_available = value
+        with self._state_lock:
+            self._api_available = value
 
     @property
     def api_error_reason(self) -> Optional[str]:
         """Reason for API unavailability, if any."""
-        return self._api_error_reason
+        with self._state_lock:
+            return self._api_error_reason
 
     @api_error_reason.setter
     def api_error_reason(self, value: Optional[str]) -> None:
         """Set the API error reason."""
-        self._api_error_reason = value
+        with self._state_lock:
+            self._api_error_reason = value
 
     @property
     def provider(self) -> str:
@@ -217,7 +224,8 @@ class LLMCoordinator:
         """Persist provider metadata and API key details after successful setup."""
         self._provider_metadata = resolution.metadata
         os.environ[resolution.metadata.env_var] = resolution.api_key
-        self._api_error_reason = None
+        with self._state_lock:
+            self._api_error_reason = None
 
     def _prepare_provider(self) -> bool:
         """Ensure provider credentials are ready; return False when setup is skipped."""
@@ -225,7 +233,8 @@ class LLMCoordinator:
             resolution = self._provider_manager.prepare_provider(self._provider_metadata)
         except RuntimeError as exc:
             message = str(exc) or "API setup aborted by user."
-            self._api_error_reason = message
+            with self._state_lock:
+                self._api_error_reason = message
             self._ui.error(message, with_panel=True)
             return False
 
@@ -259,8 +268,9 @@ class LLMCoordinator:
             self._enter_degraded_mode(f"Error initializing {self._provider_metadata.identifier} client: {exc}")
             return False
 
-        self._api_available = True
-        self._api_error_reason = None
+        with self._state_lock:
+            self._api_available = True
+            self._api_error_reason = None
         if announce:
             self._ui.success(f"{self._provider_metadata.identifier.capitalize()} client initialized successfully!")
         if on_success:
@@ -275,22 +285,25 @@ class LLMCoordinator:
         if getattr(self, "_llm_thread", None):
             return
 
-        self._api_available = False
-        self._api_error_reason = "LLM initialization in background."
+        with self._state_lock:
+            self._api_available = False
+            self._api_error_reason = "LLM initialization in background."
 
         def _worker():
             try:
                 resolution = self._provider_manager.resolve_provider_silently(self._provider_metadata)
                 if not resolution:
                     # No credentials; switch to deferred state.
-                    self._api_available = False
-                    self._api_error_reason = "LLM not initialized (lazy mode). Configure provider on first AI use."
+                    with self._state_lock:
+                        self._api_available = False
+                        self._api_error_reason = "LLM not initialized (lazy mode). Configure provider on first AI use."
                     return
 
                 self._apply_provider_resolution(resolution)
                 if self._initialize_client(announce=False):
-                    self._api_available = True
-                    self._api_error_reason = None
+                    with self._state_lock:
+                        self._api_available = True
+                        self._api_error_reason = None
             except Exception as exc:  # pragma: no cover - defensive
                 self._llm_init_error = exc
             finally:
@@ -312,8 +325,9 @@ class LLMCoordinator:
         # Thread finished; clear handle
         self._llm_thread = None
         if self._client:
-            self._api_available = True
-            self._api_error_reason = None
+            with self._state_lock:
+                self._api_available = True
+                self._api_error_reason = None
             return True
         if self._llm_init_error:
             self._enter_degraded_mode(str(self._llm_init_error))
@@ -327,8 +341,9 @@ class LLMCoordinator:
         """Disable AI-dependent features while keeping the rest of the app usable."""
         clean_reason = (reason or "").strip() or "No AI provider configured."
         self._client = None
-        self._api_available = False
-        self._api_error_reason = clean_reason
+        with self._state_lock:
+            self._api_available = False
+            self._api_error_reason = clean_reason
         self._ui.warning(f"AI features unavailable: {clean_reason}")
         self._ui.info(
             "Existing vocabulary and exports remain accessible. Retry provider setup when prompted to restore AI features."
@@ -378,7 +393,7 @@ class LLMCoordinator:
         if self._client:
             return True
 
-        reason = self._api_error_reason or "No AI provider configured."
+        reason = self.api_error_reason or "No AI provider configured."
         self._ui.warning(f"AI provider unavailable: {reason}")
 
         options = [
@@ -499,7 +514,7 @@ class LLMCoordinator:
         label = progress_label or self.provider_label
 
         if not self._client:
-            reason = self._api_error_reason or f"{label} client is not configured."
+            reason = self.api_error_reason or f"{label} client is not configured."
             self._ui.error(f"Cannot query AI provider: {reason}")
             self._ui.info("AI-powered suggestions are disabled. Retry provider setup to continue.")
             return "", {}

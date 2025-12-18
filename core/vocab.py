@@ -995,6 +995,13 @@ class FrenchVocabBuilder:
 
     
     def welcome_screen(self):
+        # Alphabetize entries on launch to ensure consistent ordering.
+        # This also fixes any unsorted state from previous Ctrl+C exits.
+        try:
+            self.alphabetize_entries(silent=True)
+        except Exception:
+            pass  # Non-critical; continue even if alphabetization fails
+
         # Give the background LLM init a moment to finish so the welcome panel
         # reflects the current state without requiring user interaction.
         try:
@@ -1299,6 +1306,12 @@ class FrenchVocabBuilder:
         self._vocab_repo.alphabetize_entries(silent=silent)
 
     def exit_screen(self):
+        # Best-effort alphabetization on clean exit
+        try:
+            self.alphabetize_entries(silent=True)
+        except Exception:
+            pass  # Non-critical; proceed with exit
+
         language_name = self.language_config.display_name
         app_title = self._ui_text("app.title", f"{language_name} Vocabulary LaTeX Builder")
         token_summary = self._format_token_summary()
@@ -1486,7 +1499,6 @@ class FrenchVocabBuilder:
 
             recovery_options = [
                 ("retry", "↺ Retry now"),
-                ("retry_long", "⏱ Retry with longer timeout (15s)"),
                 ("settings", "🔧 Open Settings"),
                 ("skip", "← Return to main menu"),
             ]
@@ -1502,13 +1514,6 @@ class FrenchVocabBuilder:
 
             if recovery_choice == "retry":
                 # Retry with same timeout
-                ai_response = self.query_ai(original_word)
-                if not ai_response:
-                    self.ui.warning("Retry failed. Returning to main menu.")
-                    return
-            elif recovery_choice == "retry_long":
-                # TODO: Implement configurable timeout
-                self.ui.info("Retrying with extended timeout...")
                 ai_response = self.query_ai(original_word)
                 if not ai_response:
                     self.ui.warning("Retry failed. Returning to main menu.")
@@ -1622,9 +1627,6 @@ class FrenchVocabBuilder:
             self.ui.error("Cannot add vocabulary entry: Generated LaTeX is empty or invalid.")
             return
 
-        # --- Display LaTeX Entry ---
-        self.display_latex_entry(latex_entry)
-
         # Spelling correction now happens before LaTeX generation (no need to re-confirm here)
         corrected_word_value = final_word if final_word != original_word else None
 
@@ -1665,9 +1667,6 @@ class FrenchVocabBuilder:
             examples=examples,
             metadata=history_metadata or None,
         )
-
-        # --- Alphabetize ---
-        self.alphabetize_entries(silent=True)
 
         self.duplicate_resolution = None
 

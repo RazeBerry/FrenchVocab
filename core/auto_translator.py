@@ -154,7 +154,7 @@ class AutoTranslator:
         try:
             with self.console.status("[cyan]Detecting translation direction..."):
                 chunks: list[str] = []
-                stream = self.client.stream(prompt)
+                stream = self.client.stream(prompt, thinking_level="medium")
                 while True:
                     try:
                         chunk = next(stream)

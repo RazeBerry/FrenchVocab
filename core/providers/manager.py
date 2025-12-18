@@ -1,5 +1,6 @@
 import getpass
 import os
+import shutil
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from pathlib import Path
@@ -620,10 +621,28 @@ class ProviderManager:
         if not updated:
             new_lines.append(f"{key_var}={api_key}")
 
+        # Create backup before modification (best-effort)
+        if env_path.exists():
+            backup_path = env_path.with_suffix(".env.bak")
+            try:
+                shutil.copy2(env_path, backup_path)
+            except OSError as exc:
+                self.ui.warning(f"Could not create .env backup: {exc}")
+                # Continue anyway - backup is best-effort
+
+        # Use atomic write pattern: write to temp, then rename
+        temp_path = env_path.with_suffix(".env.tmp")
         try:
-            env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            temp_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            os.replace(temp_path, env_path)
         except OSError as exc:
             self.ui.error(f"Failed to write .env file: {exc}")
+            # Clean up temp file if it exists
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
             return None
 
         self.ui.success(f"Saved key to {env_path}.")

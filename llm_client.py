@@ -24,8 +24,14 @@ for _logger_name in ("google.genai", "google_genai.types"):
 
 class LLMClient(ABC):
     @abstractmethod
-    def stream(self, prompt: str):
-        """Yield chunks of pure text."""
+    def stream(self, prompt: str, *, thinking_level: str = "low"):
+        """Yield chunks of pure text.
+
+        Args:
+            prompt: The text prompt to send to the model.
+            thinking_level: Reasoning depth - "low" for simple tasks (vocabulary),
+                           "medium" for moderate complexity (translation).
+        """
         ...
 
     def model_label(self) -> str:
@@ -37,7 +43,7 @@ class LLMClient(ABC):
         return None
 
 class GeminiClient(LLMClient):
-    MODEL_NAME = "gemini-flash-latest"
+    MODEL_NAME = "gemini-3-flash-preview"
 
     def __init__(self, api_key: str | None = None):
         key = api_key or os.getenv("GEMINI_API_KEY")
@@ -51,9 +57,14 @@ class GeminiClient(LLMClient):
         self._types = types
         self._client = genai.Client(api_key=key)
 
-    def stream(self, prompt: str):
+    def stream(self, prompt: str, *, thinking_level: str = "low"):
         """
         Yields chunks of text while calculating TTFT and TPS.
+
+        Args:
+            prompt: The text prompt to send to the model.
+            thinking_level: Reasoning depth - "low" for simple tasks,
+                           "medium" for moderate complexity.
 
         Returns a dictionary with performance metrics upon generator completion.
         Example return: {'ttft': 0.5, 'tps': 50.0, 'tokens_out': 100, 'usage': {...}}
@@ -61,6 +72,14 @@ class GeminiClient(LLMClient):
         types = self._types
         client = self._client
         model_name = self.MODEL_NAME
+
+        # Map string level to SDK enum
+        level_map = {
+            "low": self._types.ThinkingLevel.LOW,
+            "medium": self._types.ThinkingLevel.MEDIUM,
+            "high": self._types.ThinkingLevel.HIGH,
+        }
+        sdk_level = level_map.get(thinking_level.lower(), self._types.ThinkingLevel.LOW)
 
         t0 = perf_counter()
         contents = [
@@ -71,7 +90,11 @@ class GeminiClient(LLMClient):
         ]
         cfg = self._types.GenerateContentConfig(
             response_mime_type="text/plain",
-            thinking_config=self._types.ThinkingConfig(thinking_budget=-1),
+            temperature=1.0,  # Recommended for Gemini 3 models
+            max_output_tokens=8192,
+            thinking_config=self._types.ThinkingConfig(
+                thinking_level=sdk_level
+            ),
         )
 
         try:
@@ -280,7 +303,8 @@ class ClaudeClient(LLMClient):
             raise RuntimeError("ANTHROPIC_API_KEY is not set")
         self._client = anthropic.Anthropic(api_key=key)
 
-    def stream(self, prompt: str):
+    def stream(self, prompt: str, *, thinking_level: str = "low"):
+        # Claude doesn't use thinking_level; parameter accepted for interface compatibility
         with self._client.messages.stream(
             model=self.MODEL_NAME,
             max_tokens=8192,

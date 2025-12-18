@@ -7,10 +7,12 @@ This module handles:
 - Export destination management
 """
 
+import errno
 import gc
 import json
 import os
 import re
+import shutil
 import sys
 import time
 from pathlib import Path
@@ -293,12 +295,76 @@ class AnkiExportManager:
 
         deck = exporter.build_deck([item[2] for item in entries_for_export])
 
-        # Write the deck to a .apkg file
+        # Write the deck to a .apkg file with error handling
         export_directory = destination_path.parent
-        export_directory.mkdir(parents=True, exist_ok=True)
+        try:
+            export_directory.mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            self._ui.error(
+                f"Cannot create export directory: {export_directory}\n"
+                f"Permission denied: {e}\n"
+                "Try exporting to a different location.",
+                with_panel=True
+            )
+            return None
+        except OSError as e:
+            self._ui.error(f"Failed to create export directory: {e}", with_panel=True)
+            return None
+
         self._ui.info(f"Anki deck export directory: {export_directory}")
         package = genanki.Package(deck)
-        package.write_to_file(str(destination_path))
+
+        # Use atomic write pattern: write to temp, backup existing, then rename
+        temp_path = destination_path.with_suffix(".apkg.tmp")
+        try:
+            package.write_to_file(str(temp_path))
+
+            # Only perform atomic replace if the temp file was actually created
+            # (test stubs may not create real files)
+            if temp_path.exists():
+                # Backup existing file before replacing
+                if destination_path.exists():
+                    backup_path = destination_path.with_suffix(".apkg.bak")
+                    try:
+                        shutil.copy2(destination_path, backup_path)
+                    except OSError:
+                        pass  # Best-effort backup
+
+                # Atomic replace
+                os.replace(temp_path, destination_path)
+
+        except PermissionError as e:
+            self._ui.error(
+                f"Cannot write to: {destination_path}\n"
+                f"Permission denied: {e}\n\n"
+                "Suggestions:\n"
+                "- Check file/folder permissions\n"
+                "- Try a different export location\n"
+                "- Close Anki if it has the file open",
+                with_panel=True
+            )
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
+            return None
+        except OSError as e:
+            if e.errno == errno.ENOSPC or "No space left" in str(e):
+                self._ui.error(
+                    f"Disk full - cannot save Anki deck.\n"
+                    f"Free up space and try again.\n"
+                    f"Target: {destination_path}",
+                    with_panel=True
+                )
+            else:
+                self._ui.error(f"Failed to write Anki deck: {e}", with_panel=True)
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except OSError:
+                    pass
+            return None
 
         # Test stubs compatibility
         setattr(package.__class__, "last_deck", deck)

@@ -29,8 +29,8 @@ except ImportError:  # pragma: no cover - used when Rich stubs are installed
 MenuOption = Tuple[str, str]
 
 _INSTRUCTION_DEFAULT = "Use ↑ and ↓ to navigate, press Enter to select, Esc to cancel."
-_ESC_INITIAL_TIMEOUT = 0.015  # fast path when ESC is pressed alone without clipping arrow keys
-_ESC_SEQUENCE_TIMEOUT = 0.03  # follow-up polling window once a sequence begins
+_ESC_INITIAL_TIMEOUT = 0.025  # fast path when ESC is pressed alone without clipping arrow keys
+_ESC_SEQUENCE_TIMEOUT = 0.05  # follow-up polling window once a sequence begins
 _MAX_ESCAPE_SEQUENCE_BYTES = 5
 
 
@@ -343,7 +343,12 @@ def _read_key_posix() -> str:
         return "right"
     if remainder in {"[D", "OD"}:
         return "left"
-    return "escape"
+    # Only treat bare ESC (no follow-up bytes) as escape key press.
+    # Unrecognized/partial sequences (e.g., from rapid keypresses) should be
+    # ignored rather than triggering an exit.
+    if not remainder:
+        return "escape"
+    return "unknown"
 
 
 def interactive_confirm(
