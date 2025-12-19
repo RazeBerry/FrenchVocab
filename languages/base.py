@@ -1,9 +1,90 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Mapping, Sequence, Tuple
+from typing import Callable, FrozenSet, Mapping, Sequence, Tuple
 
 InputValidator = Callable[[str, bool], bool]
+
+# Base punctuation set shared across all languages.
+#
+# Note: we accept common typographic apostrophes/hyphens because many systems
+# auto-substitute them (e.g., today’s → today\u2019s, non‑breaking hyphen).
+_BASE_VALID_CHARS: FrozenSet[str] = frozenset(
+    {
+        "-",  # hyphen-minus
+        "‐",  # hyphen
+        "‑",  # non-breaking hyphen
+        "'",  # apostrophe
+        "’",  # right single quotation mark
+        "‘",  # left single quotation mark
+        "ʼ",  # modifier letter apostrophe
+    }
+)
+
+_SENTENCE_VALID_CHARS: FrozenSet[str] = frozenset(
+    {
+        *_BASE_VALID_CHARS,
+        "–",  # en dash
+        "—",  # em dash
+        ",",
+        ".",
+        ";",
+        ":",
+        "!",
+        "?",
+        "(",
+        ")",
+        "[",
+        "]",
+        '"',
+        "“",
+        "”",
+        "«",
+        "»",
+        "…",
+        "/",
+        "\\",
+        "%",
+        "$",
+        "€",
+        "#",
+        "&",
+        "+",
+        "*",
+        "@",
+        "=",
+    }
+)
+
+
+def make_text_validator(extra_chars: FrozenSet[str] = frozenset()) -> InputValidator:
+    """Create a text validator with optional language-specific characters.
+
+    Args:
+        extra_chars: Additional valid characters for this language (e.g., German quotes)
+
+    Returns:
+        A validation function compatible with InputValidator signature
+    """
+    sentence_chars = _SENTENCE_VALID_CHARS | extra_chars
+
+    def validator(text: str, allow_sentences: bool) -> bool:
+        stripped = text.strip()
+        if not stripped:
+            return False
+
+        if not allow_sentences:
+            return all(
+                ch.isalpha() or ch.isspace() or ch in _BASE_VALID_CHARS
+                for ch in stripped
+            )
+
+        return all(
+            ch.isalpha() or ch.isspace() or ch.isdigit() or ch in sentence_chars
+            for ch in stripped
+        )
+
+    return validator
 
 
 @dataclass(frozen=True)
@@ -81,4 +162,5 @@ __all__ = [
     "AnkiConfig",
     "AnkiCardTemplate",
     "InputValidator",
+    "make_text_validator",
 ]

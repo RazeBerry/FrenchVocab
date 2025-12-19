@@ -5,21 +5,16 @@ import shutil
 import string
 import unicodedata
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
-import genanki
 from pathlib import Path
 from rich.console import Console
-from rich.progress import Progress
 from enum import Enum, auto
 from cli.menu import main_menu_loop
-from anki_exporter import AnkiExporter, AnkiExportEntry, latex_to_anki_format as latex_to_anki_html
+from anki_exporter import latex_to_anki_format as latex_to_anki_html
 from ai_response_parser import parse_ai_response_text
 import time
 import keyring
 import threading
-from latex_repository import LatexRepository
-from models import normalize_word_key
 from languages import LanguageConfig, TranslatorConfig, default_language_code, get_language_config
-from languages.anki_shared_styles import compute_template_hash
 from typing import TYPE_CHECKING
 
 from .translator import TranslatorCLI
@@ -32,7 +27,6 @@ from ui_helper import UIHelper, read_line
 from core.providers.manager import (
     ProviderManager,
     ProviderMetadata,
-    ProviderResolution,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - optional provider clients
@@ -1626,6 +1620,9 @@ class FrenchVocabBuilder:
         if not self.is_valid_latex_entry(latex_entry):
             self.ui.error("Cannot add vocabulary entry: Generated LaTeX is empty or invalid.")
             return
+
+        # --- Preview LaTeX Entry ---
+        self.display_latex_entry(latex_entry)
 
         # Spelling correction now happens before LaTeX generation (no need to re-confirm here)
         corrected_word_value = final_word if final_word != original_word else None

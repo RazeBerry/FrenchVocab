@@ -9,6 +9,7 @@ from .base import (
     VocabTemplate,
     AnkiConfig,
     AnkiCardTemplate,
+    make_text_validator,
 )
 from .german_tex import (
     GERMAN_INITIAL_TEX_CONTENT,
@@ -20,30 +21,8 @@ from .german_tex import (
 )
 from .anki_shared_styles import get_anki_css, compute_template_hash
 
-
-def _validate_german_text(text: str, allow_sentences: bool) -> bool:
-    stripped = text.strip()
-    if not stripped:
-        return False
-
-    if not allow_sentences:
-        base_valid = {"-", "'", "’", "‘"}
-        return all(ch.isalpha() or ch.isspace() or ch in base_valid for ch in stripped)
-
-    valid_chars = {
-        "-", "'", "’", "‘",
-        "–", "—",
-        ",", ".", ";", ":", "!", "?",
-        "(", ")", "[", "]",
-        '"', "«", "»", "“", "”", "„", "‟",
-        "…", "/", "\\",
-        "%", "$", "€", "#", "&", "+", "*", "@", "=",
-    }
-    return all(
-        ch.isalpha() or ch.isspace() or ch.isdigit() or ch in valid_chars
-        for ch in stripped
-    )
-
+# German has additional quote characters: „ (opening) and ‟ (closing)
+_validate_german_text = make_text_validator(frozenset({"„", "‟"}))
 
 _UI_STRINGS: Dict[str, str] = {
     "app.title": "German Vocabulary LaTeX Builder",

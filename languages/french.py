@@ -3,51 +3,32 @@ from __future__ import annotations
 from typing import Dict
 
 from ai_prompts import AI_PROMPT_TEMPLATE
-from eng_to_fr_latex_templates import (
+from .latex_templates import (
+    # Main vocabulary templates
+    INITIAL_TEX_CONTENT,
+    SAMPLE_ENTRY,
+    FINAL_TEX_CONTENT,
+    # English → French templates
     INITIAL_ENG_FR_TEX_CONTENT,
     FINAL_ENG_FR_TEX_CONTENT,
     AI_TRANSLATION_PROMPT_TEMPLATE,
-)
-from fr_to_eng_latex_templates import (
+    # French → English templates
     INITIAL_FR_ENG_TEX_CONTENT,
     FINAL_FR_ENG_TEX_CONTENT,
     FR_TO_ENG_TRANSLATION_PROMPT_TEMPLATE,
 )
-from latex_templates import INITIAL_TEX_CONTENT, SAMPLE_ENTRY, FINAL_TEX_CONTENT
 from .base import (
     LanguageConfig,
     TranslatorConfig,
     VocabTemplate,
     AnkiConfig,
     AnkiCardTemplate,
+    make_text_validator,
 )
 from .anki_shared_styles import get_anki_css, compute_template_hash
 
-
-def _validate_french_text(text: str, allow_sentences: bool) -> bool:
-    """Validation rules for French input."""
-    stripped = text.strip()
-    if not stripped:
-        return False
-
-    if not allow_sentences:
-        base_valid = {"-", "'", "’", "‘"}
-        return all(ch.isalpha() or ch.isspace() or ch in base_valid for ch in stripped)
-
-    valid_chars = {
-        "-", "'", "’", "‘",          # apostrophes/hyphen
-        "–", "—",                    # en/em dash
-        ",", ".", ";", ":", "!", "?",  # punctuation
-        "(", ")", "[", "]",
-        '"', "«", "»", "“", "”",
-        "…", "/", "\\",             # ellipsis, slash, backslash (escaped later for LaTeX)
-        "%", "$", "€", "#", "&", "+", "*", "@", "=",
-    }
-    return all(
-        ch.isalpha() or ch.isspace() or ch.isdigit() or ch in valid_chars
-        for ch in stripped
-    )
-
+# French uses the base character set (no extra characters needed)
+_validate_french_text = make_text_validator()
 
 _UI_STRINGS: Dict[str, str] = {
     "app.title": "French Vocabulary LaTeX Builder",

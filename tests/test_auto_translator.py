@@ -21,7 +21,7 @@ class _FakeLLMClient:
     def __init__(self, response_text: str):
         self.response_text = response_text
 
-    def stream(self, _prompt: str):
+    def stream(self, _prompt: str, *, thinking_level: str = "low"):
         response_text = self.response_text
 
         def _generator():

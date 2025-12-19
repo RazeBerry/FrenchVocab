@@ -11,6 +11,9 @@ exported_words.json
 # Ignore all .log files
 *.log
 
+# Backup files
+*.bak
+
 *.tex
 
 *.pdf

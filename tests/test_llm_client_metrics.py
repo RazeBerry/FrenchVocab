@@ -58,6 +58,12 @@ class _ThinkingConfig:
         self.kwargs = _kwargs
 
 
+class _ThinkingLevel:
+    LOW = "LOW"
+    MEDIUM = "MEDIUM"
+    HIGH = "HIGH"
+
+
 def _install_google_stub(stream_factory=None):
     saved = {
         name: sys.modules.get(name)
@@ -71,6 +77,7 @@ def _install_google_stub(stream_factory=None):
     types_mod.Part = _Part
     types_mod.GenerateContentConfig = _GenerateContentConfig
     types_mod.ThinkingConfig = _ThinkingConfig
+    types_mod.ThinkingLevel = _ThinkingLevel
 
     genai_mod.Client = lambda api_key=None: _Client(api_key=api_key, stream_factory=stream_factory)
     genai_mod.types = types_mod

@@ -120,7 +120,7 @@ def install_basic_stubs():
     if 'llm_client' not in sys.modules:
         ll = types.ModuleType('llm_client')
         class _LLMClient:
-            def stream(self, _prompt: str):
+            def stream(self, _prompt: str, *, thinking_level: str = "low"):
                 yield ""
             def model_label(self) -> str:
                 return "Stub LLM"

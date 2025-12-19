@@ -4,7 +4,7 @@ import sys
 from rich.console import Console
 from rich.panel import Panel
 from rich.padding import Padding
-from rich.prompt import Confirm, Prompt
+from rich.prompt import Prompt
 from rich.table import Table
 from rich import box
 from typing import List, Dict, Any, Optional, Tuple, Sequence

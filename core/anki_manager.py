@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
 
 import genanki
 
-from anki_exporter import AnkiExporter, AnkiExportEntry, latex_to_anki_format as latex_to_anki_html
+from anki_exporter import AnkiExporter, AnkiExportEntry
 from languages.anki_shared_styles import compute_template_hash
 
 if TYPE_CHECKING:
