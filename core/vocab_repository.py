@@ -20,6 +20,11 @@ from languages import LanguageConfig, get_language_config
 from ui_helper import UIHelper
 
 
+class EntryNotFoundError(Exception):
+    """Raised when a vocabulary entry cannot be located in the LaTeX file."""
+    pass
+
+
 class VocabRepository:
     """Manages vocabulary entries stored in LaTeX files."""
 
@@ -407,27 +412,54 @@ class VocabRepository:
             )
 
     def update_entry_in_file(self, word_capitalized: str, new_block: str) -> None:
-        """Replace the LaTeX entry block for the given word with new_block."""
-        try:
-            with self.latex_file.open("r", encoding="utf-8") as f:
-                content = f.read()
+        """Replace the LaTeX entry block for the given word with new_block.
 
-            entry_cmd_pattern = re.escape(self._get_entry_command())
-            word_pattern = re.escape(word_capitalized)
-            pattern = rf"""
+        Raises:
+            EntryNotFoundError: If the entry cannot be located in the file.
+            IOError: If file read/write operations fail.
+        """
+        with self.latex_file.open("r", encoding="utf-8") as f:
+            content = f.read()
+
+        entry_cmd_pattern = re.escape(self._get_entry_command())
+        word_pattern = re.escape(word_capitalized)
+        # Pattern with optional whitespace between components for flexibility
+        pattern = rf"""
+            {entry_cmd_pattern}
+            \s*
+            \{{{word_pattern}\}}
+            \s*
+            \{{[^{{}}]*\}}
+            \s*
+            \{{ (?: [^{{}}]+ | \{{[^{{}}]*\}} )* \}}
+            \s*
+            \{{ (?: [^{{}}]+ | \{{[^{{}}]*\}} )* \}}
+        """
+        # Use lambda to prevent interpretation of backslashes in LaTeX as regex backreferences
+        new_content, n = re.subn(pattern, lambda m: new_block, content, count=1, flags=re.VERBOSE | re.DOTALL)
+        if n == 0:
+            # Try case-insensitive search as fallback
+            pattern_ci = rf"""
                 {entry_cmd_pattern}
-                \{{{word_pattern}\}}
+                \s*
+                \{{{re.escape(word_capitalized)}\}}
+                \s*
                 \{{[^{{}}]*\}}
+                \s*
                 \{{ (?: [^{{}}]+ | \{{[^{{}}]*\}} )* \}}
+                \s*
                 \{{ (?: [^{{}}]+ | \{{[^{{}}]*\}} )* \}}
             """
-            new_content, n = re.subn(pattern, new_block, content, count=1, flags=re.VERBOSE | re.DOTALL)
+            new_content, n = re.subn(
+                pattern_ci, lambda m: new_block, content, count=1,
+                flags=re.VERBOSE | re.DOTALL | re.IGNORECASE
+            )
             if n == 0:
-                self.ui.warning(f"Could not locate LaTeX entry for '{word_capitalized}' to update. Skipping file update.")
-                return
-            atomic_write_text(self.latex_file, new_content, create_backup=True)
-        except Exception as e:
-            self.ui.error(f"Failed to update LaTeX entry for '{word_capitalized}': {e}")
+                raise EntryNotFoundError(
+                    f"Could not locate LaTeX entry for '{word_capitalized}' in file. "
+                    f"The entry may have been manually modified or deleted."
+                )
+        atomic_write_text(self.latex_file, new_content, create_backup=True)
 
     def is_valid_latex_entry(self, latex_entry: str) -> bool:
         """Check if the entry contains expected LaTeX structure."""

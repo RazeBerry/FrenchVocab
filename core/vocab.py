@@ -20,9 +20,10 @@ from typing import TYPE_CHECKING
 from .translator import TranslatorCLI
 from .auto_translator import AutoTranslator
 from .history_logger import TranslationLogger
-from .vocab_repository import VocabRepository
+from .vocab_repository import VocabRepository, EntryNotFoundError
 from .llm_coordinator import LLMCoordinator
 from .anki_manager import AnkiExportManager
+from models import normalize_word_key
 from ui_helper import UIHelper, read_line
 from core.providers.manager import (
     ProviderManager,
@@ -1590,8 +1591,9 @@ class FrenchVocabBuilder:
         # --- Merge path (if selected) ---
         if self.duplicate_resolution and self.duplicate_resolution.get('mode') == 'merge':
             target_key = self.duplicate_resolution.get('existing', final_word)
-            self.merge_into_existing(target_key, primary_word_type, definitions, examples)
-            self.ui.success(f"Merged AI content into existing entry for '{target_key}'.")
+            if self.merge_into_existing(target_key, primary_word_type, definitions, examples):
+                self.ui.success(f"Merged AI content into existing entry for '{target_key}'.")
+            # Error already shown by merge_into_existing if it failed
             self.duplicate_resolution = None
             return
 
@@ -1747,28 +1749,37 @@ class FrenchVocabBuilder:
                 return candidate
             i += 1
 
-    def merge_into_existing(self, existing_word: str, new_type: str, new_defs: List[str], new_examples: List[Tuple[str, str]]):
-        """Merge new definitions/examples into an existing entry and update the LaTeX file and memory."""
+    def merge_into_existing(self, existing_word: str, new_type: str, new_defs: List[str], new_examples: List[Tuple[str, str]]) -> bool:
+        """Merge new definitions/examples into an existing entry and update the LaTeX file and memory.
+
+        Returns:
+            True if merge was successful, False otherwise.
+
+        Note:
+            Uses transactional approach: file is updated first, then memory.
+            If file update fails, memory remains unchanged (no partial state).
+        """
         self._ensure_entries_loaded()
         key = existing_word.lower()
         if key not in self.word_entries:
             self.ui.error(f"Cannot merge: existing entry for '{existing_word}' not found.")
-            return
+            return False
         entry = self.word_entries[key]
 
-        # Use structured lists if available else fallback
+        # Use structured lists if available else fallback with robust parsing
         defs_existing = entry.get('definitions_list') or [d.strip() for d in entry['definitions'].split('; ') if d.strip()]
         exs_existing = entry.get('examples_list') or []
         if not exs_existing and entry.get('examples'):
-            for e in entry['examples'].split('; '):
-                if ' (' in e and e.endswith(')'):
-                    fr, en = e.rsplit(' (', 1)
-                    exs_existing.append((fr, en[:-1]))
+            exs_existing = self._parse_examples_string(entry['examples'])
 
-        # Dedup helpers
+        # Dedup helpers with accent normalization (Bug #4 fix)
         def norm_text(s: str) -> str:
-            return re.sub(r"\s+", " ", s).strip().lower()
-        def norm_pair(p: Tuple[str,str]) -> Tuple[str,str]:
+            """Normalize text for deduplication: lowercase, strip accents, collapse whitespace."""
+            text = re.sub(r"\s+", " ", s).strip().lower()
+            # Apply same accent stripping as word normalization
+            return normalize_word_key(text)
+
+        def norm_pair(p: Tuple[str, str]) -> Tuple[str, str]:
             return (norm_text(p[0]), norm_text(p[1]))
 
         merged_defs_map = {norm_text(d): d for d in defs_existing}
@@ -1791,6 +1802,7 @@ class FrenchVocabBuilder:
 
         # Keep existing type by default; if unknown, use new
         final_type = entry.get('type') or new_type
+
         # Rebuild LaTeX entry and replace in file
         latex_block = self.format_latex_entry(
             entry['word'],
@@ -1799,14 +1811,24 @@ class FrenchVocabBuilder:
             merged_exs,
             entry_command=self.entry_command,
         )
-        self.update_entry_in_file(entry['word'], latex_block)
 
-        # Update memory
+        # Bug #6 fix: Update file FIRST, then memory (transactional approach)
+        # If file update fails, memory stays unchanged - no rollback needed
+        try:
+            self.update_entry_in_file(entry['word'], latex_block)
+        except EntryNotFoundError as e:
+            self.ui.error(f"Merge failed: {e}", with_panel=True)
+            return False
+        except IOError as e:
+            self.ui.error(f"Merge failed - file I/O error: {e}", with_panel=True)
+            return False
+
+        # File updated successfully, now update memory
         entry['type'] = final_type
         entry['definitions_list'] = merged_defs
         entry['examples_list'] = merged_exs
         entry['definitions'] = "; ".join(merged_defs)
-        entry['examples'] = "; ".join([f"{f} ({e})" for f,e in merged_exs])
+        entry['examples'] = "; ".join([f"{f} ({e})" for f, e in merged_exs])
         self._log_merge_history(
             existing_word=entry['word'],
             final_type=final_type,
@@ -1815,6 +1837,59 @@ class FrenchVocabBuilder:
             added_definitions=added_defs,
             added_examples=added_examples,
         )
+        return True
+
+    def _parse_examples_string(self, examples_str: str) -> List[Tuple[str, str]]:
+        """Robustly parse examples string into (source, translation) tuples.
+
+        Handles edge cases like nested parentheses and special characters.
+        Bug #5 fix: More robust parsing with multiple strategies.
+        """
+        result: List[Tuple[str, str]] = []
+        if not examples_str:
+            return result
+
+        for example in examples_str.split('; '):
+            example = example.strip()
+            if not example:
+                continue
+
+            # Strategy 1: Find the last balanced parentheses group
+            parsed = self._extract_translation_from_parens(example)
+            if parsed:
+                result.append(parsed)
+            else:
+                # Strategy 2: If no valid parens found, treat whole thing as source with empty translation
+                # This prevents data loss - user can see the malformed entry
+                self.ui.warning(f"Could not parse example translation: '{example[:50]}...'")
+                result.append((example, ""))
+
+        return result
+
+    def _extract_translation_from_parens(self, text: str) -> Optional[Tuple[str, str]]:
+        """Extract (source, translation) from 'source text (translation)' format.
+
+        Handles nested parentheses by finding the outermost matching pair at the end.
+        """
+        text = text.rstrip()
+        if not text.endswith(')'):
+            return None
+
+        # Find the matching opening paren for the final closing paren
+        depth = 0
+        for i in range(len(text) - 1, -1, -1):
+            if text[i] == ')':
+                depth += 1
+            elif text[i] == '(':
+                depth -= 1
+                if depth == 0:
+                    # Found the matching opening paren
+                    source = text[:i].rstrip()
+                    translation = text[i + 1:-1]  # Content inside parens
+                    if source:  # Only valid if there's actual source text
+                        return (source, translation)
+                    return None
+        return None
 
     def update_entry_in_file(self, word_capitalized: str, new_block: str) -> None:
         """Replace the LaTeX entry block for the given word with new_block."""
