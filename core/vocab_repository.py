@@ -14,10 +14,29 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from core.file_safety import atomic_write_text
-from latex_repository import LatexRepository, find_entry_bounds, parse_all_entries
+from latex_repository import LatexRepository, find_entry_bounds, iter_entry_groups, parse_all_entries
 from models import normalize_word_key
 from languages import LanguageConfig, get_language_config
 from ui_helper import UIHelper
+
+_LATEX_ESCAPE_MAPPING = {
+    '&': r'\&',
+    '%': r'\%',
+    '$': r'\$',
+    '#': r'\#',
+    '_': r'\_',
+    '{': r'\{',
+    '}': r'\}',
+    '~': r'\textasciitilde{}',
+    '^': r'\textasciicircum{}',
+    '\\': r'\textbackslash{}',
+}
+_LATEX_ESCAPE_PATTERN = re.compile(
+    "|".join(
+        re.escape(k)
+        for k in sorted(_LATEX_ESCAPE_MAPPING.keys(), key=len, reverse=True)
+    )
+)
 
 
 class EntryNotFoundError(Exception):
@@ -218,8 +237,8 @@ class VocabRepository:
             self.ui.error(f"Error reading file: {exc}", with_panel=True)
             return 0
 
-        cmd_pattern = re.escape(self._get_entry_command()) + r"\{"
-        count = len(re.findall(cmd_pattern, content))
+        entry_cmd = self._get_entry_command()
+        count = content.count(f"{entry_cmd}{{")
         self._entry_count_snapshot = (signature[0], signature[1], count)
         return count
 
@@ -287,10 +306,21 @@ class VocabRepository:
             entry_cmd = self._get_entry_command()
             new_word_normalized = self.normalize_word(new_word)
 
-            # Parse all existing entries
-            parsed_entries = parse_all_entries(content, entry_cmd)
+            insert_position = None
+            last_end = None
+            saw_entries = False
 
-            if not parsed_entries:
+            # Stream through entries until we find the insertion point
+            for groups, start, end in iter_entry_groups(content, entry_cmd, num_groups=4):
+                saw_entries = True
+                last_end = end
+                entry_word = groups[0].strip()
+                entry_word_normalized = self.normalize_word(entry_word)
+                if new_word_normalized < entry_word_normalized:
+                    insert_position = start
+                    break
+
+            if not saw_entries:
                 # No existing entries; place before \end{itemize} or \end{document}
                 insert_position = content.rfind("\\end{itemize}")
                 if insert_position == -1:
@@ -298,21 +328,10 @@ class VocabRepository:
                     if insert_position == -1:
                         insert_position = len(content)
             else:
-                # Find the correct alphabetical position
-                insert_position = None
-                for groups, start, end in parsed_entries:
-                    entry_word = groups[0].strip()
-                    entry_word_normalized = self.normalize_word(entry_word)
-                    if new_word_normalized < entry_word_normalized:
-                        # Insert before this entry
-                        insert_position = start
-                        break
-
                 if insert_position is None:
                     # New word comes after all existing entries
                     # Insert after the last entry, before \end{itemize}
-                    _, _, last_end = parsed_entries[-1]
-                    insert_position = content.find("\\end{itemize}", last_end)
+                    insert_position = content.find("\\end{itemize}", last_end or 0)
                     if insert_position == -1:
                         insert_position = content.rfind("\\end{document}")
                         if insert_position == -1:
@@ -378,19 +397,30 @@ class VocabRepository:
                 return
 
             # Extract full entry text and word for sorting
-            entries = []
+            entries: List[Tuple[str, str, str]] = []
+            already_sorted = True
+            previous_key: Optional[str] = None
             for groups, start, end in parsed_entries:
                 full_entry = entries_section[start:end]
                 word = groups[0].strip()  # First group is the word
-                entries.append((word, full_entry))
+                normalized = self.normalize_word(word)
+                if previous_key is not None and normalized < previous_key:
+                    already_sorted = False
+                previous_key = normalized
+                entries.append((normalized, word, full_entry))
 
             original_entry_count = len(parsed_entries)
 
+            if already_sorted:
+                if not silent:
+                    self.ui.info("Entries are already alphabetized.", accent="dim")
+                return
+
             # Sort entries by normalized word
-            sorted_entries = sorted(entries, key=lambda x: self.normalize_word(x[0]))
+            sorted_entries = sorted(entries, key=lambda x: x[0])
 
             # Reconstruct the entries section
-            sorted_entries_section = header_line + "\n" + "\n\n".join([entry for _, entry in sorted_entries])
+            sorted_entries_section = header_line + "\n" + "\n\n".join([entry for _, _, entry in sorted_entries])
             sorted_content = header + sorted_entries_section + footer
 
             # Safety check: verify entry count matches
@@ -618,20 +648,7 @@ class VocabRepository:
         def escape_latex(text: str) -> str:
             if text is None:
                 return ""
-            mapping = {
-                '&': r'\&',
-                '%': r'\%',
-                '$': r'\$',
-                '#': r'\#',
-                '_': r'\_',
-                '{': r'\{',
-                '}': r'\}',
-                '~': r'\textasciitilde{}',
-                '^': r'\textasciicircum{}',
-                '\\': r'\textbackslash{}',
-            }
-            pattern = re.compile('|'.join(re.escape(k) for k in sorted(mapping.keys(), key=len, reverse=True)))
-            return pattern.sub(lambda m: mapping[m.group(0)], text)
+            return _LATEX_ESCAPE_PATTERN.sub(lambda m: _LATEX_ESCAPE_MAPPING[m.group(0)], text)
 
         # Determine which LaTeX command to use
         entry_cmd = entry_command or VocabRepository.DEFAULT_LANGUAGE_CONFIG.vocab.entry_command

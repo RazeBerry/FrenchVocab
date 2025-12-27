@@ -101,7 +101,15 @@ def parse_all_entries(content: str, entry_cmd: str) -> List[Tuple[List[str], int
     - start: index of the entry command start
     - end: index immediately after the last brace
     """
-    entries: List[Tuple[List[str], int, int]] = []
+    return list(iter_entry_groups(content, entry_cmd, num_groups=4))
+
+
+def iter_entry_groups(content: str, entry_cmd: str, *, num_groups: int = 4):
+    """Yield parsed entry groups as (groups, start, end) tuples.
+
+    This is a streaming alternative to parse_all_entries that avoids allocating
+    a full list when callers only need to scan until a certain point.
+    """
     i = 0
     n = len(content)
     while i < n:
@@ -115,13 +123,12 @@ def parse_all_entries(content: str, entry_cmd: str) -> List[Tuple[List[str], int
             i += 1
         if i >= n or content[i] != '{':
             continue
-        result = parse_entry_groups(content, i, num_groups=4)
+        result = parse_entry_groups(content, i, num_groups=num_groups)
         if result is None:
             continue
         groups, _, entry_end = result
-        entries.append((groups, entry_start, entry_end))
+        yield (groups, entry_start, entry_end)
         i = entry_end
-    return entries
 
 
 class LatexRepository:

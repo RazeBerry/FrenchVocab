@@ -15,17 +15,6 @@ try:
 except ImportError:  # pragma: no cover - diagnostics are optional
     esc_latency = None  # type: ignore[assignment]
 
-try:  # Optional enhanced CLI input (shared across the app)
-    from prompt_toolkit import PromptSession
-    from prompt_toolkit.history import InMemoryHistory
-    from prompt_toolkit.patch_stdout import patch_stdout
-    from prompt_toolkit.key_binding import KeyBindings
-except ImportError:  # pragma: no cover - optional dependency
-    PromptSession = None  # type: ignore[assignment]
-    InMemoryHistory = None  # type: ignore[assignment]
-    patch_stdout = None  # type: ignore[assignment]
-    KeyBindings = None  # type: ignore[assignment]
-
 _ESCAPE_SENTINEL = "\x1b"
 _ESC_SEQUENCE_TIMEOUT = float(os.environ.get("FRENCHVOCAB_ESC_SEQUENCE_TIMEOUT", "0.03") or "0.03")
 
@@ -42,59 +31,85 @@ def _configure_timeout(app) -> None:
         pass
 
 
-if PromptSession and InMemoryHistory:
-    _PROMPT_HISTORY = InMemoryHistory()
-    _KEY_BINDINGS = KeyBindings() if KeyBindings else None
-    _ESC_TRACER = esc_latency.tracer() if esc_latency else None
-
-    if _KEY_BINDINGS is not None:
-        @_KEY_BINDINGS.add("escape", eager=True)
-        def _handle_escape(event) -> None:
-            """Allow bare ESC presses to exit the prompt immediately."""
-            if _ESC_TRACER:
-                _ESC_TRACER.log_escape_handler("key_binding")
-            event.app.exit(result=_ESCAPE_SENTINEL)
-
-    _PROMPT_SESSION = PromptSession(
-        history=_PROMPT_HISTORY,
-        key_bindings=_KEY_BINDINGS,
-    )
-    try:
-        _configure_timeout(_PROMPT_SESSION.app)
-    except Exception:  # pragma: no cover - defensive for prompt_toolkit internals
-        pass
-else:  # pragma: no cover - executed when prompt_toolkit is unavailable
-    _PROMPT_HISTORY = None  # type: ignore[assignment]
-    _PROMPT_SESSION = None  # type: ignore[assignment]
-    _KEY_BINDINGS = None  # type: ignore[assignment]
-    _ESC_TRACER = esc_latency.tracer() if esc_latency else None
+_ESC_TRACER = esc_latency.tracer() if esc_latency else None
+_PROMPT_TOOLKIT_INIT_ATTEMPTED = False
+_PROMPT_SESSION = None
+_PATCH_STDOUT = None
 
 
 def read_line(prompt: str = "", *, console: Optional[Console] = None) -> str:
     """Return a single line of user input with shared history & arrow support."""
-    use_prompt_toolkit = (
-        _PROMPT_SESSION is not None
-        and patch_stdout is not None
-        and sys.stdin.isatty()
-    )
-    if use_prompt_toolkit:
+    global _PROMPT_TOOLKIT_INIT_ATTEMPTED, _PROMPT_SESSION, _PATCH_STDOUT
+
+    def _init_prompt_toolkit() -> None:
+        """Initialize prompt_toolkit lazily to avoid import cost at startup."""
+        global _PROMPT_TOOLKIT_INIT_ATTEMPTED, _PROMPT_SESSION, _PATCH_STDOUT
+
+        if _PROMPT_TOOLKIT_INIT_ATTEMPTED:
+            return
+        _PROMPT_TOOLKIT_INIT_ATTEMPTED = True
+
+        try:  # Optional enhanced CLI input (shared across the app)
+            from prompt_toolkit import PromptSession
+            from prompt_toolkit.history import InMemoryHistory
+            from prompt_toolkit.patch_stdout import patch_stdout
+            from prompt_toolkit.key_binding import KeyBindings
+        except Exception:  # pragma: no cover - dependency might be missing or misconfigured
+            _PROMPT_SESSION = None
+            _PATCH_STDOUT = None
+            return
+
+        history = InMemoryHistory()
+        key_bindings = KeyBindings()
+
+        if key_bindings is not None:
+            @_wrap_key_binding_add(key_bindings)
+            def _handle_escape(event) -> None:
+                """Allow bare ESC presses to exit the prompt immediately."""
+                if _ESC_TRACER:
+                    _ESC_TRACER.log_escape_handler("key_binding")
+                event.app.exit(result=_ESCAPE_SENTINEL)
+
+        session = PromptSession(
+            history=history,
+            key_bindings=key_bindings,
+        )
         try:
-            if _ESC_TRACER:
-                _ESC_TRACER.mark_prompt_start(prompt)
-            session = _PROMPT_SESSION
-            try:
-                _configure_timeout(session.app)
-            except Exception:  # pragma: no cover - defensive for prompt_toolkit internals
-                pass
-            with patch_stdout(raw=True):
-                result = session.prompt(prompt)
-            if _ESC_TRACER:
-                _ESC_TRACER.mark_prompt_end(result)
-            return result
-        except EOFError:
-            if _ESC_TRACER:
-                _ESC_TRACER.mark_prompt_end("EOFError")
+            _configure_timeout(session.app)
+        except Exception:  # pragma: no cover - defensive for prompt_toolkit internals
             pass
+
+        _PROMPT_SESSION = session
+        _PATCH_STDOUT = patch_stdout
+
+    def _wrap_key_binding_add(key_bindings_obj):
+        """Return a decorator that registers a binding, keeping the callsite tidy."""
+        return key_bindings_obj.add("escape", eager=True)
+
+    use_prompt_toolkit = sys.stdin.isatty()
+    if use_prompt_toolkit:
+        if _PROMPT_SESSION is None or _PATCH_STDOUT is None:
+            _init_prompt_toolkit()
+
+        session = _PROMPT_SESSION
+        patch_stdout = _PATCH_STDOUT
+        if session is not None and patch_stdout is not None:
+            try:
+                if _ESC_TRACER:
+                    _ESC_TRACER.mark_prompt_start(prompt)
+                try:
+                    _configure_timeout(session.app)
+                except Exception:  # pragma: no cover - defensive for prompt_toolkit internals
+                    pass
+                with patch_stdout(raw=True):
+                    result = session.prompt(prompt)
+                if _ESC_TRACER:
+                    _ESC_TRACER.mark_prompt_end(result)
+                return result
+            except EOFError:
+                if _ESC_TRACER:
+                    _ESC_TRACER.mark_prompt_end("EOFError")
+                pass
 
     if console is not None:
         console_input = getattr(console, "input", None)

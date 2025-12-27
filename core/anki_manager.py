@@ -18,8 +18,6 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
 
-import genanki
-
 from anki_exporter import AnkiExporter, AnkiExportEntry
 from languages.anki_shared_styles import compute_template_hash
 
@@ -312,6 +310,8 @@ class AnkiExportManager:
             return None
 
         self._ui.info(f"Anki deck export directory: {export_directory}")
+        import genanki  # type: ignore[import]
+
         package = genanki.Package(deck)
 
         # Use atomic write pattern: write to temp, backup existing, then rename
@@ -326,7 +326,10 @@ class AnkiExportManager:
                 if destination_path.exists():
                     backup_path = destination_path.with_suffix(".apkg.bak")
                     try:
-                        shutil.copy2(destination_path, backup_path)
+                        try:
+                            os.link(destination_path, backup_path)
+                        except OSError:
+                            shutil.copy2(destination_path, backup_path)
                     except OSError:
                         pass  # Best-effort backup
 

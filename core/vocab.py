@@ -12,7 +12,6 @@ from cli.menu import main_menu_loop
 from anki_exporter import latex_to_anki_format as latex_to_anki_html
 from ai_response_parser import parse_ai_response_text
 import time
-import keyring
 import threading
 from languages import LanguageConfig, TranslatorConfig, default_language_code, get_language_config
 from typing import TYPE_CHECKING
@@ -343,7 +342,20 @@ class FrenchVocabBuilder:
         """Live count of vocabulary entries (delegated to VocabRepository)."""
         if hasattr(self, "_vocab_repo") and self._vocab_repo is not None:
             return self._vocab_repo.entry_count
-        return 0
+        return int(getattr(self, "_entry_count_fallback", 0) or 0)
+
+    @entry_count.setter
+    def entry_count(self, value: int) -> None:
+        """Allow callers to cache a fast count without forcing a full parse.
+
+        Some startup paths compute an approximate count via regex scanning
+        (see VocabRepository.count_entries) and store it for UI display.
+        """
+        count = int(value or 0)
+        if hasattr(self, "_vocab_repo") and self._vocab_repo is not None:
+            self._vocab_repo.entry_count = count
+            return
+        object.__setattr__(self, "_entry_count_fallback", count)
 
     @property
     def provider(self) -> str:
@@ -1000,10 +1012,9 @@ class FrenchVocabBuilder:
         except Exception:
             pass  # Non-critical; continue even if alphabetization fails
 
-        # Give the background LLM init a moment to finish so the welcome panel
-        # reflects the current state without requiring user interaction.
+        # Non-blocking: refresh background LLM init status if it's already done.
         try:
-            self._llm.await_background_init(timeout=0.5)
+            self._llm.await_background_init(timeout=0.0)
         except Exception:
             pass
 
@@ -1048,10 +1059,9 @@ class FrenchVocabBuilder:
         )
 
     def show_menu(self):
-        # Refresh background LLM init status; wait briefly so the status panel
-        # can flip to Connected as soon as the background init finishes.
+        # Non-blocking: refresh background LLM init status if it's already done.
         try:
-            self._llm.await_background_init(timeout=0.5)
+            self._llm.await_background_init(timeout=0.0)
         except Exception:
             pass
 
@@ -1350,6 +1360,7 @@ class FrenchVocabBuilder:
             if os.environ.get(env_var):
                 # Check if it came from keyring
                 try:
+                    import keyring  # type: ignore[import]
                     skip_keyring = not getattr(self.provider_manager, "_keyring_enabled", True)
                     if not skip_keyring:
                         stored_key = keyring.get_password("french_vocab_builder", self.provider_metadata.keyring_name)
@@ -1857,7 +1868,13 @@ class FrenchVocabBuilder:
                 accent="dim",
             )
             while True:
-                choice = read_line("Show full definitions for # (Enter to finish): ").strip()
+                try:
+                    choice = read_line("Show full definitions for # (Enter/Esc to finish): ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    break
+                # Check for ESC sequence
+                if "\x1b" in choice:
+                    break
                 if not choice or choice == "0":
                     break
                 if choice.isdigit():

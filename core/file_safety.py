@@ -60,7 +60,10 @@ class AtomicFileWriter:
                 self._backup_path = self.target_path.with_suffix(
                     self.target_path.suffix + self.backup_suffix
                 )
-                shutil.copy2(self.target_path, self._backup_path)
+                try:
+                    os.link(self.target_path, self._backup_path)
+                except OSError:
+                    shutil.copy2(self.target_path, self._backup_path)
 
             # Atomic replace (os.replace is atomic on POSIX)
             os.replace(self._temp_file, self.target_path)

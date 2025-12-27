@@ -6,8 +6,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
 
-from keyring import get_password, set_password  # type: ignore[import]
-from keyring.errors import KeyringError  # type: ignore[import]
+def get_password(service: str, name: str) -> Optional[str]:
+    """Lazy wrapper around keyring.get_password to avoid importing keyring at startup."""
+    import keyring  # type: ignore[import]
+
+    return keyring.get_password(service, name)
+
+
+def set_password(service: str, name: str, value: str) -> None:
+    """Lazy wrapper around keyring.set_password to avoid importing keyring at startup."""
+    import keyring  # type: ignore[import]
+
+    keyring.set_password(service, name, value)
 
 try:
     from dotenv import load_dotenv
@@ -232,7 +242,7 @@ class ProviderManager:
         if self._keyring_enabled:
             try:
                 stored_key = get_password("french_vocab_builder", metadata.keyring_name)
-            except KeyringError as exc:
+            except Exception as exc:
                 self.ui.error(f"Error accessing system keyring: {exc}")
 
         if stored_key:
@@ -625,7 +635,10 @@ class ProviderManager:
         if env_path.exists():
             backup_path = env_path.with_suffix(".env.bak")
             try:
-                shutil.copy2(env_path, backup_path)
+                try:
+                    os.link(env_path, backup_path)
+                except OSError:
+                    shutil.copy2(env_path, backup_path)
             except OSError as exc:
                 self.ui.warning(f"Could not create .env backup: {exc}")
                 # Continue anyway - backup is best-effort

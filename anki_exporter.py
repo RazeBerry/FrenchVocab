@@ -7,11 +7,21 @@ import re
 import struct
 import uuid
 from dataclasses import dataclass
-from typing import Iterable, List, Sequence, Tuple
-
-import genanki
+from typing import Any, Iterable, List, Sequence, Tuple
 
 from languages.base import AnkiConfig
+
+genanki: Any | None = None
+
+
+def _get_genanki():
+    """Return the genanki module, importing it lazily to reduce startup cost."""
+    global genanki
+    if genanki is None:
+        import genanki as _genanki  # type: ignore[import]
+
+        genanki = _genanki
+    return genanki
 
 
 # Public API -----------------------------------------------------------------
@@ -181,8 +191,9 @@ class AnkiExporter:
         self.model_id = self._stable_32(config.model_seed)
 
     def build_deck(self, entries: Iterable[AnkiExportEntry]) -> genanki.Deck:
+        genanki_mod = _get_genanki()
         model = self._build_model()
-        deck = genanki.Deck(self.deck_id, self.deck_name)
+        deck = genanki_mod.Deck(self.deck_id, self.deck_name)
 
         # Some test stubs provide minimal deck objects without add_note; patch in-place.
         if not hasattr(deck, "add_note"):
@@ -205,6 +216,7 @@ class AnkiExporter:
     # Internal helpers -----------------------------------------------------
 
     def _build_model(self) -> genanki.Model:
+        genanki_mod = _get_genanki()
         field_defs = [{"name": name} for name in self.config.field_names]
         templates = [
             {
@@ -214,7 +226,7 @@ class AnkiExporter:
             }
             for template in self.config.card_templates
         ]
-        return genanki.Model(
+        return genanki_mod.Model(
             self.model_id,
             self.config.model_name,
             fields=field_defs,
@@ -223,6 +235,7 @@ class AnkiExporter:
         )
 
     def _build_note(self, entry: AnkiExportEntry, model: genanki.Model) -> genanki.Note:
+        genanki_mod = _get_genanki()
         normalized = entry.word.strip().lower()
         guid_namespace = self.config.deck_namespace.lower()
         guid = uuid.uuid5(uuid.NAMESPACE_URL, f"{guid_namespace}::{normalized}").hex
@@ -237,7 +250,7 @@ class AnkiExporter:
         if len(self.config.field_names) > len(field_values):
             field_values.extend(["" for _ in range(len(self.config.field_names) - len(field_values))])
         fields = field_values[:len(self.config.field_names)]
-        note = genanki.Note(model=model, guid=guid, fields=fields)
+        note = genanki_mod.Note(model=model, guid=guid, fields=fields)
         if not hasattr(note, "fields"):
             note.fields = fields  # type: ignore[attr-defined]
         return note
