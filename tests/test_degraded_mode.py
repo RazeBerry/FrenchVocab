@@ -7,7 +7,7 @@ from _stubs import install_basic_stubs  # type: ignore
 install_basic_stubs()
 
 import FrenchVocab  # noqa: E402
-from core.llm_coordinator import LLMCoordinator  # noqa: E402
+from core.llm_coordinator import LLMCoordinator, InitState  # noqa: E402
 
 
 class _DummyClient:
@@ -47,8 +47,10 @@ def test_reconfigure_provider_restores_client(monkeypatch, tmp_path):
 
     def _initialize_client(self, *, announce=True, on_success=None):
         self._client = _DummyClient()
-        self._api_available = True
-        self._api_error_reason = None
+        with self._state_lock:
+            self._init_state = InitState.READY
+            self._api_error_reason = None
+            self._init_event.set()
         if on_success:
             on_success()
         return True

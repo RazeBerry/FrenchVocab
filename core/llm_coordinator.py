@@ -14,10 +14,20 @@ import os
 import sys
 import threading
 from contextlib import contextmanager
+from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from rich.progress import Progress
+
+
+class InitState(Enum):
+    """State machine for LLM initialization lifecycle."""
+    NOT_STARTED = auto()    # No initialization attempted yet
+    IN_PROGRESS = auto()    # Background thread is running
+    READY = auto()          # Client initialized successfully
+    FAILED = auto()         # Initialization failed (credentials, network, etc.)
+    DEFERRED = auto()       # No credentials found, waiting for user setup
 
 
 @contextmanager
@@ -95,10 +105,15 @@ class LLMCoordinator:
         # Client state (protected by _state_lock for thread safety)
         self._state_lock = threading.Lock()
         self._client: Optional["LLMClient"] = client
-        self._api_available: bool = client is not None
         self._api_error_reason: Optional[str] = None
 
-        # Background initialization state
+        # Initialization state machine (single source of truth)
+        self._init_state: InitState = InitState.READY if client else InitState.NOT_STARTED
+        self._init_event = threading.Event()  # Signals when init completes (success or failure)
+        if client:
+            self._init_event.set()  # Already initialized
+
+        # Background initialization state (legacy, kept for property compatibility)
         self._llm_thread: Optional[threading.Thread] = None
         self._llm_init_error: Optional[Exception] = None
 
@@ -145,21 +160,29 @@ class LLMCoordinator:
         """Set the LLM client directly."""
         self._client = value
         with self._state_lock:
-            self._api_available = value is not None
             if value is not None:
+                self._init_state = InitState.READY
                 self._api_error_reason = None
+                self._init_event.set()
+            else:
+                self._init_state = InitState.FAILED
+
+    @property
+    def init_state(self) -> InitState:
+        """Current initialization state (single source of truth)."""
+        with self._state_lock:
+            return self._init_state
 
     @property
     def api_available(self) -> bool:
         """Whether the AI provider is available for queries."""
-        with self._state_lock:
-            return self._api_available
+        return self.init_state == InitState.READY
 
     @api_available.setter
     def api_available(self, value: bool) -> None:
-        """Set API availability directly."""
+        """Set API availability directly (for backward compatibility)."""
         with self._state_lock:
-            self._api_available = value
+            self._init_state = InitState.READY if value else InitState.FAILED
 
     @property
     def api_error_reason(self) -> Optional[str]:
@@ -269,8 +292,9 @@ class LLMCoordinator:
             return False
 
         with self._state_lock:
-            self._api_available = True
+            self._init_state = InitState.READY
             self._api_error_reason = None
+            self._init_event.set()
         if announce:
             self._ui.success(f"{self._provider_metadata.identifier.capitalize()} client initialized successfully!")
         if on_success:
@@ -282,56 +306,57 @@ class LLMCoordinator:
 
     def _start_background_init(self) -> None:
         """Kick off non-blocking LLM setup without blocking startup on keyring/env lookups."""
-        if getattr(self, "_llm_thread", None):
-            return
-
         with self._state_lock:
-            self._api_available = False
+            if self._init_state != InitState.NOT_STARTED:
+                return  # Already started or completed
+            self._init_state = InitState.IN_PROGRESS
             self._api_error_reason = "LLM initialization in background."
 
         def _worker():
             try:
                 resolution = self._provider_manager.resolve_provider_silently(self._provider_metadata)
                 if not resolution:
-                    # No credentials; switch to deferred state.
+                    # No credentials; switch to deferred state
                     with self._state_lock:
-                        self._api_available = False
-                        self._api_error_reason = "LLM not initialized (lazy mode). Configure provider on first AI use."
+                        self._init_state = InitState.DEFERRED
+                        self._api_error_reason = "No credentials found. Configure provider on first AI use."
                     return
 
                 self._apply_provider_resolution(resolution)
-                if self._initialize_client(announce=False):
-                    with self._state_lock:
-                        self._api_available = True
-                        self._api_error_reason = None
+                # _initialize_client sets state to READY on success
+                self._initialize_client(announce=False)
             except Exception as exc:  # pragma: no cover - defensive
                 self._llm_init_error = exc
+                with self._state_lock:
+                    self._init_state = InitState.FAILED
+                    self._api_error_reason = str(exc)
             finally:
-                # clear the thread handle so status panels won't show "Initializing" forever
+                # Signal completion regardless of outcome
+                self._init_event.set()
                 self._llm_thread = None
 
         self._llm_init_error = None
         self._llm_thread = threading.Thread(target=_worker, name="llm-init", daemon=True)
         self._llm_thread.start()
 
+    def await_init(self, timeout: Optional[float] = None) -> bool:
+        """Wait for initialization to complete.
+
+        Args:
+            timeout: Maximum seconds to wait. None = wait forever.
+
+        Returns:
+            True if client is ready for queries.
+        """
+        self._init_event.wait(timeout=timeout)
+        return self.init_state == InitState.READY
+
     def await_background_init(self, timeout: float = 5.0) -> bool:
-        """Wait for background init to finish; return True if client available."""
-        thread = getattr(self, "_llm_thread", None)
-        if not thread:
-            return False
-        thread.join(timeout=timeout)
-        if thread.is_alive():
-            return False
-        # Thread finished; clear handle
-        self._llm_thread = None
-        if self._client:
-            with self._state_lock:
-                self._api_available = True
-                self._api_error_reason = None
-            return True
-        if self._llm_init_error:
-            self._enter_degraded_mode(str(self._llm_init_error))
-        return False
+        """Wait for background init to finish; return True if client available.
+
+        DEPRECATED: Use await_init() instead for cleaner semantics.
+        """
+        return self.await_init(timeout=timeout)
 
     # -------------------------------------------------------------------------
     # Degraded Mode
@@ -342,8 +367,9 @@ class LLMCoordinator:
         clean_reason = (reason or "").strip() or "No AI provider configured."
         self._client = None
         with self._state_lock:
-            self._api_available = False
+            self._init_state = InitState.FAILED
             self._api_error_reason = clean_reason
+            self._init_event.set()  # Signal that init attempt is complete
         self._ui.warning(f"AI features unavailable: {clean_reason}")
         self._ui.info(
             "Existing vocabulary and exports remain accessible. Retry provider setup when prompted to restore AI features."
@@ -384,12 +410,19 @@ class LLMCoordinator:
         Returns:
             True if client is ready for queries
         """
-        # If a background initialization is underway or completed, honor it first.
-        if not self._client and getattr(self, "_llm_thread", None):
-            # Give the background task time to finish - SDK imports can take 1-2s on cold start
-            if self.await_background_init(timeout=2.0):
+        state = self.init_state
+
+        # Already ready - fast path
+        if state == InitState.READY:
+            return True
+
+        # Background init in progress - wait for it to complete (no arbitrary timeout!)
+        if state == InitState.IN_PROGRESS:
+            self._init_event.wait()  # Block until init signals completion
+            if self.init_state == InitState.READY:
                 return True
 
+        # If we get here, init failed or was deferred - need user action
         if self._client:
             return True
 

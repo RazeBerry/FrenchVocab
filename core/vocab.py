@@ -1014,13 +1014,10 @@ class FrenchVocabBuilder:
         except Exception:
             pass  # Non-critical; continue even if alphabetization fails
 
-        # Non-blocking: refresh background LLM init status if it's already done.
-        try:
-            self._llm.await_background_init(timeout=0.0)
-        except Exception:
-            pass
+        # Determine provider name using state machine
+        from core.llm_coordinator import InitState
+        state = self._llm.init_state
 
-        # Determine which provider/model is being used
         provider_name = self.provider_metadata.display_name if hasattr(self, "provider_metadata") else "Unknown"
         if self.client is not None:
             label_getter = getattr(self.client, "model_label", None)
@@ -1032,15 +1029,11 @@ class FrenchVocabBuilder:
             elif isinstance(self.client, GeminiClient):
                 provider_name = f"Google Gemini ({self.client.MODEL_NAME})"
         else:
-            reason = (self.api_error_reason or "").lower()
-            thread_handle = getattr(self, "_llm_thread", None)
-            thread_active = bool(thread_handle and thread_handle.is_alive())
-            if thread_active:
+            # Use state machine for clean status
+            if state == InitState.IN_PROGRESS:
                 provider_name = f"{provider_name} (initializing)"
-            elif "lazy mode" in reason or "not initialized" in reason:
+            elif state == InitState.DEFERRED:
                 provider_name = f"{provider_name} (init deferred)"
-            elif "background" in reason:
-                provider_name = f"{provider_name} (initializing)"
             else:
                 provider_name = f"{provider_name} (not configured)"
 
@@ -1061,12 +1054,6 @@ class FrenchVocabBuilder:
         )
 
     def show_menu(self):
-        # Non-blocking: refresh background LLM init status if it's already done.
-        try:
-            self._llm.await_background_init(timeout=0.0)
-        except Exception:
-            pass
-
         eng_fr_count = 0
         if self.eng_to_fr_translator:
             eng_fr_count = self.eng_to_fr_translator.entry_count
@@ -1079,25 +1066,22 @@ class FrenchVocabBuilder:
         language_name = self.language_config.display_name
 
         # Display status summary panel above menu for reduced cognitive load
-        thread_handle = getattr(self, "_llm_thread", None)
-        thread_active = bool(thread_handle and thread_handle.is_alive())
+        # Use the state machine for clean, unambiguous status
+        from core.llm_coordinator import InitState
+        state = self._llm.init_state
 
-        # Check both api_available AND client - there's a brief window during
-        # background init where client exists but api_available isn't set yet
-        if self.api_available or self.client:
+        if state == InitState.READY:
             provider_status = "✓ Connected"
             provider_color = "green"
-        elif thread_active:
+        elif state == InitState.IN_PROGRESS:
             provider_status = "⏳ Initializing"
             provider_color = "yellow"
-        else:
-            reason = (self.api_error_reason or "").lower()
-            if "lazy mode" in reason or "not initialized" in reason:
-                provider_status = "⏳ Deferred"
-                provider_color = "yellow"
-            else:
-                provider_status = "⚠ Unavailable"
-                provider_color = "yellow"
+        elif state == InitState.DEFERRED:
+            provider_status = "⏳ Deferred"
+            provider_color = "yellow"
+        else:  # FAILED or NOT_STARTED
+            provider_status = "⚠ Unavailable"
+            provider_color = "yellow"
 
         total_translation_pairs = eng_fr_count + fr_eng_count
         status_text = (
