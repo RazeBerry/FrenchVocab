@@ -1082,7 +1082,9 @@ class FrenchVocabBuilder:
         thread_handle = getattr(self, "_llm_thread", None)
         thread_active = bool(thread_handle and thread_handle.is_alive())
 
-        if self.api_available:
+        # Check both api_available AND client - there's a brief window during
+        # background init where client exists but api_available isn't set yet
+        if self.api_available or self.client:
             provider_status = "✓ Connected"
             provider_color = "green"
         elif thread_active:

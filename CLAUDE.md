@@ -13,18 +13,25 @@ FrenchVocab is an AI-assisted CLI for building bilingual vocabulary lists, produ
 pip install -r requirements.txt
 
 # Run the CLI
+python FrenchVocab.py --help                     # See all CLI options
 python FrenchVocab.py --language fr              # French mode
 python FrenchVocab.py --language de              # German mode
 python FrenchVocab.py --language fr --provider claude  # Use Claude instead of Gemini
+python FrenchVocab.py --language fr --latex-file ./FrenchVocab.custom.tex  # Custom LaTeX file
+python FrenchVocab.py --language fr --eager-llm  # Initialize provider at startup
 
 # Run tests
 pytest                                           # Full test suite
 pytest tests/test_sentence_flow.py              # Single test file
 pytest -k "anki"                                 # Tests matching pattern
 
+# Quick UI smoke test (menu rendering)
+python -m cli.menu
+
 # Verbose/debug modes
 python FrenchVocab.py --language fr --verbose   # Timing details
 python FrenchVocab.py --esc-debug               # ESC key latency tracing
+python FrenchVocab.py --esc-debug --esc-debug-log /tmp/esc_latency.log
 ```
 
 ## Architecture
@@ -38,6 +45,7 @@ python FrenchVocab.py --esc-debug               # ESC key latency tracing
 ### Shared Modules (root level)
 - `models.py` - `WordEntry` dataclass with normalization utilities
 - `anki_exporter.py` - Anki deck export utilities (genanki wrapper)
+- `latex_repository.py` - Low-level LaTeX parsing helpers used by repositories and translators
 
 ### Core Application (`core/`)
 - `vocab.py` - `FrenchVocabBuilder` class: the main application controller
@@ -65,7 +73,7 @@ python FrenchVocab.py --esc-debug               # ESC key latency tracing
 - Design follows Anthropic-inspired palette: `#E67E50` (orange), `#ff6b6b` (error), `#51cf66` (success), `#ffd43b` (warning)
 
 ### AI Integration
-- `llm_client.py` - `LLMClient` ABC, `GeminiClient` (Gemini 2.0 Flash), `ClaudeClient` implementations
+- `llm_client.py` - `LLMClient` ABC, `GeminiClient` and `ClaudeClient` implementations (see `MODEL_NAME` constants)
 - `ai_prompts.py` - Shared prompt templates
 - `ai_response_parser.py` - Parse word type, definitions, examples from AI responses
 
@@ -101,16 +109,21 @@ choice = self.ui.interactive_menu(
 ```
 
 ### Provider Credential Flow
-1. Environment variable (`GEMINI_API_KEY` / `ANTHROPIC_API_KEY`)
-2. Project `.env` file (auto-loaded)
-3. System keyring (service: `french_vocab_builder`)
-4. Interactive setup wizard
+1. Auto-load a `.env` file (project root when writable; else `~/.frenchvocab/.env`; override with `FRENCHVOCAB_CONFIG_DIR`)
+2. System keyring (preferred; service: `french_vocab_builder`)
+3. Environment variable (`GEMINI_API_KEY` / `ANTHROPIC_API_KEY`) including values loaded from `.env`
+4. Interactive setup wizard (can persist to keyring or `.env`)
 
 ## Environment Variables
 
 - `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` - API credentials (or use keyring/`.env`)
 - `FRENCHVOCAB_FORCE_SYNC_LOAD=1` - Force synchronous loading (useful for tests)
-- `FRENCHVOCAB_ESC_SEQUENCE_TIMEOUT` - ESC key sequence timeout in seconds (default: 0.05)
+- `FRENCHVOCAB_ESC_SEQUENCE_TIMEOUT` - ESC key sequence timeout in seconds (default: 0.03)
+- `FRENCHVOCAB_ESC_DEBUG=1` - Enable ESC latency tracing (same as `--esc-debug`)
+- `FRENCHVOCAB_ESC_DEBUG_LOG` - Custom log path for ESC latency tracing
+- `FRENCHVOCAB_CONFIG_DIR` - Directory to store `.env` when project dir is not writable
+- `FRENCHVOCAB_SKIP_KEYRING=1` - Skip system keyring usage (forces `.env`/env-only flows; useful for CI)
+- `FRENCHVOCAB_DEBUG_EXPORT=1` - Print export debug info during Anki deck builds
 
 ## Testing
 
