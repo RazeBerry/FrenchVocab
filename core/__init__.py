@@ -1,7 +1,5 @@
 """Core application modules."""
 
-from .translator import TranslatorCLI
-
 __all__ = ["FrenchVocabBuilder", "TranslatorCLI"]
 
 
@@ -10,4 +8,8 @@ def __getattr__(name: str):
         from .vocab import FrenchVocabBuilder  # lazy import to avoid circular init
 
         return FrenchVocabBuilder
+    if name == "TranslatorCLI":
+        from .translator import TranslatorCLI  # lazy import to avoid startup cost
+
+        return TranslatorCLI
     raise AttributeError(name)

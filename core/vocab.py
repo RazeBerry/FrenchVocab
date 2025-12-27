@@ -16,8 +16,6 @@ import threading
 from languages import LanguageConfig, TranslatorConfig, default_language_code, get_language_config
 from typing import TYPE_CHECKING
 
-from .translator import TranslatorCLI
-from .auto_translator import AutoTranslator
 from .history_logger import TranslationLogger
 from .vocab_repository import VocabRepository, EntryNotFoundError
 from .llm_coordinator import LLMCoordinator
@@ -33,6 +31,8 @@ from core.providers.manager import (
 
 if TYPE_CHECKING:  # pragma: no cover - optional provider clients
     from llm_client import GeminiClient  # noqa: F401
+    from .translator import TranslatorCLI  # noqa: F401
+    from .auto_translator import AutoTranslator  # noqa: F401
 
 class WordType(Enum):
     NOUN = auto()
@@ -237,9 +237,9 @@ class FrenchVocabBuilder:
         self.history_logger = self._create_history_logger()
 
         # Initialize translator attribute
-        self.eng_to_fr_translator: Optional[TranslatorCLI] = None
-        self.fr_to_eng_translator: Optional[TranslatorCLI] = None
-        self.auto_translator: Optional[AutoTranslator] = None
+        self.eng_to_fr_translator: Optional["TranslatorCLI"] = None
+        self.fr_to_eng_translator: Optional["TranslatorCLI"] = None
+        self.auto_translator: Optional["AutoTranslator"] = None
         self.duplicate_resolution: Optional[Dict[str, str]] = None  # stores {'mode': 'merge'|'force', 'existing': <word>}
         self.enable_auto_translator: bool = self._should_enable_auto_translator()
 
@@ -479,6 +479,7 @@ class FrenchVocabBuilder:
             self.fr_to_eng_translator = None
             self.auto_translator = None
             return
+        from .translator import TranslatorCLI
 
         if (
             self.eng_to_fr_translator
@@ -516,6 +517,7 @@ class FrenchVocabBuilder:
         if not self.enable_auto_translator:
             self.auto_translator = None
             return
+        from .auto_translator import AutoTranslator
 
         prompt = getattr(self.language_config, "auto_prompt_template", None)
         if not prompt or not self.client:
