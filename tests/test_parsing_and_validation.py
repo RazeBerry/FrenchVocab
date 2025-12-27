@@ -44,8 +44,8 @@ class TestParsingAndValidation(unittest.TestCase):
         )
         wt, defs, exs = self.builder.parse_ai_response(resp)
         self.assertEqual(wt, ['adjective'])
-        # Current parser requires 'Examples:' to parse definitions; without it, defs is empty
-        self.assertEqual(defs, [])
+        # Parser now extracts definitions independently of Examples section
+        self.assertEqual(defs, ['beautiful'])
         self.assertEqual(exs, [])
 
     def test_parse_ai_response_without_word_type(self):

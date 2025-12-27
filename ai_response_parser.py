@@ -1,7 +1,7 @@
 """Utilities for parsing structured AI responses into vocabulary components."""
 
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 import re
 
 
@@ -12,38 +12,172 @@ class ParsedAIResponse:
     word_type: List[str]
     definitions: List[str]
     examples: List[Tuple[str, str]]
+    parsing_warnings: List[str]  # Tracks what couldn't be parsed
 
 
-_WORD_TYPE_PATTERN = re.compile(r"Word Type:\s*(.*?)\nDefinitions:", re.DOTALL)
-_DEFINITIONS_SECTION_PATTERN = re.compile(r"Definitions:(.*?)Examples:", re.DOTALL)
-_DEFINITION_ITEM_PATTERN = re.compile(r"[a-z]\.\s*(.*)")
-_EXAMPLES_SECTION_PATTERN = re.compile(r"Examples:(.*)", re.DOTALL)
-_EXAMPLE_PATTERN = re.compile(r"(\d+\.\s*(.*?)\n\s*(.*?)(?=\n\d+\.|\Z))", re.DOTALL)
+# Known section headers for robust extraction
+_KNOWN_HEADERS = ["Word Type:", "Definitions:", "Examples:", "Spelling Check:", "Correctly Spelt Word:"]
+
+
+def _extract_section(text: str, header: str, next_headers: Optional[List[str]] = None) -> str:
+    """Extract section content, stopping at any next header or end of text.
+
+    This decouples section extraction so each section can be parsed independently.
+    """
+    header_lower = header.lower()
+    text_lower = text.lower()
+    start_idx = text_lower.find(header_lower)
+    if start_idx == -1:
+        return ""
+
+    # Move past the header
+    content_start = start_idx + len(header)
+
+    # Find where the section ends (next header or end of text)
+    end_idx = len(text)
+    if next_headers is None:
+        next_headers = _KNOWN_HEADERS
+
+    for next_header in next_headers:
+        next_lower = next_header.lower()
+        if next_lower == header_lower:
+            continue
+        idx = text_lower.find(next_lower, content_start)
+        if idx != -1 and idx < end_idx:
+            end_idx = idx
+
+    return text[content_start:end_idx].strip()
+
+
+def _parse_word_type(response: str) -> List[str]:
+    """Extract word type from response."""
+    section = _extract_section(response, "Word Type:")
+    if section:
+        # Take just the first line (word type should be single line)
+        first_line = section.split('\n')[0].strip()
+        if first_line:
+            return [first_line]
+    return ["Unknown"]
+
+
+def _parse_definitions(response: str) -> List[str]:
+    """Extract definitions with fallback for multiple formats."""
+    section = _extract_section(response, "Definitions:")
+    if not section:
+        return []
+
+    definitions: List[str] = []
+
+    # Try format 1: a. b. c. (lowercase letter + period)
+    letter_pattern = re.compile(r"[a-z]\.\s*(.+?)(?=\n[a-z]\.|$)", re.DOTALL)
+    matches = letter_pattern.findall(section)
+    if matches:
+        definitions = [d.strip() for d in matches if d.strip()]
+        if definitions:
+            return definitions
+
+    # Try format 2: 1. 2. 3. (number + period)
+    number_pattern = re.compile(r"\d+\.\s*(.+?)(?=\n\d+\.|$)", re.DOTALL)
+    matches = number_pattern.findall(section)
+    if matches:
+        definitions = [d.strip() for d in matches if d.strip()]
+        if definitions:
+            return definitions
+
+    # Try format 3: - bullet points
+    bullet_pattern = re.compile(r"[-•]\s*(.+?)(?=\n[-•]|$)", re.DOTALL)
+    matches = bullet_pattern.findall(section)
+    if matches:
+        definitions = [d.strip() for d in matches if d.strip()]
+        if definitions:
+            return definitions
+
+    # Fallback: treat each non-empty line as a definition
+    lines = [line.strip() for line in section.split('\n') if line.strip()]
+    if lines:
+        return lines
+
+    return []
+
+
+def _parse_examples(response: str) -> List[Tuple[str, str]]:
+    """Extract examples with fallback for multiple formats."""
+    section = _extract_section(response, "Examples:")
+    if not section:
+        return []
+
+    examples: List[Tuple[str, str]] = []
+
+    # Try format 1: numbered with newline between source and translation
+    # e.g., "1. French sentence\n   [English translation]"
+    numbered_pattern = re.compile(r"\d+\.\s*(.*?)\n\s*(.*?)(?=\n\d+\.|\Z)", re.DOTALL)
+    matches = numbered_pattern.findall(section)
+    if matches:
+        for source, translation in matches:
+            source = source.strip()
+            translation = translation.strip().strip("[]()").strip()
+            if source:
+                examples.append((source, translation))
+        if examples:
+            return examples
+
+    # Try format 2: each example on one line with parenthesized translation
+    # e.g., "- French sentence (English translation)"
+    paren_pattern = re.compile(r"(?:[-•\d]+\.?\s*)?(.*?)\s*\(([^)]+)\)")
+    for line in section.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        match = paren_pattern.search(line)
+        if match:
+            source = match.group(1).strip()
+            translation = match.group(2).strip()
+            if source:
+                examples.append((source, translation))
+
+    if examples:
+        return examples
+
+    # Try format 3: each example on one line with bracketed translation
+    # e.g., "- French sentence [English translation]"
+    bracket_pattern = re.compile(r"(?:[-•\d]+\.?\s*)?(.*?)\s*\[([^\]]+)\]")
+    for line in section.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        match = bracket_pattern.search(line)
+        if match:
+            source = match.group(1).strip()
+            translation = match.group(2).strip()
+            if source:
+                examples.append((source, translation))
+
+    return examples
 
 
 def parse_ai_response_text(response: str) -> ParsedAIResponse:
-    """Parse the raw AI response into discrete vocabulary components."""
-    word_type_match = _WORD_TYPE_PATTERN.search(response)
-    if word_type_match:
-        word_type_string = word_type_match.group(1).strip()
-        word_type = [word_type_string] if word_type_string else ["Unknown"]
-    else:
-        word_type = ["Unknown"]
+    """Parse the raw AI response into discrete vocabulary components.
 
-    definitions: List[str] = []
-    definitions_match = _DEFINITIONS_SECTION_PATTERN.search(response)
-    if definitions_match:
-        definitions_text = definitions_match.group(1)
-        definitions = [d.strip() for d in _DEFINITION_ITEM_PATTERN.findall(definitions_text) if d.strip()]
+    Uses robust section extraction that doesn't require all sections to be present.
+    Includes fallback parsing for alternative formats (numbered, bulleted, etc.).
+    """
+    parsing_warnings: List[str] = []
 
-    examples: List[Tuple[str, str]] = []
-    examples_match = _EXAMPLES_SECTION_PATTERN.search(response)
-    if examples_match:
-        examples_text = examples_match.group(1)
-        raw_examples = _EXAMPLE_PATTERN.findall(examples_text)
-        examples = [
-            (french.strip(), english.strip().strip("[]"))
-            for _, french, english in raw_examples
-        ]
+    word_type = _parse_word_type(response)
+    if word_type == ["Unknown"]:
+        parsing_warnings.append("Could not parse word type; defaulting to 'Unknown'")
 
-    return ParsedAIResponse(word_type=word_type, definitions=definitions, examples=examples)
+    definitions = _parse_definitions(response)
+    if not definitions:
+        parsing_warnings.append("Could not parse any definitions from AI response")
+
+    examples = _parse_examples(response)
+    if not examples:
+        parsing_warnings.append("Could not parse any examples from AI response")
+
+    return ParsedAIResponse(
+        word_type=word_type,
+        definitions=definitions,
+        examples=examples,
+        parsing_warnings=parsing_warnings,
+    )

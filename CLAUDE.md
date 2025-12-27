@@ -42,6 +42,8 @@ python FrenchVocab.py --esc-debug               # ESC key latency tracing
 ### Core Application (`core/`)
 - `vocab.py` - `FrenchVocabBuilder` class: the main application controller
 - `vocab_repository.py` - LaTeX file parsing/persistence, entry management
+- `word_entry_workflow.py` - `WordEntryWorkflow` class: orchestrates word entry flow from input to save
+- `spelling_checker.py` - `SpellingChecker` class: extracts spelling suggestions from AI responses
 - `translator.py` - `TranslatorCLI` for bidirectional translation workflows
 - `auto_translator.py` - Intelligent translator with language detection
 - `anki_manager.py` - Anki deck export workflows

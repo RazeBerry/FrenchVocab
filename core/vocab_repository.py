@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from core.file_safety import atomic_write_text
-from latex_repository import LatexRepository
+from latex_repository import LatexRepository, find_entry_bounds, parse_all_entries
 from models import normalize_word_key
 from languages import LanguageConfig, get_language_config
 from ui_helper import UIHelper
@@ -275,14 +275,22 @@ class VocabRepository:
         self.entry_count = len(self.word_entries)
 
     def insert_entry_alphabetically(self, new_entry: str, new_word: str) -> None:
-        """Insert a new LaTeX entry at the appropriate position."""
+        """Insert a new LaTeX entry at the correct alphabetical position.
+
+        Uses balanced-brace parsing to find existing entries and determine
+        the correct insertion point.
+        """
         try:
             with self.latex_file.open("r", encoding="utf-8") as file:
                 content = file.read()
 
             entry_cmd = self._get_entry_command()
-            last_entry_index = content.rfind(entry_cmd)
-            if last_entry_index == -1:
+            new_word_normalized = self.normalize_word(new_word)
+
+            # Parse all existing entries
+            parsed_entries = parse_all_entries(content, entry_cmd)
+
+            if not parsed_entries:
                 # No existing entries; place before \end{itemize} or \end{document}
                 insert_position = content.rfind("\\end{itemize}")
                 if insert_position == -1:
@@ -290,11 +298,25 @@ class VocabRepository:
                     if insert_position == -1:
                         insert_position = len(content)
             else:
-                insert_position = content.find("\\end{itemize}", last_entry_index)
-                if insert_position == -1:
-                    insert_position = content.rfind("\\end{document}")
+                # Find the correct alphabetical position
+                insert_position = None
+                for groups, start, end in parsed_entries:
+                    entry_word = groups[0].strip()
+                    entry_word_normalized = self.normalize_word(entry_word)
+                    if new_word_normalized < entry_word_normalized:
+                        # Insert before this entry
+                        insert_position = start
+                        break
+
+                if insert_position is None:
+                    # New word comes after all existing entries
+                    # Insert after the last entry, before \end{itemize}
+                    _, _, last_end = parsed_entries[-1]
+                    insert_position = content.find("\\end{itemize}", last_end)
                     if insert_position == -1:
-                        insert_position = len(content)
+                        insert_position = content.rfind("\\end{document}")
+                        if insert_position == -1:
+                            insert_position = len(content)
 
             updated_content = content[:insert_position] + new_entry + "\n\n" + content[insert_position:]
 
@@ -302,7 +324,7 @@ class VocabRepository:
 
             # Update the normalized entries dictionary after successful file write
             normalized_new_word = self.normalize_word(new_word)
-            self.normalized_entries[normalized_new_word] = new_word.capitalize()
+            self.normalized_entries[normalized_new_word] = new_word.lower()
 
             self.ui.success(f"Added/Updated entry for '{new_word}' in {self.latex_file}")
         except FileNotFoundError:
@@ -317,7 +339,10 @@ class VocabRepository:
             )
 
     def alphabetize_entries(self, *, silent: bool = False) -> None:
-        """Alphabetize the entries in the LaTeX file."""
+        """Alphabetize the entries in the LaTeX file.
+
+        Uses balanced-brace parsing to correctly handle nested LaTeX macros.
+        """
         try:
             with self.latex_file.open("r", encoding="utf-8") as file:
                 content = file.read()
@@ -343,38 +368,23 @@ class VocabRepository:
             entries_section = content[itemize_header_match.end():entries_end]
             footer = content[entries_end:]
 
-            # Regex pattern for entries
-            entry_cmd_pattern = re.escape(self._get_entry_command())
-            entry_pattern = rf"""
-                {entry_cmd_pattern}
-                \s*\{{
-                    (?P<word>[^{{}}]+)
-                \}}
-                \s*\{{
-                    (?P<type>[^{{}}]+)
-                \}}
-                \s*\{{
-                    (?P<defs> (?: [^{{}}]+ | \{{[^{{}}]*\}} )* )
-                \}}
-                \s*\{{
-                    (?P<exs>  (?: [^{{}}]+ | \{{[^{{}}]*\}} )* )
-                \}}
-            """
+            # Use balanced-brace parser instead of regex
+            entry_cmd = self._get_entry_command()
+            parsed_entries = parse_all_entries(entries_section, entry_cmd)
 
-            entry_matches = list(re.finditer(entry_pattern, entries_section, re.VERBOSE | re.DOTALL))
-
-            if not entry_matches:
+            if not parsed_entries:
                 if not silent:
                     self.ui.warning("No entries found to alphabetize.")
                 return
 
             # Extract full entry text and word for sorting
             entries = []
-            for match in entry_matches:
-                start, end = match.span()
+            for groups, start, end in parsed_entries:
                 full_entry = entries_section[start:end]
-                word = match.group('word')
+                word = groups[0].strip()  # First group is the word
                 entries.append((word, full_entry))
+
+            original_entry_count = len(parsed_entries)
 
             # Sort entries by normalized word
             sorted_entries = sorted(entries, key=lambda x: self.normalize_word(x[0]))
@@ -383,8 +393,7 @@ class VocabRepository:
             sorted_entries_section = header_line + "\n" + "\n\n".join([entry for _, entry in sorted_entries])
             sorted_content = header + sorted_entries_section + footer
 
-            # Safety check: verify entry count matches (not just byte size)
-            original_entry_count = len(entry_matches)
+            # Safety check: verify entry count matches
             sorted_entry_count = len(sorted_entries)
 
             if sorted_entry_count != original_entry_count:
@@ -414,6 +423,8 @@ class VocabRepository:
     def update_entry_in_file(self, word_capitalized: str, new_block: str) -> None:
         """Replace the LaTeX entry block for the given word with new_block.
 
+        Uses balanced-brace parsing to correctly handle nested LaTeX macros.
+
         Raises:
             EntryNotFoundError: If the entry cannot be located in the file.
             IOError: If file read/write operations fail.
@@ -421,50 +432,162 @@ class VocabRepository:
         with self.latex_file.open("r", encoding="utf-8") as f:
             content = f.read()
 
-        entry_cmd_pattern = re.escape(self._get_entry_command())
-        word_pattern = re.escape(word_capitalized)
-        # Pattern with optional whitespace between components for flexibility
-        pattern = rf"""
-            {entry_cmd_pattern}
-            \s*
-            \{{{word_pattern}\}}
-            \s*
-            \{{[^{{}}]*\}}
-            \s*
-            \{{ (?: [^{{}}]+ | \{{[^{{}}]*\}} )* \}}
-            \s*
-            \{{ (?: [^{{}}]+ | \{{[^{{}}]*\}} )* \}}
-        """
-        # Use lambda to prevent interpretation of backslashes in LaTeX as regex backreferences
-        new_content, n = re.subn(pattern, lambda m: new_block, content, count=1, flags=re.VERBOSE | re.DOTALL)
-        if n == 0:
-            # Try case-insensitive search as fallback
-            pattern_ci = rf"""
-                {entry_cmd_pattern}
-                \s*
-                \{{{re.escape(word_capitalized)}\}}
-                \s*
-                \{{[^{{}}]*\}}
-                \s*
-                \{{ (?: [^{{}}]+ | \{{[^{{}}]*\}} )* \}}
-                \s*
-                \{{ (?: [^{{}}]+ | \{{[^{{}}]*\}} )* \}}
-            """
-            new_content, n = re.subn(
-                pattern_ci, lambda m: new_block, content, count=1,
-                flags=re.VERBOSE | re.DOTALL | re.IGNORECASE
+        entry_cmd = self._get_entry_command()
+        bounds = find_entry_bounds(content, entry_cmd, word_capitalized)
+
+        if bounds is None:
+            raise EntryNotFoundError(
+                f"Could not locate LaTeX entry for '{word_capitalized}' in file. "
+                f"The entry may have been manually modified or deleted."
             )
-            if n == 0:
-                raise EntryNotFoundError(
-                    f"Could not locate LaTeX entry for '{word_capitalized}' in file. "
-                    f"The entry may have been manually modified or deleted."
-                )
+
+        start, end = bounds
+        new_content = content[:start] + new_block + content[end:]
         atomic_write_text(self.latex_file, new_content, create_backup=True)
 
     def is_valid_latex_entry(self, latex_entry: str) -> bool:
         """Check if the entry contains expected LaTeX structure."""
         entry_cmd = self._get_entry_command()
         return bool(latex_entry.strip()) and entry_cmd in latex_entry
+
+    def merge_into_existing(
+        self,
+        existing_word: str,
+        new_type: str,
+        new_defs: List[str],
+        new_examples: List[Tuple[str, str]],
+    ) -> bool:
+        """Merge new definitions/examples into an existing entry and update the LaTeX file.
+
+        Args:
+            existing_word: The word key to merge into
+            new_type: Word type from the new entry
+            new_defs: New definitions to merge
+            new_examples: New examples to merge
+
+        Returns:
+            True if merge was successful, False otherwise.
+
+        Note:
+            Uses transactional approach: file is updated first, then memory.
+            If file update fails, memory remains unchanged (no partial state).
+        """
+        self.ensure_entries_loaded()
+        key = existing_word.lower()
+        if key not in self.word_entries:
+            self.ui.error(f"Cannot merge: existing entry for '{existing_word}' not found.")
+            return False
+        entry = self.word_entries[key]
+
+        # Use structured lists if available else fallback with robust parsing
+        defs_existing = entry.get('definitions_list') or [
+            d.strip() for d in entry['definitions'].split('; ') if d.strip()
+        ]
+        exs_existing = entry.get('examples_list') or []
+        if not exs_existing and entry.get('examples'):
+            exs_existing = self._parse_examples_string(entry['examples'])
+
+        # Dedup helpers with accent normalization
+        def norm_text(s: str) -> str:
+            """Normalize text for deduplication: lowercase, strip accents, collapse whitespace."""
+            import re
+            text = re.sub(r"\s+", " ", s).strip().lower()
+            return normalize_word_key(text)
+
+        def norm_pair(p: Tuple[str, str]) -> Tuple[str, str]:
+            return (norm_text(p[0]), norm_text(p[1]))
+
+        merged_defs_map = {norm_text(d): d for d in defs_existing}
+        added_defs: List[str] = []
+        for d in new_defs:
+            nd = norm_text(d)
+            if nd and nd not in merged_defs_map:
+                merged_defs_map[nd] = d
+                added_defs.append(d)
+        merged_defs = list(merged_defs_map.values())
+
+        merged_exs_map = {norm_pair(p): p for p in exs_existing}
+        added_examples: List[Tuple[str, str]] = []
+        for p in new_examples:
+            np = norm_pair(p)
+            if np not in merged_exs_map:
+                merged_exs_map[np] = p
+                added_examples.append(p)
+        merged_exs = list(merged_exs_map.values())
+
+        # Keep existing type by default; if unknown, use new
+        final_type = entry.get('type') or new_type
+
+        # Rebuild LaTeX entry and replace in file
+        latex_block = self.format_latex_entry(
+            entry['word'],
+            final_type,
+            merged_defs,
+            merged_exs,
+            entry_command=self.entry_command,
+        )
+
+        # Transactional: Update file FIRST, then memory
+        try:
+            self.update_entry_in_file(entry['word'], latex_block)
+        except EntryNotFoundError as e:
+            self.ui.error(f"Merge failed: {e}", with_panel=True)
+            return False
+        except IOError as e:
+            self.ui.error(f"Merge failed - file I/O error: {e}", with_panel=True)
+            return False
+
+        # File updated successfully, now update memory
+        entry['type'] = final_type
+        entry['definitions_list'] = merged_defs
+        entry['examples_list'] = merged_exs
+        entry['definitions'] = "; ".join(merged_defs)
+        entry['examples'] = "; ".join([f"{f} ({e})" for f, e in merged_exs])
+
+        return True
+
+    def _parse_examples_string(self, examples_str: str) -> List[Tuple[str, str]]:
+        """Robustly parse examples string into (source, translation) tuples."""
+        result: List[Tuple[str, str]] = []
+        if not examples_str:
+            return result
+
+        for example in examples_str.split('; '):
+            example = example.strip()
+            if not example:
+                continue
+
+            # Find the last balanced parentheses group
+            parsed = self._extract_translation_from_parens(example)
+            if parsed:
+                result.append(parsed)
+            else:
+                # If no valid parens found, treat whole thing as source
+                self.ui.warning(f"Could not parse example translation: '{example[:50]}...'")
+                result.append((example, ""))
+
+        return result
+
+    def _extract_translation_from_parens(self, text: str) -> Optional[Tuple[str, str]]:
+        """Extract (source, translation) from 'source text (translation)' format."""
+        text = text.rstrip()
+        if not text.endswith(')'):
+            return None
+
+        # Find the matching opening paren for the final closing paren
+        depth = 0
+        for i in range(len(text) - 1, -1, -1):
+            if text[i] == ')':
+                depth += 1
+            elif text[i] == '(':
+                depth -= 1
+                if depth == 0:
+                    source = text[:i].rstrip()
+                    translation = text[i + 1:-1]
+                    if source:
+                        return (source, translation)
+                    return None
+        return None
 
     # -------------------------------------------------------------------------
     # Static Formatting

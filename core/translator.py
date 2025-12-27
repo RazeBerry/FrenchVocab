@@ -18,6 +18,7 @@ from languages import TranslatorConfig
 from llm_client import LLMClient
 from ui_helper import UIHelper, read_line
 from core.history_logger import TranslationLogger
+from latex_repository import parse_balanced_group
 
 
 class TranslatorCLI:
@@ -83,46 +84,30 @@ class TranslatorCLI:
             return
 
         try:
-            with self.latex_file.open("r", encoding="utf-8", errors="ignore") as file:
+            with self.latex_file.open("r", encoding="utf-8", errors="replace") as file:
                 content = file.read()
-        except UnicodeDecodeError as exc:
+            # Check if replacement characters were inserted
+            if '\ufffd' in content:
+                self.ui.warning(
+                    f"Some characters in {self.latex_file} could not be decoded and were replaced."
+                )
+        except IOError as exc:
             self.ui.error(
-                f"Cannot read {self.latex_file}: UnicodeDecodeError {exc}. Some characters might be lost.",
+                f"Cannot read {self.latex_file}: {exc}",
                 with_panel=True
             )
             return
-
-        commands_pattern = "|".join(re.escape(cmd) for cmd in self.latex_commands)
-        entry_pattern = re.compile(rf"\\(?:{commands_pattern})\{{(.*?)\}}\{{(.*?)\}}", re.DOTALL)
 
         self.pairs.clear()
         loaded_count = 0
         parse_errors = 0
 
-        for match in entry_pattern.finditer(content):
-            try:
-                source = match.group(1).strip()
-                target = match.group(2).strip()
-                if not source or not target:
-                    self.ui.warning(
-                        f"Skipping entry with empty {self.source_label} or {self.target_label} near position {match.start()}."
-                    )
-                    parse_errors += 1
-                    continue
-
-                normalized = self.normalize_text(source)
-                if normalized in self.pairs:
-                    existing = self.pairs[normalized]["source"]
-                    self.ui.warning(
-                        f"Duplicate normalized {self.source_label} key '{normalized}' found."
-                        f" Overwriting entry for '{existing}' with '{source}'."
-                    )
-
-                self.pairs[normalized] = {"source": source, "target": target}
-                loaded_count += 1
-            except Exception as exc:  # pragma: no cover - defensive path
-                self.ui.error(f"Error parsing entry near position {match.start()}: {exc}")
-                parse_errors += 1
+        # Use balanced-brace parsing for robust entry extraction
+        for cmd in self.latex_commands:
+            cmd_escaped = cmd if cmd.startswith('\\') else f'\\{cmd}'
+            count, errors = self._parse_entries_for_command(content, cmd_escaped)
+            loaded_count += count
+            parse_errors += errors
 
         self.entry_count = len(self.pairs)
         summary = (
@@ -131,6 +116,76 @@ class TranslatorCLI:
         if parse_errors:
             summary += f" ({parse_errors} parsing errors)"
         self.ui.info(summary)
+
+    def _parse_entries_for_command(self, content: str, cmd: str) -> tuple:
+        """Parse entries for a specific LaTeX command using balanced-brace parsing.
+
+        Returns (loaded_count, parse_errors).
+        """
+        loaded_count = 0
+        parse_errors = 0
+        i = 0
+        n = len(content)
+
+        while i < n:
+            # Find next occurrence of the command
+            j = content.find(cmd, i)
+            if j == -1:
+                break
+
+            pos = j + len(cmd)
+            # Skip whitespace to first brace
+            while pos < n and content[pos].isspace():
+                pos += 1
+
+            if pos >= n or content[pos] != '{':
+                i = j + len(cmd)
+                continue
+
+            try:
+                # Parse first group (source)
+                source, pos = parse_balanced_group(content, pos)
+                source = source.strip()
+
+                # Skip whitespace to second brace
+                while pos < n and content[pos].isspace():
+                    pos += 1
+
+                if pos >= n or content[pos] != '{':
+                    parse_errors += 1
+                    i = j + len(cmd)
+                    continue
+
+                # Parse second group (target)
+                target, pos = parse_balanced_group(content, pos)
+                target = target.strip()
+
+                if not source or not target:
+                    self.ui.warning(
+                        f"Skipping entry with empty {self.source_label} or {self.target_label} near position {j}."
+                    )
+                    parse_errors += 1
+                    i = pos
+                    continue
+
+                normalized = self.normalize_text(source)
+                if normalized in self.pairs:
+                    existing = self.pairs[normalized]["source"]
+                    self.ui.warning(
+                        f"Duplicate normalized {self.source_label} key '{normalized}' found. "
+                        f"Overwriting entry for '{existing}' with '{source}'."
+                    )
+
+                self.pairs[normalized] = {"source": source, "target": target}
+                loaded_count += 1
+                i = pos
+
+            except ValueError as exc:
+                self.ui.error(f"Error parsing entry near position {j}: {exc}")
+                parse_errors += 1
+                i = j + len(cmd)
+
+        return loaded_count, parse_errors
 
     # ------------------------------------------------------------------
     # Helper utilities

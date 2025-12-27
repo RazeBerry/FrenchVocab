@@ -23,6 +23,8 @@ from .history_logger import TranslationLogger
 from .vocab_repository import VocabRepository, EntryNotFoundError
 from .llm_coordinator import LLMCoordinator
 from .anki_manager import AnkiExportManager
+from .spelling_checker import SpellingChecker
+from .word_entry_workflow import WordEntryWorkflow
 from models import normalize_word_key
 from ui_helper import UIHelper, read_line
 from core.providers.manager import (
@@ -88,25 +90,16 @@ class FrenchVocabBuilder:
                 return getattr(vocab_repo, name)
             except AttributeError:
                 # Fallback for test doubles using object.__new__()
-                # Try the old lazy-load path
-                try:
-                    loaded = object.__getattribute__(self, "_entries_loaded")
-                    loading = object.__getattribute__(self, "_entries_loading")
-                    ready_event = object.__getattribute__(self, "_entries_ready")
-                except AttributeError:
-                    loaded = True
-                    loading = False
-                    ready_event = None
-                if loading and ready_event:
-                    ready_event.wait(timeout=1.0)
-                if not loaded:
-                    object.__getattribute__(self, "_ensure_entries_loaded")()
+                # Check if the attribute was set directly on the instance (test double pattern)
                 try:
                     return object.__getattribute__(self, name)
                 except AttributeError:
-                    fallback = {}  # type: ignore[assignment]
-                    object.__setattr__(self, name, fallback)
-                    return fallback
+                    # Fail explicitly - don't silently create empty dicts
+                    raise RuntimeError(
+                        f"Cannot access {name}: VocabRepository not initialized. "
+                        f"Ensure FrenchVocabBuilder is properly constructed or use "
+                        f"the test double pattern by setting {name} directly on the instance."
+                    )
         return object.__getattribute__(self, name)
 
     def _ensure_anki_manager(self) -> "AnkiExportManager":
@@ -251,6 +244,9 @@ class FrenchVocabBuilder:
         self.duplicate_resolution: Optional[Dict[str, str]] = None  # stores {'mode': 'merge'|'force', 'existing': <word>}
         self.enable_auto_translator: bool = self._should_enable_auto_translator()
 
+        # Create spelling checker (used by word entry workflow)
+        self._spelling_checker = SpellingChecker(self.ui)
+
         self.eager_provider = eager_provider or (provider is not None)
 
         # Determine provider early and set verbosity before key bootstrapping
@@ -284,7 +280,7 @@ class FrenchVocabBuilder:
             exported_words_file=exported_words_file,
             project_root=project_root,
         )
-        self.entry_count = self.count_entries()
+        # entry_count is now a property that delegates to _vocab_repo
         
         # Initialize translators based on current client availability
         self._init_translators()
@@ -341,6 +337,13 @@ class FrenchVocabBuilder:
     @api_error_reason.setter
     def api_error_reason(self, value: Optional[str]):
         self._llm.api_error_reason = value
+
+    @property
+    def entry_count(self) -> int:
+        """Live count of vocabulary entries (delegated to VocabRepository)."""
+        if hasattr(self, "_vocab_repo") and self._vocab_repo is not None:
+            return self._vocab_repo.entry_count
+        return 0
 
     @property
     def provider(self) -> str:
@@ -1454,225 +1457,55 @@ class FrenchVocabBuilder:
         main_menu_loop(self)
 
     def handle_new_word_entry(self):
-        if not self.ensure_llm_ready():
-            self.ui.info("Returning to main menu without adding a word. Configure an AI provider to re-enable this flow.")
-            return
-        # Load existing entries lazily so duplicate checks are accurate.
-        self._ensure_entries_loaded()
-        # Reset duplicate resolution per new flow
-        self.duplicate_resolution = None
-        original_word = self.get_word_input()
-        if not original_word:
-            return # User cancelled input
+        """Handle the word entry flow by delegating to WordEntryWorkflow.
 
-        # --- Stage 1 Duplicate Check (User Input) ---
-        existing_word_check1 = self.check_duplicate(original_word)
-        if existing_word_check1:
-            if not self.handle_duplicate(original_word, existing_word_check1):
-                self.ui.warning(f"Skipping '{original_word}' due to duplicate check (Stage 1).")
-                return # User chose to skip or view existing entry
-
-        # Detect input type early (used to control downstream flow)
-        detected_type = self.detect_input_type(original_word)
-
-        # Show non-blocking hint if sentence detected (full routing decision deferred until after AI analysis)
-        if detected_type == 'sentence' and getattr(self, 'route_sentences', True):
-            target_filename = self.language_config.target_to_eng.default_filename
-            self.ui.info(
-                f"ℹ This looks like a sentence. After AI analysis, you'll have the option to route it to {target_filename}.",
-                accent="dim"
-            )
-
-        # --- Query AI ---
-        ai_response = self.query_ai(original_word)
-        if not ai_response:
-            # Offer recovery options instead of just failing
-            self.ui.error(
-                f"Cannot add vocabulary entry: Failed to get AI response for '{original_word}'",
-                with_panel=True
-            )
-
-            recovery_options = [
-                ("retry", "↺ Retry now"),
-                ("settings", "🔧 Open Settings"),
-                ("skip", "← Return to main menu"),
-            ]
-
-            try:
-                recovery_choice = self.ui.interactive_menu(
-                    "What would you like to do?",
-                    recovery_options,
-                    "Press Esc to return to main menu",
-                )
-            except KeyboardInterrupt:
-                return
-
-            if recovery_choice == "retry":
-                # Retry with same timeout
-                ai_response = self.query_ai(original_word)
-                if not ai_response:
-                    self.ui.warning("Retry failed. Returning to main menu.")
-                    return
-            elif recovery_choice == "settings":
-                self.show_settings_screen()
-                # After settings, offer to retry
-                if self.ui.confirm("Try querying AI again?", default=True):
-                    ai_response = self.query_ai(original_word)
-                    if not ai_response:
-                        self.ui.warning("Query failed. Returning to main menu.")
-                        return
-                else:
-                    return
-            else:  # skip
-                return
-
-        # --- Spelling Check and Final Word Determination ---
-        if detected_type == 'sentence':
-            # For sentences, do not attempt to auto-correct; keep text as-is
-            final_word = original_word
-        else:
-            final_word = self.check_spelling(original_word, ai_response)
-        if final_word is None: # User chose to abandon the edit during spelling check
-            preview = original_word.strip().replace('\n', ' ')
-            if len(preview) > 80:
-                preview = preview[:77] + '...'
-            self.ui.warning(f"Abandoning entry for '{preview}'.")
-            return
-        
-        # --- Stage 2 Duplicate Check (Final/Corrected Word) ---
-        # Check again only if the final word is different from the original input (case-insensitive)
-        # and it wasn't the word found in the first check (if any)
-        if final_word.lower() != original_word.lower() and not (self.duplicate_resolution and self.duplicate_resolution.get('mode') in ('merge','force')):
-            existing_word_check2 = self.check_duplicate(final_word)
-            if existing_word_check2 and existing_word_check2 != existing_word_check1:
-                self.ui.info(f"Performing second duplicate check for corrected word '{final_word}'...")
-                if not self.handle_duplicate(final_word, existing_word_check2):
-                    self.ui.warning(f"Skipping '{final_word}' due to duplicate check (Stage 2).")
-                    return # User chose to skip or view existing entry
-
-        # --- Parse AI Response ---
-        word_type, definitions, examples = self.parse_ai_response(ai_response)
-        if not word_type or not definitions or not examples:
-             self.ui.error("Cannot add vocabulary entry: Failed to parse essential information from AI response.")
-             return
-        if isinstance(word_type, list):
-            primary_word_type = word_type[0] if word_type else ""
-        else:
-            primary_word_type = str(word_type or "")
-
-        # Post-parse routing opportunity if AI identified as sentence
-        if (word_type and isinstance(word_type, list) and primary_word_type.lower() == 'sentence' and
-            getattr(self, 'route_sentences', True)):
-            title = self._translator_title(self.language_config.target_to_eng)
-            route2 = self.ui.confirm(
-                f"AI identified this as a sentence. Route to {title} instead?",
-                default=True,
-            )
-            if route2:
-                if not self.fr_to_eng_translator:
-                    alt_title = self._translator_title(self.language_config.target_to_eng)
-                    self.ui.error(f"{alt_title} is not available (initialization failed). Proceeding in vocab mode.")
-                else:
-                    ok = self.fr_to_eng_translator.translate_and_save(original_word)
-                    if ok is False:
-                        self.ui.warning("Translation cancelled or failed.")
-                    else:
-                        # Quick action menu after successful sentence translation
-                        self._show_post_translation_menu()
-                    return
-
-        # If we keep sentence in vocab and examples are disabled, drop them
-        if primary_word_type.lower() == 'sentence' and not getattr(self, 'sentence_examples_in_vocab', False):
-            examples = []
-
-        # --- Display Parsed Info ---
-        self.display_parsed_info(final_word, word_type, definitions, examples)
-
-        # --- Merge path (if selected) ---
-        if self.duplicate_resolution and self.duplicate_resolution.get('mode') == 'merge':
-            target_key = self.duplicate_resolution.get('existing', final_word)
-            if self.merge_into_existing(target_key, primary_word_type, definitions, examples):
-                self.ui.success(f"Merged AI content into existing entry for '{target_key}'.")
-            # Error already shown by merge_into_existing if it failed
-            self.duplicate_resolution = None
-            return
-
-        history_action = "new"
-        history_existing_word: Optional[str] = None
-        if self.duplicate_resolution:
-            history_action = self.duplicate_resolution.get('mode', 'new')
-            history_existing_word = self.duplicate_resolution.get('existing')
-        corrected_word_value: Optional[str] = None
-
-        # --- Format LaTeX Entry ---
-        insert_word = final_word
-        # If force mode and still colliding, create a unique variant
-        if self.duplicate_resolution and self.duplicate_resolution.get('mode') == 'force':
-            if self.check_duplicate(insert_word):
-                insert_word = self.create_unique_variant(insert_word)
-        latex_entry = self.format_latex_entry(
-            insert_word,
-            primary_word_type,
-            definitions,
-            examples,
+        This method creates a workflow instance and executes it, then handles
+        the quick action menu for continued interaction.
+        """
+        # Create workflow with current state
+        workflow = WordEntryWorkflow(
+            vocab_repo=self._vocab_repo,
+            llm=self._llm,
+            ui=self.ui,
+            language_config=self.language_config,
+            history_logger=self.history_logger,
+            spelling_checker=self._spelling_checker,
+            fr_to_eng_translator=self.fr_to_eng_translator,
+            max_word_length=self.max_word_length,
+            max_words=self.max_words,
+            allow_sentence_punctuation=self.allow_sentence_punctuation,
+            route_sentences=self.route_sentences,
+            sentence_examples_in_vocab=self.sentence_examples_in_vocab,
             entry_command=self.entry_command,
-        )  # Use first element of word_type list
-
-        # --- Validate LaTeX Entry ---
-        if not self.is_valid_latex_entry(latex_entry):
-            self.ui.error("Cannot add vocabulary entry: Generated LaTeX is empty or invalid.")
-            return
-
-        # --- Preview LaTeX Entry ---
-        self.display_latex_entry(latex_entry)
-
-        # Spelling correction now happens before LaTeX generation (no need to re-confirm here)
-        corrected_word_value = final_word if final_word != original_word else None
-
-        # --- Confirm Save ---
-        if not self.ui.confirm(
-            f"Add this entry for '{insert_word}' to your vocabulary file?",
-            default=True,
-        ):
-            self.ui.warning(f"Entry for '{insert_word}' discarded. Nothing saved.")
-            self.duplicate_resolution = None
-            return
-
-        final_word = insert_word
-
-        # --- Insert ---
-        self.insert_entry_alphabetically(latex_entry, insert_word) # Insert using the (possibly variant) word
-
-        # --- Update In-Memory Dictionaries ---
-        self.add_word_to_entries(insert_word, primary_word_type, definitions, examples) # Use first element of word_type list
-
-        history_metadata: Dict[str, Any] = {}
-        if history_existing_word:
-            history_metadata["existing_word"] = history_existing_word
-        if corrected_word_value:
-            history_metadata["corrected_word"] = corrected_word_value
-        if original_word != insert_word:
-            history_metadata["original_input"] = original_word
-            history_metadata["saved_word"] = insert_word
-        if history_action == "force":
-            history_metadata["forced_variant"] = insert_word
-
-        self._log_vocab_history(
-            action=history_action,
-            original_text=original_word,
-            saved_word=insert_word,
-            word_type=primary_word_type,
-            definitions=definitions,
-            examples=examples,
-            metadata=history_metadata or None,
+            provider_label_fn=self._provider_label,
+            on_settings=self.show_settings_screen,
+            get_word_input_fn=self.get_word_input,
+            # Pass builder methods as callbacks for test compatibility
+            query_ai_fn=self.query_ai,
+            check_spelling_fn=self.check_spelling,
+            parse_ai_response_fn=self.parse_ai_response,
+            check_duplicate_fn=self.check_duplicate,
+            display_parsed_info_fn=self.display_parsed_info,
+            display_latex_entry_fn=self.display_latex_entry,
+            is_valid_latex_entry_fn=self.is_valid_latex_entry,
+            insert_entry_alphabetically_fn=self.insert_entry_alphabetically,
+            add_word_to_entries_fn=self.add_word_to_entries,
         )
 
-        self.duplicate_resolution = None
+        # Run the workflow
+        saved = workflow.run(self.ensure_llm_ready)
 
-        entry_count = len(self.word_entries)
-        self.ui.success(f"Entry saved successfully! ({entry_count - 1} → {entry_count} entries)")
+        # Sync duplicate_resolution state back
+        self.duplicate_resolution = workflow.duplicate_resolution
+
+        if not saved:
+            return
 
         # Quick action menu - allow users to continue without returning to main menu
+        self._show_word_entry_quick_actions()
+
+    def _show_word_entry_quick_actions(self) -> None:
+        """Show quick action menu after successful word entry."""
         try:
             quick_action = self.ui.interactive_menu(
                 "What's next?",
@@ -1750,33 +1583,49 @@ class FrenchVocabBuilder:
             i += 1
 
     def merge_into_existing(self, existing_word: str, new_type: str, new_defs: List[str], new_examples: List[Tuple[str, str]]) -> bool:
-        """Merge new definitions/examples into an existing entry and update the LaTeX file and memory.
+        """Merge new definitions/examples into an existing entry.
+
+        Delegates core merge logic to VocabRepository while handling history logging.
+        Falls back to inline implementation for test doubles without _vocab_repo.
 
         Returns:
             True if merge was successful, False otherwise.
-
-        Note:
-            Uses transactional approach: file is updated first, then memory.
-            If file update fails, memory remains unchanged (no partial state).
         """
+        # Get entry state before merge for history logging
         self._ensure_entries_loaded()
         key = existing_word.lower()
-        if key not in self.word_entries:
+        entry = self.word_entries.get(key)
+        if not entry:
             self.ui.error(f"Cannot merge: existing entry for '{existing_word}' not found.")
             return False
-        entry = self.word_entries[key]
 
+        # Delegate to repository if available
+        if hasattr(self, "_vocab_repo"):
+            success = self._vocab_repo.merge_into_existing(existing_word, new_type, new_defs, new_examples)
+            if success:
+                updated_entry = self.word_entries.get(key, {})
+                self._log_merge_history(
+                    existing_word=updated_entry.get('word', existing_word),
+                    final_type=updated_entry.get('type', new_type),
+                    merged_definitions=updated_entry.get('definitions_list', new_defs),
+                    merged_examples=updated_entry.get('examples_list', []),
+                    added_definitions=new_defs,
+                    added_examples=new_examples,
+                )
+            return success
+
+        # Fallback for test doubles without _vocab_repo
         # Use structured lists if available else fallback with robust parsing
-        defs_existing = entry.get('definitions_list') or [d.strip() for d in entry['definitions'].split('; ') if d.strip()]
+        defs_existing = entry.get('definitions_list') or [
+            d.strip() for d in entry['definitions'].split('; ') if d.strip()
+        ]
         exs_existing = entry.get('examples_list') or []
         if not exs_existing and entry.get('examples'):
             exs_existing = self._parse_examples_string(entry['examples'])
 
-        # Dedup helpers with accent normalization (Bug #4 fix)
+        # Dedup helpers with accent normalization
         def norm_text(s: str) -> str:
-            """Normalize text for deduplication: lowercase, strip accents, collapse whitespace."""
             text = re.sub(r"\s+", " ", s).strip().lower()
-            # Apply same accent stripping as word normalization
             return normalize_word_key(text)
 
         def norm_pair(p: Tuple[str, str]) -> Tuple[str, str]:
@@ -1800,10 +1649,9 @@ class FrenchVocabBuilder:
                 added_examples.append(p)
         merged_exs = list(merged_exs_map.values())
 
-        # Keep existing type by default; if unknown, use new
         final_type = entry.get('type') or new_type
 
-        # Rebuild LaTeX entry and replace in file
+        # Rebuild LaTeX entry
         latex_block = self.format_latex_entry(
             entry['word'],
             final_type,
@@ -1812,8 +1660,7 @@ class FrenchVocabBuilder:
             entry_command=self.entry_command,
         )
 
-        # Bug #6 fix: Update file FIRST, then memory (transactional approach)
-        # If file update fails, memory stays unchanged - no rollback needed
+        # Try to update file first (transactional - allows tests to mock failures)
         try:
             self.update_entry_in_file(entry['word'], latex_block)
         except EntryNotFoundError as e:
@@ -1823,12 +1670,13 @@ class FrenchVocabBuilder:
             self.ui.error(f"Merge failed - file I/O error: {e}", with_panel=True)
             return False
 
-        # File updated successfully, now update memory
+        # File updated successfully (or no real file in test double), update memory
         entry['type'] = final_type
         entry['definitions_list'] = merged_defs
         entry['examples_list'] = merged_exs
         entry['definitions'] = "; ".join(merged_defs)
         entry['examples'] = "; ".join([f"{f} ({e})" for f, e in merged_exs])
+
         self._log_merge_history(
             existing_word=entry['word'],
             final_type=final_type,
@@ -1840,42 +1688,41 @@ class FrenchVocabBuilder:
         return True
 
     def _parse_examples_string(self, examples_str: str) -> List[Tuple[str, str]]:
-        """Robustly parse examples string into (source, translation) tuples.
+        """Parse examples string into (source, translation) tuples.
 
-        Handles edge cases like nested parentheses and special characters.
-        Bug #5 fix: More robust parsing with multiple strategies.
+        Delegates to repository if available, otherwise uses inline fallback for test doubles.
         """
+        if hasattr(self, "_vocab_repo"):
+            return self._vocab_repo._parse_examples_string(examples_str)
+        # Fallback for test doubles without _vocab_repo
         result: List[Tuple[str, str]] = []
         if not examples_str:
             return result
-
         for example in examples_str.split('; '):
             example = example.strip()
             if not example:
                 continue
-
-            # Strategy 1: Find the last balanced parentheses group
             parsed = self._extract_translation_from_parens(example)
             if parsed:
                 result.append(parsed)
             else:
-                # Strategy 2: If no valid parens found, treat whole thing as source with empty translation
-                # This prevents data loss - user can see the malformed entry
-                self.ui.warning(f"Could not parse example translation: '{example[:50]}...'")
+                # Emit warning for malformed entries (matching repository behavior)
+                if hasattr(self, "ui"):
+                    self.ui.warning(f"Could not parse example translation: '{example[:50]}...'")
                 result.append((example, ""))
-
         return result
 
     def _extract_translation_from_parens(self, text: str) -> Optional[Tuple[str, str]]:
         """Extract (source, translation) from 'source text (translation)' format.
 
-        Handles nested parentheses by finding the outermost matching pair at the end.
+        Delegates to repository if available, otherwise uses inline fallback for test doubles.
         """
+        if hasattr(self, "_vocab_repo"):
+            return self._vocab_repo._extract_translation_from_parens(text)
+        # Fallback for test doubles without _vocab_repo
         text = text.rstrip()
         if not text.endswith(')'):
             return None
-
-        # Find the matching opening paren for the final closing paren
         depth = 0
         for i in range(len(text) - 1, -1, -1):
             if text[i] == ')':
@@ -1883,10 +1730,9 @@ class FrenchVocabBuilder:
             elif text[i] == '(':
                 depth -= 1
                 if depth == 0:
-                    # Found the matching opening paren
                     source = text[:i].rstrip()
-                    translation = text[i + 1:-1]  # Content inside parens
-                    if source:  # Only valid if there's actual source text
+                    translation = text[i + 1:-1]
+                    if source:
                         return (source, translation)
                     return None
         return None
@@ -1906,61 +1752,8 @@ class FrenchVocabBuilder:
         return text.rstrip(string.punctuation + " \t\r\n")
 
     def check_spelling(self, word, ai_response):
-        # More specific regex that stops at the next field and handles multiline content
-        # Extract the spelling check section (value not used)
-        # Keep for potential future diagnostics, but avoid unused variable warnings
-        _ = re.search(r'Spelling Check:\s*(.*?)(?=\nCorrectly Spelt Word:|$)', ai_response, re.DOTALL)
-
-        corrected_spelling_match = re.search(r'Correctly Spelt Word:\s*(.*?)(?=\nWord Type:|$)', ai_response, re.DOTALL)
-        corrected_spelling = corrected_spelling_match.group(1).strip() if corrected_spelling_match else None
-
-        trimmed_original = word.strip()
-        trimmed_corrected = corrected_spelling.strip() if corrected_spelling else None
-
-        # Validate the corrected spelling - check if it's empty, placeholder text, or same as input
-        if corrected_spelling:
-            # Remove common placeholder patterns
-            if (corrected_spelling.startswith('[') and corrected_spelling.endswith(']')) or \
-               not corrected_spelling.strip() or \
-               corrected_spelling.lower().strip() == word.lower().strip():
-                # Either placeholder text, empty, or same as input - no correction needed
-                return word
-
-            normalized_original = self._strip_trailing_punctuation(trimmed_original)
-            normalized_corrected = self._strip_trailing_punctuation(trimmed_corrected)
-
-            if normalized_original.lower() == normalized_corrected.lower():
-                # Case-only or trailing punctuation differences—trust cleaned suggestion silently
-                return normalized_corrected or corrected_spelling
-
-            # Valid correction found that's different from input - ASK IMMEDIATELY
-            suggestion_panel = (
-                "[bold]You entered:[/bold] "
-                f"[bold red]{word}[/bold red]\n"
-                "[bold]Suggested spelling:[/bold] "
-                f"[bold green]{corrected_spelling}[/bold green]"
-            )
-            self.ui.panel(
-                suggestion_panel,
-                title="⚡ Spelling Suggestion",
-                border_style="yellow",
-                expand=False,
-            )
-
-            # Ask user to choose immediately (before generating LaTeX)
-            use_corrected = self.ui.confirm(
-                f"Use corrected spelling '{corrected_spelling}'?",
-                default=True,
-            )
-
-            if use_corrected:
-                self.ui.info(f"✓ Using corrected spelling: '{corrected_spelling}'")
-                return corrected_spelling
-            else:
-                self.ui.info(f"✓ Keeping original spelling: '{word}'")
-                return word
-
-        return word
+        """Check spelling and prompt for correction. Delegates to SpellingChecker."""
+        return self._spelling_checker.check(word, ai_response)
 
     def add_word_to_entries(self, word: str, word_type: str, definitions: List[str], examples: List[Tuple[str, str]]):
         """Update the in-memory dictionaries with a new word entry."""
