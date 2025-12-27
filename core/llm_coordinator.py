@@ -386,8 +386,8 @@ class LLMCoordinator:
         """
         # If a background initialization is underway or completed, honor it first.
         if not self._client and getattr(self, "_llm_thread", None):
-            # Give the background task a brief chance to finish before prompting.
-            if self.await_background_init(timeout=0.5):
+            # Give the background task time to finish - SDK imports can take 1-2s on cold start
+            if self.await_background_init(timeout=2.0):
                 return True
 
         if self._client:
