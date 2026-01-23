@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import TYPE_CHECKING, Dict, List
 
 from .base import (
     LanguageConfig,
@@ -10,20 +10,48 @@ from .base import (
     VocabTemplate,
     InputValidator,
 )
-from .french import FRENCH_CONFIG
-from .german import GERMAN_CONFIG
 
-_CONFIGS: Dict[str, LanguageConfig] = {
-    FRENCH_CONFIG.code: FRENCH_CONFIG,
-    GERMAN_CONFIG.code: GERMAN_CONFIG,
-}
-_ALIASES: Dict[str, str] = {alias: FRENCH_CONFIG.code for alias in FRENCH_CONFIG.aliases}
-_ALIASES.update({alias: GERMAN_CONFIG.code for alias in GERMAN_CONFIG.aliases})
-_DEFAULT_LANGUAGE_CODE = FRENCH_CONFIG.code
+# Lazy loading for language configs - only load when actually needed
+_CONFIGS: Dict[str, LanguageConfig] = {}
+_ALIASES: Dict[str, str] = {}
+_DEFAULT_LANGUAGE_CODE = "fr"
+_configs_loaded = False
+
+
+def _ensure_configs_loaded() -> None:
+    """Load language configs on first use."""
+    global _configs_loaded
+    if _configs_loaded:
+        return
+
+    from .french import FRENCH_CONFIG
+    from .german import GERMAN_CONFIG
+
+    _CONFIGS[FRENCH_CONFIG.code] = FRENCH_CONFIG
+    _CONFIGS[GERMAN_CONFIG.code] = GERMAN_CONFIG
+
+    for alias in FRENCH_CONFIG.aliases:
+        _ALIASES[alias] = FRENCH_CONFIG.code
+    for alias in GERMAN_CONFIG.aliases:
+        _ALIASES[alias] = GERMAN_CONFIG.code
+
+    _configs_loaded = True
+
+
+def __getattr__(name: str) -> LanguageConfig:
+    """Lazy load language configs when accessed as module attributes."""
+    if name == "FRENCH_CONFIG":
+        from .french import FRENCH_CONFIG
+        return FRENCH_CONFIG
+    elif name == "GERMAN_CONFIG":
+        from .german import GERMAN_CONFIG
+        return GERMAN_CONFIG
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def register_language(config: LanguageConfig) -> None:
     """Register a new language configuration."""
+    _ensure_configs_loaded()
     _CONFIGS[config.code] = config
     for alias in config.aliases:
         _ALIASES[alias] = config.code
@@ -31,6 +59,7 @@ def register_language(config: LanguageConfig) -> None:
 
 def get_language_config(language: str | None) -> LanguageConfig:
     """Resolve a language code or alias to a LanguageConfig."""
+    _ensure_configs_loaded()
     if not language:
         return _CONFIGS[_DEFAULT_LANGUAGE_CODE]
 
@@ -47,6 +76,7 @@ def get_language_config(language: str | None) -> LanguageConfig:
 
 def available_language_codes() -> List[str]:
     """List canonical language codes in alphabetical order."""
+    _ensure_configs_loaded()
     return sorted(_CONFIGS.keys())
 
 

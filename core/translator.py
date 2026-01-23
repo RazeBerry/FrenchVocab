@@ -55,11 +55,42 @@ class TranslatorCLI:
         filename = config.default_filename
         self.latex_file = latex_file_path if latex_file_path is not None else Path.cwd() / filename
 
-        self.pairs: Dict[str, Dict[str, str]] = {}
+        self._pairs: Dict[str, Dict[str, str]] = {}
+        self._entries_loaded = False
 
         self._ensure_tex_file_exists()
-        self.load_existing_entries()
-        self.entry_count = len(self.pairs)
+
+    # ------------------------------------------------------------------
+    # Lazy loading
+    # ------------------------------------------------------------------
+    def _ensure_entries_loaded(self) -> None:
+        """Load entries from LaTeX file on first access."""
+        if not self._entries_loaded:
+            self.load_existing_entries()
+            self._entries_loaded = True
+
+    @property
+    def pairs(self) -> Dict[str, Dict[str, str]]:
+        """Dictionary of translation pairs, loaded lazily on first access."""
+        self._ensure_entries_loaded()
+        return self._pairs
+
+    @pairs.setter
+    def pairs(self, value: Dict[str, Dict[str, str]]) -> None:
+        """Allow direct assignment for backwards compatibility."""
+        self._pairs = value
+        self._entries_loaded = True
+
+    @property
+    def entry_count(self) -> int:
+        """Number of loaded translation pairs."""
+        self._ensure_entries_loaded()
+        return len(self._pairs)
+
+    @entry_count.setter
+    def entry_count(self, value: int) -> None:
+        """No-op setter for backwards compatibility; entry_count is computed from pairs."""
+        pass
 
     # ------------------------------------------------------------------
     # File handling
@@ -98,7 +129,7 @@ class TranslatorCLI:
             )
             return
 
-        self.pairs.clear()
+        self._pairs.clear()
         loaded_count = 0
         parse_errors = 0
 
@@ -109,9 +140,9 @@ class TranslatorCLI:
             loaded_count += count
             parse_errors += errors
 
-        self.entry_count = len(self.pairs)
+        pair_count = len(self._pairs)
         summary = (
-            f"Loaded {self.entry_count} {self.source_label}-{self.target_label} pairs from {self.latex_file}."
+            f"Loaded {pair_count} {self.source_label}-{self.target_label} pairs from {self.latex_file}."
         )
         if parse_errors:
             summary += f" ({parse_errors} parsing errors)"
@@ -169,14 +200,14 @@ class TranslatorCLI:
                     continue
 
                 normalized = self.normalize_text(source)
-                if normalized in self.pairs:
-                    existing = self.pairs[normalized]["source"]
+                if normalized in self._pairs:
+                    existing = self._pairs[normalized]["source"]
                     self.ui.warning(
                         f"Duplicate normalized {self.source_label} key '{normalized}' found. "
                         f"Overwriting entry for '{existing}' with '{source}'."
                     )
 
-                self.pairs[normalized] = {"source": source, "target": target}
+                self._pairs[normalized] = {"source": source, "target": target}
                 loaded_count += 1
                 i = pos
 
@@ -377,8 +408,8 @@ class TranslatorCLI:
             self.ui.error(f"Error writing to {self.latex_file}: {exc}")
 
     def _add_entry_to_memory(self, source_text: str, target_text: str, normalized_key: str) -> None:
-        self.pairs[normalized_key] = {"source": source_text, "target": target_text}
-        self.entry_count = len(self.pairs)
+        self._ensure_entries_loaded()
+        self._pairs[normalized_key] = {"source": source_text, "target": target_text}
 
     def _emit_usage(self, usage: Optional[Dict[str, int]]) -> None:
         if self.usage_callback and usage:
