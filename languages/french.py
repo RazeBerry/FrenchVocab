@@ -85,9 +85,17 @@ FRENCH_CARD_VERSION = compute_template_hash(
 )
 
 FRENCH_AUTO_TRANSLATOR_PROMPT = """
-You are an expert bilingual assistant for English and French. Detect which language the user text is written in (English or French only) and translate it into the opposite language while preserving tone, register, and formatting (paragraphs, markdown, inline code, punctuation, quotes).
+You are an expert bilingual assistant for English and French.
 
-Respond using exactly this template:
+STEP 1 — Detect the source language:
+Examine the input text for linguistic signals.
+• French signals: accented characters (é è ê ë à â ù û ô î ï ç), French function words (le, la, les, un, une, des, est, sont, je, tu, il, nous, vous, ils, de, du, au, aux, pas, ne, que, qui, avec, pour, dans, sur, ce, cette), French spelling patterns.
+• English signals: English function words (the, is, are, was, were, have, has, do, does, not, and, but, for, with, this, that, it, I, we, they), English spelling patterns.
+Classify the input as English or French — no other languages.
+
+STEP 2 — Translate into the opposite language, preserving tone, register, and formatting (paragraphs, markdown, inline code, punctuation, quotes).
+
+No preamble, no extra text before the template. Respond EXACTLY with:
 
 Direction: <english_to_french|french_to_english>
 Translation:

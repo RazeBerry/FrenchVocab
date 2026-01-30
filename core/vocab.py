@@ -538,6 +538,7 @@ class FrenchVocabBuilder:
             prompt_template=prompt,
             prompt_variable=prompt_variable,
             usage_callback=self._record_usage,
+            verbose=self.verbose,
         )
 
     def _safe_warmup(self, fn, label: str) -> None:

@@ -103,9 +103,17 @@ GERMAN_CARD_VERSION = compute_template_hash(
 )
 
 GERMAN_AUTO_TRANSLATOR_PROMPT = """
-You are an expert bilingual assistant for English and German. Detect whether the user text is written in English or German (no other languages) and translate it into the opposite language while preserving tone, register, punctuation, paragraphing, markdown, and inline code.
+You are an expert bilingual assistant for English and German.
 
-Respond EXACTLY with:
+STEP 1 — Detect the source language:
+Examine the input text for linguistic signals.
+• German signals: umlauts (ä ö ü), ß, German function words (der, die, das, ist, und, nicht, ein, eine, ich, wir, haben, werden, auch, für, mit, auf), German sentence structure.
+• English signals: English function words (the, is, are, was, were, have, has, do, does, not, and, but, for, with, this, that, it, I, we, they), English spelling patterns.
+Classify the input as English or German — no other languages.
+
+STEP 2 — Translate into the opposite language, preserving tone, register, punctuation, paragraphing, markdown, and inline code.
+
+No preamble, no extra text before the template. Respond EXACTLY with:
 
 Direction: <english_to_german|german_to_english>
 Translation:

@@ -163,3 +163,118 @@ def test_auto_translator_ignores_notes_without_blank_separator(monkeypatch):
 
     assert eng_translator.calls == [("Hello!", "Bonjour !")]
     assert target_translator.calls == []
+
+
+def test_parse_last_direction_match(monkeypatch):
+    """When the model preamble contains a wrong Direction:, the parser should use the last one."""
+    prompt = "Input:\n{source_text}"
+    config = _language_config(prompt)
+    eng_translator = _SpyTranslator()
+    target_translator = _SpyTranslator()
+    # Preamble has wrong direction, final block has correct one
+    response = (
+        "I think this is french_to_english.\n"
+        "Direction: french_to_english\n"
+        "Wait, actually it's English.\n\n"
+        "Direction: english_to_french\n"
+        "Translation:\nBonjour le monde\n\n"
+        "Notes:\nnone"
+    )
+    client = _FakeLLMClient(response)
+
+    translator = AutoTranslator(
+        console=Console(),
+        client=client,
+        language_config=config,
+        eng_to_target=eng_translator,
+        target_to_eng=target_translator,
+        prompt_template=config.auto_prompt_template,
+        prompt_variable="source_text",
+    )
+
+    monkeypatch.setattr(translator, "_collect_multiline_input", lambda: "Hello world")
+    translator.run()
+
+    assert eng_translator.calls == [("Hello world", "Bonjour le monde")]
+    assert target_translator.calls == []
+
+
+def test_sanity_check_rejects_same_language(monkeypatch):
+    """If input and translation are nearly identical, user is prompted and can reject."""
+    prompt = "Input:\n{source_text}"
+    config = _language_config(prompt)
+    eng_translator = _SpyTranslator()
+    target_translator = _SpyTranslator()
+    # Model returns English text as "translation" of English input
+    response = "Direction: english_to_french\nTranslation:\nIt is too early for me\n\nNotes:\nnone"
+    client = _FakeLLMClient(response)
+
+    translator = AutoTranslator(
+        console=Console(),
+        client=client,
+        language_config=config,
+        eng_to_target=eng_translator,
+        target_to_eng=target_translator,
+        prompt_template=config.auto_prompt_template,
+        prompt_variable="source_text",
+    )
+
+    monkeypatch.setattr(translator, "_collect_multiline_input", lambda: "It is too early for me")
+    # User declines the suspicious translation
+    import core.auto_translator as _at_mod
+    monkeypatch.setattr(_at_mod, "read_line", lambda _prompt: "n")
+    translator.run()
+
+    assert eng_translator.calls == []
+    assert target_translator.calls == []
+
+
+def test_sanity_check_passes_valid_translation(monkeypatch):
+    """A proper foreign-language translation should pass the sanity check."""
+    prompt = "Input:\n{source_text}"
+    config = _language_config(prompt)
+    eng_translator = _SpyTranslator()
+    target_translator = _SpyTranslator()
+    response = "Direction: english_to_french\nTranslation:\nC'est trop tôt pour moi\n\nNotes:\nnone"
+    client = _FakeLLMClient(response)
+
+    translator = AutoTranslator(
+        console=Console(),
+        client=client,
+        language_config=config,
+        eng_to_target=eng_translator,
+        target_to_eng=target_translator,
+        prompt_template=config.auto_prompt_template,
+        prompt_variable="source_text",
+    )
+
+    monkeypatch.setattr(translator, "_collect_multiline_input", lambda: "It is too early for me")
+    translator.run()
+
+    assert eng_translator.calls == [("It is too early for me", "C'est trop tôt pour moi")]
+
+
+def test_verbose_flag_does_not_break(monkeypatch):
+    """The verbose flag should not cause errors during normal operation."""
+    prompt = "Input:\n{source_text}"
+    config = _language_config(prompt)
+    eng_translator = _SpyTranslator()
+    target_translator = _SpyTranslator()
+    response = "Direction: english_to_french\nTranslation:\nBonjour !\n\nNotes:\nnone"
+    client = _FakeLLMClient(response)
+
+    translator = AutoTranslator(
+        console=Console(),
+        client=client,
+        language_config=config,
+        eng_to_target=eng_translator,
+        target_to_eng=target_translator,
+        prompt_template=config.auto_prompt_template,
+        prompt_variable="source_text",
+        verbose=True,
+    )
+
+    monkeypatch.setattr(translator, "_collect_multiline_input", lambda: "Hello!")
+    translator.run()
+
+    assert eng_translator.calls == [("Hello!", "Bonjour !")]

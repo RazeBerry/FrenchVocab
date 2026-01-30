@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import re
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional
@@ -42,6 +43,7 @@ class AutoTranslator:
         prompt_template: Optional[str],
         prompt_variable: str = "source_text",
         usage_callback: UsageCallback = None,
+        verbose: bool = False,
     ) -> None:
         self.console = console
         self.ui = UIHelper(console)
@@ -52,6 +54,7 @@ class AutoTranslator:
         self.prompt_template = prompt_template
         self.prompt_variable = prompt_variable or "source_text"
         self.usage_callback = usage_callback
+        self.verbose = verbose
 
         lang_code = (language_config.code or "").lower()
         configured_tokens = language_config.auto_direction_tokens
@@ -83,6 +86,13 @@ class AutoTranslator:
         result = self._parse_response(response)
         if result is None:
             self.ui.error("Unable to parse auto-translation response. Please retry or use manual direction.")
+            return
+
+        if self.verbose:
+            trunc = result.translation[:120] + ("..." if len(result.translation) > 120 else "")
+            self.ui.info(f"[dim]Parsed direction={result.direction!r}  translation={trunc!r}[/dim]")
+
+        if not self._sanity_check(source_text, result.translation):
             return
 
         translator = self._translator_for_direction(result.direction)
@@ -166,6 +176,8 @@ class AutoTranslator:
             if not response:
                 self.ui.error("Auto translator received an empty response.")
                 return None
+            if self.verbose:
+                self.ui.info(f"[dim]Raw auto-translator response:[/dim]\n{response}")
             return response
         except Exception as exc:  # pragma: no cover - defensive path
             self.ui.error(f"An error occurred during auto translation: {exc}")
@@ -175,14 +187,21 @@ class AutoTranslator:
             self._emit_usage(usage if isinstance(usage, dict) else None)
 
     def _parse_response(self, text: str) -> Optional[AutoTranslationResult]:
-        direction_match = re.search(r"^\s*Direction:\s*(.+)$", text, re.IGNORECASE | re.MULTILINE)
-        translation_header = re.search(r"Translation:\s*", text, re.IGNORECASE)
+        direction_matches = list(
+            re.finditer(r"^\s*Direction:\s*(.+)$", text, re.IGNORECASE | re.MULTILINE)
+        )
+        if not direction_matches:
+            return None
+        direction_match = direction_matches[-1]
 
-        if not direction_match or not translation_header:
+        search_after = direction_match.end()
+        translation_header = re.search(r"Translation:\s*", text[search_after:], re.IGNORECASE)
+
+        if not translation_header:
             return None
 
         direction = direction_match.group(1).strip().lower()
-        translation_start = translation_header.end()
+        translation_start = search_after + translation_header.end()
         notes_header_pattern = re.compile(r"^\s*Notes:\s*", re.IGNORECASE | re.MULTILINE)
         notes_header = notes_header_pattern.search(text, translation_start)
 
@@ -234,6 +253,39 @@ class AutoTranslator:
                 expand=False,
                 box_style=box.ROUNDED,
             )
+
+    def _sanity_check(self, source_text: str, translation: str) -> bool:
+        """Return True if the translation looks like a different language from the input."""
+        src = source_text.strip().lower()
+        tgt = translation.strip().lower()
+
+        suspicious = False
+        if src in tgt or tgt in src:
+            suspicious = True
+        else:
+            src_words = src.split()
+            tgt_words = tgt.split()
+            if len(src_words) > 3 and len(tgt_words) > 3:
+                ratio = difflib.SequenceMatcher(None, src_words, tgt_words).ratio()
+                if ratio > 0.7:
+                    suspicious = True
+
+        if not suspicious:
+            return True
+
+        self.ui.warning(
+            "The translation looks very similar to the input — "
+            "the AI may have detected the wrong language direction."
+        )
+        try:
+            answer = read_line("Accept this translation anyway? (y/N): ")
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        if answer.strip().lower() in ("y", "yes"):
+            return True
+
+        self.ui.info("Translation rejected. Try using a manual direction instead.")
+        return False
 
     def _emit_usage(self, usage: Optional[Dict[str, int]]) -> None:
         if self.usage_callback and usage:
