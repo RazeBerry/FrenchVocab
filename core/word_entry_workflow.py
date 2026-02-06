@@ -385,10 +385,7 @@ class WordEntryWorkflow:
     def _query_ai_with_recovery(self, word: str) -> Optional[str]:
         """Query AI with recovery options on failure."""
         detected_type = self._detect_input_type(word)
-        prompt_template = (
-            getattr(self.language_config, "prompt_template", None) or
-            self.language_config.prompt_template
-        )
+        prompt_template = self.language_config.prompt_template
         prompt = prompt_template.format(input_text=word, detected_type=detected_type)
 
         def _on_exception(exc: Exception, label: str) -> bool:
@@ -534,7 +531,7 @@ class WordEntryWorkflow:
                     fr, en = e.rsplit(' (', 1)
                     exs.append((fr, en[:-1]))
 
-        self.ui.display_word_entry(entry['word'], [entry['type']], defs, exs)
+        self.ui.display_word_entry(entry['word'], entry['type'], defs, exs)
 
     def _display_parsed_info(
         self,
@@ -671,7 +668,10 @@ class WordEntryWorkflow:
                 pass  # Errors reported via logger's error handler
 
     def _show_quick_actions(self) -> bool:
-        """Show quick action menu after successful entry. Returns True if flow continues."""
+        """Show quick action menu after successful entry.
+
+        Returns True if user wants to add another word, False otherwise.
+        """
         try:
             quick_action = self.ui.interactive_menu(
                 "What's next?",
@@ -685,17 +685,11 @@ class WordEntryWorkflow:
             )
 
             if quick_action == "add":
-                # Signal to caller to run workflow again
                 return True
-            elif quick_action == "view":
-                # Signal to caller to show vocabulary
-                return True
-            elif quick_action == "search":
-                # Signal to caller to show search
-                return True
-            # "menu" - just return
+            # "view", "search", "menu" all return to caller
+            return False
 
         except KeyboardInterrupt:
             pass
 
-        return True
+        return False

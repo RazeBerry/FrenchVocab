@@ -386,21 +386,17 @@ class TranslatorCLI:
     def _add_entry_to_file(self, latex_entry: str) -> None:
         try:
             with self.latex_file.open("r", encoding="utf-8") as file:
-                lines = file.readlines()
+                content = file.read()
 
-            insert_index = -1
-            for idx, line in reversed(list(enumerate(lines))):
-                if "\\end{itemize}" in line:
-                    insert_index = idx
-                    break
-
-            if insert_index == -1:
+            insert_pos = content.rfind("\\end{itemize}")
+            if insert_pos == -1:
                 self.ui.error("Error: could not find insertion point in LaTeX file.")
                 return
 
-            lines.insert(insert_index, f"{latex_entry}\n\n")
-            with self.latex_file.open("w", encoding="utf-8") as file:
-                file.writelines(lines)
+            updated = content[:insert_pos] + f"{latex_entry}\n\n" + content[insert_pos:]
+
+            from core.file_safety import atomic_write_text
+            atomic_write_text(self.latex_file, updated, create_backup=True)
 
             self.ui.success(f"Added entry to {self.latex_file}")
 

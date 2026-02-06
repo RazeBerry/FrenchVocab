@@ -71,10 +71,11 @@ def test_query_ai_surfaces_provider_error_label():
     client = _FailingClient()
 
     # Create a minimal LLMCoordinator with the failing client injected
+    import threading
     coordinator = object.__new__(LLMCoordinator)
     coordinator._ui = ui
     coordinator._client = client
-    coordinator._api_available = True
+    coordinator._state_lock = threading.Lock()
     coordinator._api_error_reason = None
     coordinator._provider_metadata = _MockProviderMetadata()
     coordinator._session_usage = {}

@@ -218,7 +218,12 @@ class AutoTranslator:
         return AutoTranslationResult(direction=direction, translation=translation, notes=notes)
 
     def _translator_for_direction(self, direction: str) -> Optional[TranslatorCLI]:
-        normalized = direction.strip().lower()
+        # Normalize spaces, hyphens, and arrows to underscores for flexible matching
+        normalized = re.sub(r"[\s\-]+", "_", direction.strip().lower())
+        normalized = re.sub(r"[→>]+", "_to_", normalized)
+        # Collapse repeated underscores
+        normalized = re.sub(r"_+", "_", normalized).strip("_")
+
         if normalized in self.eng_direction_tokens:
             return self.eng_to_target
 

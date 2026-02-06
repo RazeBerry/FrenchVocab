@@ -8,7 +8,6 @@ This module handles:
 """
 
 import errno
-import gc
 import json
 import os
 import re
@@ -108,8 +107,19 @@ class AnkiExportManager:
         """Load exported words from the tracking file."""
         path = self._exported_words_file
         if path.exists():
-            with path.open('r', encoding='utf-8') as f:
-                data = json.load(f)
+            try:
+                with path.open('r', encoding='utf-8') as f:
+                    data = json.load(f)
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                self._ui.warning(
+                    f"Exported words file is corrupted ({exc}); starting fresh. "
+                    f"The corrupt file has been preserved as {path}.corrupt"
+                )
+                try:
+                    shutil.copy2(path, str(path) + ".corrupt")
+                except OSError:
+                    pass
+                return set(), None, None
             if isinstance(data, dict):
                 words = set(data.get("words", []))
                 version = data.get("deck_version")
@@ -126,20 +136,26 @@ class AnkiExportManager:
         return self._load_exported_words()
 
     def save_exported_words(self) -> None:
-        """Save exported words to the tracking file."""
+        """Save exported words to the tracking file using atomic write."""
         path = self._exported_words_file
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
         except FileExistsError:
             pass
-        with path.open('w', encoding='utf-8') as f:
-            payload = {
-                "words": sorted(self._exported_words),
-                "deck_version": self._exported_deck_version,
-            }
-            if self._last_export_metadata:
-                payload["last_export"] = self._last_export_metadata
-            json.dump(payload, f, ensure_ascii=False, indent=2)
+        payload = {
+            "words": sorted(self._exported_words),
+            "deck_version": self._exported_deck_version,
+        }
+        if self._last_export_metadata:
+            payload["last_export"] = self._last_export_metadata
+        content = json.dumps(payload, ensure_ascii=False, indent=2)
+        try:
+            from core.file_safety import atomic_write_text
+            atomic_write_text(path, content, create_backup=False)
+        except Exception:
+            # Fallback to direct write if atomic write fails
+            with path.open('w', encoding='utf-8') as f:
+                f.write(content)
 
     def get_all_exported_words(self) -> Set[str]:
         """Return a copy of all exported words."""
@@ -369,22 +385,16 @@ class AnkiExportManager:
                     pass
             return None
 
-        # Test stubs compatibility
+        # Expose last export for test introspection via class attributes
         setattr(package.__class__, "last_deck", deck)
         setattr(package.__class__, "last_written_path", str(destination_path))
 
-        for module in list(sys.modules.values()):
-            pkg_cls = getattr(module, "Package", None)
-            if pkg_cls and isinstance(pkg_cls, type):
-                setattr(pkg_cls, "last_deck", deck)
-                setattr(pkg_cls, "last_written_path", str(destination_path))
-
-        for obj in gc.get_objects():
-            if isinstance(obj, type):
-                qn = getattr(obj, "__qualname__", "")
-                if "TestExportToAnki" in qn and "_Package" in qn:
-                    setattr(obj, "last_deck", deck)
-                    setattr(obj, "last_written_path", str(destination_path))
+        # Also propagate to the genanki.Package class in sys.modules, since test
+        # stubs may replace it and the runtime package.__class__ may differ.
+        genanki_pkg = getattr(sys.modules.get("genanki"), "Package", None)
+        if genanki_pkg is not None and genanki_pkg is not package.__class__:
+            setattr(genanki_pkg, "last_deck", deck)
+            setattr(genanki_pkg, "last_written_path", str(destination_path))
 
         if debug_export:
             print(

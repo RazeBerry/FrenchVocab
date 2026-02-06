@@ -113,30 +113,3 @@ def atomic_write_text(
     return None
 
 
-def safe_read_with_fallback(path: Path, encoding: str = "utf-8") -> str:
-    """
-    Read file content, falling back to backup if main file is corrupted.
-
-    Args:
-        path: Primary file path to read
-        encoding: File encoding (default: utf-8)
-
-    Returns:
-        File content as string
-
-    Raises:
-        FileNotFoundError: If neither main file nor backup exists
-        UnicodeDecodeError: If both files have encoding issues
-    """
-    path = Path(path)
-    try:
-        return path.read_text(encoding=encoding)
-    except (UnicodeDecodeError, IOError) as primary_error:
-        backup_path = path.with_suffix(path.suffix + ".bak")
-        if backup_path.exists():
-            try:
-                return backup_path.read_text(encoding=encoding)
-            except (UnicodeDecodeError, IOError):
-                # Both files corrupted, raise original error
-                raise primary_error
-        raise

@@ -305,6 +305,10 @@ class ClaudeClient(LLMClient):
 
     def stream(self, prompt: str, *, thinking_level: str = "low"):
         # Claude doesn't use thinking_level; parameter accepted for interface compatibility
+        t0 = perf_counter()
+        t_first = 0.0
+        pieces: list[str] = []
+
         with self._client.messages.stream(
             model=self.MODEL_NAME,
             max_tokens=8192,
@@ -317,7 +321,34 @@ class ClaudeClient(LLMClient):
             },
         ) as stream:
             for text in stream.text_stream:
+                if not t_first:
+                    t_first = perf_counter()
+                pieces.append(text)
                 yield text
+
+            # Collect usage from the final message
+            final_message = stream.get_final_message()
+
+        ttft = (t_first - t0) if t_first else (perf_counter() - t0)
+        usage_summary: Dict[str, int] = {}
+        if final_message and getattr(final_message, "usage", None):
+            usage = final_message.usage
+            if getattr(usage, "input_tokens", None) is not None:
+                usage_summary["prompt_tokens"] = usage.input_tokens
+            if getattr(usage, "output_tokens", None) is not None:
+                usage_summary["output_tokens"] = usage.output_tokens
+                usage_summary["total_tokens"] = (
+                    usage_summary.get("prompt_tokens", 0) + usage.output_tokens
+                )
+
+        out_tokens = usage_summary.get("output_tokens", 0)
+        duration = (perf_counter() - t_first) if t_first else 1e-9
+        tps = out_tokens / max(duration, 1e-9)
+
+        metrics: Dict[str, Any] = dict(ttft=ttft, tokens_out=out_tokens, tps=tps)
+        if usage_summary:
+            metrics["usage"] = usage_summary
+        return metrics
 
     def model_label(self) -> str:
         return f"Anthropic Claude ({self.MODEL_NAME})"
@@ -341,7 +372,7 @@ class ProviderFactory:
     """Factory to create different LLM client implementations."""
     
     @staticmethod
-    def create(provider_name: str, api_key: str = None) -> LLMClient:
+    def create(provider_name: str, api_key: Optional[str] = None) -> LLMClient:
         """
         Create an LLM client based on the provider name.
         

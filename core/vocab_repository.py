@@ -258,12 +258,16 @@ class VocabRepository:
         return self.normalized_entries.get(normalized_word)
 
     def get_all_latex_entries(self) -> Set[str]:
-        """Return a set of all words in the LaTeX file."""
+        """Return a set of all words in the LaTeX file using balanced-brace parsing."""
         with self.latex_file.open("r", encoding="utf-8") as file:
             content = file.read()
-        entry_cmd_pattern = re.escape(self._get_entry_command()) + r"\{(.*?)\}"
-        entries = re.findall(entry_cmd_pattern, content)
-        return set(entry.lower() for entry in entries)
+        entry_cmd = self._get_entry_command()
+        entries: Set[str] = set()
+        for groups, _, _ in iter_entry_groups(content, entry_cmd, num_groups=1):
+            word = groups[0].strip()
+            if word:
+                entries.add(word.lower())
+        return entries
 
     # -------------------------------------------------------------------------
     # Entry Modification
@@ -293,11 +297,13 @@ class VocabRepository:
         self.normalized_entries[normalized_word] = word_lower
         self.entry_count = len(self.word_entries)
 
-    def insert_entry_alphabetically(self, new_entry: str, new_word: str) -> None:
+    def insert_entry_alphabetically(self, new_entry: str, new_word: str) -> bool:
         """Insert a new LaTeX entry at the correct alphabetical position.
 
         Uses balanced-brace parsing to find existing entries and determine
         the correct insertion point.
+
+        Returns True if the entry was successfully written to the file.
         """
         try:
             with self.latex_file.open("r", encoding="utf-8") as file:
@@ -346,16 +352,19 @@ class VocabRepository:
             self.normalized_entries[normalized_new_word] = new_word.lower()
 
             self.ui.success(f"Added/Updated entry for '{new_word}' in {self.latex_file}")
+            return True
         except FileNotFoundError:
             self.ui.error(
                 f"Cannot insert entry: File not found\n{self.latex_file}",
                 with_panel=True
             )
+            return False
         except IOError as e:
             self.ui.error(
                 f"Cannot insert entry: File I/O error\n{e}",
                 with_panel=True
             )
+            return False
 
     def alphabetize_entries(self, *, silent: bool = False) -> None:
         """Alphabetize the entries in the LaTeX file.

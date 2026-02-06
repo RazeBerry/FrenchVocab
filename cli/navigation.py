@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import atexit
 import os
 import select
+import signal
 import sys
 from contextlib import contextmanager
 from typing import IO, Any, Sequence, Tuple
@@ -12,6 +14,37 @@ from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
 from rich import box
+
+
+def _restore_cursor_on_exit() -> None:
+    """Best-effort cursor restore for abnormal exits (SIGTERM, atexit)."""
+    try:
+        sys.stdout.write("\033[?25h")
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+
+# Register atexit handler to restore cursor if process exits unexpectedly
+atexit.register(_restore_cursor_on_exit)
+
+# Register SIGTERM handler to restore cursor before exiting
+_original_sigterm = signal.getsignal(signal.SIGTERM)
+
+
+def _sigterm_handler(signum: int, frame: Any) -> None:
+    _restore_cursor_on_exit()
+    # Re-raise via the original handler or default behavior
+    if callable(_original_sigterm) and _original_sigterm not in (signal.SIG_DFL, signal.SIG_IGN):
+        _original_sigterm(signum, frame)
+    else:
+        raise SystemExit(128 + signum)
+
+
+try:
+    signal.signal(signal.SIGTERM, _sigterm_handler)
+except (OSError, ValueError):
+    pass  # Cannot set signal handler (e.g., not main thread)
 
 try:
     from rich.live import Live
@@ -270,6 +303,7 @@ def _raw_mode(stream: IO[Any]):
         yield
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, original_attrs)
+        termios.tcflush(fd, termios.TCIFLUSH)
 
 
 def _read_key() -> str:

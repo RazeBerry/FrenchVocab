@@ -143,8 +143,7 @@ class LLMCoordinator:
             else:
                 self._start_background_init()
         else:
-            with self._state_lock:
-                self._api_available = True
+            pass  # client already set, state already READY from __init__
 
     # -------------------------------------------------------------------------
     # Properties
@@ -153,13 +152,14 @@ class LLMCoordinator:
     @property
     def client(self) -> Optional["LLMClient"]:
         """The active LLM client, or None if unavailable."""
-        return self._client
+        with self._state_lock:
+            return self._client
 
     @client.setter
     def client(self, value: Optional["LLMClient"]) -> None:
         """Set the LLM client directly."""
-        self._client = value
         with self._state_lock:
+            self._client = value
             if value is not None:
                 self._init_state = InitState.READY
                 self._api_error_reason = None
@@ -286,12 +286,13 @@ class LLMCoordinator:
         from llm_client import ProviderFactory
 
         try:
-            self._client = ProviderFactory.create(self._provider_metadata.identifier)
+            new_client = ProviderFactory.create(self._provider_metadata.identifier)
         except Exception as exc:
             self._enter_degraded_mode(f"Error initializing {self._provider_metadata.identifier} client: {exc}")
             return False
 
         with self._state_lock:
+            self._client = new_client
             self._init_state = InitState.READY
             self._api_error_reason = None
             self._init_event.set()
@@ -365,8 +366,8 @@ class LLMCoordinator:
     def _enter_degraded_mode(self, reason: str) -> None:
         """Disable AI-dependent features while keeping the rest of the app usable."""
         clean_reason = (reason or "").strip() or "No AI provider configured."
-        self._client = None
         with self._state_lock:
+            self._client = None
             self._init_state = InitState.FAILED
             self._api_error_reason = clean_reason
             self._init_event.set()  # Signal that init attempt is complete
@@ -410,51 +411,52 @@ class LLMCoordinator:
         Returns:
             True if client is ready for queries
         """
-        state = self.init_state
+        while True:
+            state = self.init_state
 
-        # Already ready - fast path
-        if state == InitState.READY:
-            return True
-
-        # Background init in progress - wait for it to complete (no arbitrary timeout!)
-        if state == InitState.IN_PROGRESS:
-            self._init_event.wait()  # Block until init signals completion
-            if self.init_state == InitState.READY:
+            # Already ready - fast path
+            if state == InitState.READY:
                 return True
 
-        # If we get here, init failed or was deferred - need user action
-        if self._client:
-            return True
+            # Background init in progress - wait for it to complete (no arbitrary timeout!)
+            if state == InitState.IN_PROGRESS:
+                self._init_event.wait()  # Block until init signals completion
+                if self.init_state == InitState.READY:
+                    return True
 
-        reason = self.api_error_reason or "No AI provider configured."
-        self._ui.warning(f"AI provider unavailable: {reason}")
-
-        options = [
-            ("retry", "Retry provider setup now"),
-            ("settings", "Open AI settings"),
-            ("skip", "Return without AI features"),
-        ]
-
-        try:
-            choice = self._ui.interactive_menu(
-                "AI Provider Required",
-                options,
-                "AI-powered features need a configured provider • [Esc] Skip",
-                show_keys=False,
-            )
-        except KeyboardInterrupt:
-            return False
-
-        if choice == "retry":
-            if self.reconfigure():
+            # If we get here, init failed or was deferred - need user action
+            if self.client:
                 return True
-            self._ui.warning("Provider setup failed. Remaining in offline mode.")
-        elif choice == "settings":
-            if on_settings:
-                on_settings()
-            return self.ensure_ready(on_settings=on_settings)
 
-        return False
+            reason = self.api_error_reason or "No AI provider configured."
+            self._ui.warning(f"AI provider unavailable: {reason}")
+
+            options = [
+                ("retry", "Retry provider setup now"),
+                ("settings", "Open AI settings"),
+                ("skip", "Return without AI features"),
+            ]
+
+            try:
+                choice = self._ui.interactive_menu(
+                    "AI Provider Required",
+                    options,
+                    "AI-powered features need a configured provider • [Esc] Skip",
+                    show_keys=False,
+                )
+            except KeyboardInterrupt:
+                return False
+
+            if choice == "retry":
+                if self.reconfigure():
+                    return True
+                self._ui.warning("Provider setup failed. Remaining in offline mode.")
+            elif choice == "settings":
+                if on_settings:
+                    on_settings()
+                continue  # Loop back to re-check readiness
+            else:
+                return False
 
     def reconfigure(self, on_success: Optional[Callable[[], None]] = None) -> bool:
         """Run provider setup again and rebuild dependent components.
@@ -546,7 +548,7 @@ class LLMCoordinator:
         """
         label = progress_label or self.provider_label
 
-        if not self._client:
+        if not self.client:
             reason = self.api_error_reason or f"{label} client is not configured."
             self._ui.error(f"Cannot query AI provider: {reason}")
             self._ui.info("AI-powered suggestions are disabled. Retry provider setup to continue.")
@@ -561,7 +563,7 @@ class LLMCoordinator:
             task = progress.add_task(f"[cyan]Querying {label}...", total=None)
 
             chunks: List[str] = []
-            generator = self._client.stream(prompt)
+            generator = self.client.stream(prompt)
 
             try:
                 while True:

@@ -148,7 +148,7 @@ class FrenchVocabBuilder:
     def __init__(
         self,
         latex_file: Optional[str],
-        provider: str = None,
+        provider: Optional[str] = None,
         verbose: bool = False,
         client: Optional["GeminiClient"] = None,
         language: Optional[str] = None,
@@ -991,7 +991,10 @@ class FrenchVocabBuilder:
 
     def display_existing_entry(self, word: str):
         self._ensure_entries_loaded()
-        entry = self.word_entries[word.lower()]
+        entry = self.word_entries.get(word.lower())
+        if not entry:
+            self.ui.warning(f"Entry for '{word}' not found.")
+            return
         # Prefer structured lists if available
         defs = entry.get('definitions_list')
         exs = entry.get('examples_list')
@@ -1460,54 +1463,67 @@ class FrenchVocabBuilder:
         """Handle the word entry flow by delegating to WordEntryWorkflow.
 
         This method creates a workflow instance and executes it, then handles
-        the quick action menu for continued interaction.
+        the quick action menu for continued interaction. Uses an iterative loop
+        instead of recursion to avoid stack overflow on repeated "add" actions.
         """
-        # Create workflow with current state
-        workflow = WordEntryWorkflow(
-            vocab_repo=self._vocab_repo,
-            llm=self._llm,
-            ui=self.ui,
-            language_config=self.language_config,
-            history_logger=self.history_logger,
-            spelling_checker=self._spelling_checker,
-            fr_to_eng_translator=self.fr_to_eng_translator,
-            max_word_length=self.max_word_length,
-            max_words=self.max_words,
-            allow_sentence_punctuation=self.allow_sentence_punctuation,
-            route_sentences=self.route_sentences,
-            sentence_examples_in_vocab=self.sentence_examples_in_vocab,
-            entry_command=self.entry_command,
-            provider_label_fn=self._provider_label,
-            on_settings=self.show_settings_screen,
-            get_word_input_fn=self.get_word_input,
-            # Pass builder methods as callbacks for test compatibility
-            query_ai_fn=self.query_ai,
-            check_spelling_fn=self.check_spelling,
-            parse_ai_response_fn=self.parse_ai_response,
-            check_duplicate_fn=self.check_duplicate,
-            display_parsed_info_fn=self.display_parsed_info,
-            display_latex_entry_fn=self.display_latex_entry,
-            is_valid_latex_entry_fn=self.is_valid_latex_entry,
-            insert_entry_alphabetically_fn=self.insert_entry_alphabetically,
-            add_word_to_entries_fn=self.add_word_to_entries,
-        )
+        while True:
+            # Create workflow with current state
+            workflow = WordEntryWorkflow(
+                vocab_repo=self._vocab_repo,
+                llm=self._llm,
+                ui=self.ui,
+                language_config=self.language_config,
+                history_logger=self.history_logger,
+                spelling_checker=self._spelling_checker,
+                fr_to_eng_translator=self.fr_to_eng_translator,
+                max_word_length=self.max_word_length,
+                max_words=self.max_words,
+                allow_sentence_punctuation=self.allow_sentence_punctuation,
+                route_sentences=self.route_sentences,
+                sentence_examples_in_vocab=self.sentence_examples_in_vocab,
+                entry_command=self.entry_command,
+                provider_label_fn=self._provider_label,
+                on_settings=self.show_settings_screen,
+                get_word_input_fn=self.get_word_input,
+                # Pass builder methods as callbacks for test compatibility
+                query_ai_fn=self.query_ai,
+                check_spelling_fn=self.check_spelling,
+                parse_ai_response_fn=self.parse_ai_response,
+                check_duplicate_fn=self.check_duplicate,
+                display_parsed_info_fn=self.display_parsed_info,
+                display_latex_entry_fn=self.display_latex_entry,
+                is_valid_latex_entry_fn=self.is_valid_latex_entry,
+                insert_entry_alphabetically_fn=self.insert_entry_alphabetically,
+                add_word_to_entries_fn=self.add_word_to_entries,
+            )
 
-        # Run the workflow
-        saved = workflow.run(self.ensure_llm_ready)
+            # Run the workflow
+            saved = workflow.run(self.ensure_llm_ready)
 
-        # Sync duplicate_resolution state back
-        self.duplicate_resolution = workflow.duplicate_resolution
+            # Sync duplicate_resolution state back
+            self.duplicate_resolution = workflow.duplicate_resolution
 
-        if not saved:
+            if not saved:
+                return
+
+            # Quick action menu - iterative instead of recursive
+            quick_action = self._show_word_entry_quick_actions()
+            if quick_action == "add":
+                continue  # Loop to add another word
+            elif quick_action == "view":
+                self.display_all_vocabulary()
+            elif quick_action == "search":
+                self.search_vocabulary()
+            # "menu" or None (Esc) - return to main menu
             return
 
-        # Quick action menu - allow users to continue without returning to main menu
-        self._show_word_entry_quick_actions()
+    def _show_word_entry_quick_actions(self) -> Optional[str]:
+        """Show quick action menu after successful word entry.
 
-    def _show_word_entry_quick_actions(self) -> None:
-        """Show quick action menu after successful word entry."""
+        Returns the selected action key, or None on cancel.
+        """
         try:
-            quick_action = self.ui.interactive_menu(
+            return self.ui.interactive_menu(
                 "What's next?",
                 [
                     ("add", "Add another word"),
@@ -1517,19 +1533,8 @@ class FrenchVocabBuilder:
                 ],
                 "Press Esc to return to main menu",
             )
-
-            if quick_action == "add":
-                # Recursively call to add another word
-                self.handle_new_word_entry()
-            elif quick_action == "view":
-                self.display_all_vocabulary()
-            elif quick_action == "search":
-                self.search_vocabulary()
-            # If "menu" selected, just return normally
-
         except KeyboardInterrupt:
-            # User pressed Esc - return to main menu
-            pass
+            return None
 
     def _show_post_translation_menu(self) -> None:
         """Show quick action menu after successful sentence translation."""
