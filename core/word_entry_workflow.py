@@ -300,8 +300,7 @@ class WordEntryWorkflow:
         if self._on_entry_saved:
             self._on_entry_saved(insert_word)
 
-        # Show quick action menu
-        return self._show_quick_actions()
+        return True
 
     def _collect_input(self) -> str:
         """Read target-language text from the user."""
