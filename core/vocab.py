@@ -7,7 +7,6 @@ import unicodedata
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from pathlib import Path
 from rich.console import Console
-from enum import Enum, auto
 from cli.menu import main_menu_loop
 from anki_exporter import latex_to_anki_format as latex_to_anki_html
 from ai_response_parser import parse_ai_response_text
@@ -33,15 +32,6 @@ if TYPE_CHECKING:  # pragma: no cover - optional provider clients
     from llm_client import GeminiClient  # noqa: F401
     from .translator import TranslatorCLI  # noqa: F401
     from .auto_translator import AutoTranslator  # noqa: F401
-
-class WordType(Enum):
-    NOUN = auto()
-    VERB = auto()
-    ADJECTIVE = auto()
-    ADVERB = auto()
-    EXPRESSION = auto()
-    PRONOMINAL_VERB = auto()
-    OTHER = auto()
 
 
 class _TestDoubleVocabRepoAdapter:
@@ -649,6 +639,105 @@ class FrenchVocabBuilder:
             self.ui.error(f"Error creating initial LaTeX file: {e}", with_panel=True)
             raise
 
+    @staticmethod
+    def _parse_bool_flag(value: object) -> Optional[bool]:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "y", "on")
+        return None
+
+    @staticmethod
+    def _parse_positive_int(value: object) -> Optional[int]:
+        try:
+            parsed = int(value)
+        except (ValueError, TypeError):
+            return None
+        return parsed if parsed > 0 else None
+
+    def _apply_config_bool_override(self, limits: Dict[str, Any], key: str, attr_name: str) -> None:
+        if key not in limits:
+            return
+        parsed = self._parse_bool_flag(limits.get(key))
+        if parsed is None:
+            return
+        setattr(self, attr_name, parsed)
+
+    def _apply_input_limits_from_config(self, limits: Dict[str, Any]) -> None:
+        max_chars = self._parse_positive_int(limits.get("max_chars"))
+        if max_chars is not None:
+            self.max_word_length = max_chars
+
+        if "max_words" in limits:
+            self.max_words = self._parse_positive_int(limits.get("max_words"))
+
+        self._apply_config_bool_override(limits, "sentence_mode", "allow_sentence_punctuation")
+        self._apply_config_bool_override(limits, "route_sentences", "route_sentences")
+        self._apply_config_bool_override(limits, "sentence_examples", "sentence_examples_in_vocab")
+
+    def _load_input_limits_from_config_file(self) -> None:
+        try:
+            cfg_path = Path(__file__).parent / str(self.config_file)
+            if not cfg_path.exists():
+                return
+            with cfg_path.open("r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            return
+
+        self._config_data = data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            return
+
+        limits = data.get("input_limits", {})
+        if isinstance(limits, dict):
+            self._apply_input_limits_from_config(limits)
+
+    def _apply_env_max_chars_override(self) -> None:
+        env_chars = os.getenv("FRENCH_VOCAB_MAX_CHARS")
+        if not env_chars:
+            return
+        try:
+            parsed = int(env_chars)
+        except (ValueError, TypeError):
+            return
+        if parsed > 0:
+            self.max_word_length = parsed
+
+    def _apply_env_max_words_override(self) -> None:
+        env_words = os.getenv("FRENCH_VOCAB_MAX_WORDS")
+        if env_words is None:
+            return
+        try:
+            parsed = int(env_words)
+        except (ValueError, TypeError):
+            return
+        if parsed > 0:
+            self.max_words = parsed
+        else:
+            self.max_words = None
+
+    def _apply_env_sentence_mode_override(self) -> None:
+        env_sentence = os.getenv("FRENCH_VOCAB_SENTENCE_MODE") or os.getenv("FRENCH_VOCAB_ALLOW_PUNCT")
+        if env_sentence is None:
+            return
+        self.allow_sentence_punctuation = str(env_sentence).strip().lower() in (
+            "1",
+            "true",
+            "yes",
+            "y",
+            "on",
+        )
+
+    def _apply_env_bool_override(self, env_var: str, attr_name: str) -> None:
+        env_value = os.getenv(env_var)
+        if env_value is None:
+            return
+        parsed = self._parse_bool_flag(env_value)
+        if parsed is None:
+            return
+        setattr(self, attr_name, parsed)
+
     def _load_input_limits(self) -> None:
         """Load UI/input and routing options from env or optional JSON config.
 
@@ -657,98 +746,12 @@ class FrenchVocabBuilder:
         - Config file (JSON): {"input_limits": {"max_chars": int, "max_words": int|null}}
         Any non-positive or null max_words disables the word-count limit.
         """
-        # 1) Config file (optional)
-        try:
-            from pathlib import Path as _Path
-            cfg_path = _Path(__file__).parent / str(self.config_file)
-            if cfg_path.exists():
-                with cfg_path.open('r', encoding='utf-8') as f:
-                    data = json.load(f)
-                if isinstance(data, dict):
-                    self._config_data = data
-                else:
-                    self._config_data = {}
-                limits = (data or {}).get('input_limits', {})
-                if isinstance(limits, dict):
-                    if 'max_chars' in limits:
-                        try:
-                            mc = int(limits['max_chars'])
-                            if mc > 0:
-                                self.max_word_length = mc
-                        except (ValueError, TypeError):
-                            pass
-                    if 'max_words' in limits:
-                        try:
-                            mw = limits['max_words']
-                            # allow null/None/<=0 to mean unlimited
-                            if mw is None:
-                                self.max_words = None
-                            else:
-                                mw_int = int(mw)
-                                self.max_words = mw_int if mw_int > 0 else None
-                        except (ValueError, TypeError):
-                            pass
-                    # sentence mode flag (optional)
-                    if 'sentence_mode' in limits:
-                        try:
-                            sm = limits['sentence_mode']
-                            if isinstance(sm, bool):
-                                self.allow_sentence_punctuation = sm
-                            elif isinstance(sm, str):
-                                self.allow_sentence_punctuation = sm.strip().lower() in ("1", "true", "yes", "y", "on")
-                        except Exception:
-                            pass
-                    # sentence routing (optional)
-                    if 'route_sentences' in limits:
-                        try:
-                            rs = limits['route_sentences']
-                            if isinstance(rs, bool):
-                                self.route_sentences = rs
-                            elif isinstance(rs, str):
-                                self.route_sentences = rs.strip().lower() in ("1", "true", "yes", "y", "on")
-                        except Exception:
-                            pass
-                    # include examples for sentences when kept in vocab
-                    if 'sentence_examples' in limits:
-                        try:
-                            se = limits['sentence_examples']
-                            if isinstance(se, bool):
-                                self.sentence_examples_in_vocab = se
-                            elif isinstance(se, str):
-                                self.sentence_examples_in_vocab = se.strip().lower() in ("1", "true", "yes", "y", "on")
-                        except Exception:
-                            pass
-        except Exception:
-            # Be resilient; ignore config errors
-            pass
-
-        # 2) Environment variables (highest priority)
-        try:
-            env_chars = os.getenv('FRENCH_VOCAB_MAX_CHARS')
-            if env_chars:
-                ec = int(env_chars)
-                if ec > 0:
-                    self.max_word_length = ec
-        except (ValueError, TypeError):
-            pass
-        try:
-            env_words = os.getenv('FRENCH_VOCAB_MAX_WORDS')
-            if env_words is not None:
-                ew = int(env_words)
-                self.max_words = ew if ew > 0 else None
-        except (ValueError, TypeError):
-            pass
-        # sentence mode via env
-        env_sentence = os.getenv('FRENCH_VOCAB_SENTENCE_MODE') or os.getenv('FRENCH_VOCAB_ALLOW_PUNCT')
-        if env_sentence is not None:
-            self.allow_sentence_punctuation = str(env_sentence).strip().lower() in ("1", "true", "yes", "y", "on")
-        # routing and sentence examples
-        env_route = os.getenv('FRENCH_VOCAB_ROUTE_SENTENCES')
-        if env_route is not None:
-            self.route_sentences = str(env_route).strip().lower() in ("1", "true", "yes", "y", "on")
-        env_sent_ex = os.getenv('FRENCH_VOCAB_SENTENCE_EXAMPLES')
-        if env_sent_ex is not None:
-            self.sentence_examples_in_vocab = str(env_sent_ex).strip().lower() in ("1", "true", "yes", "y", "on")
+        self._load_input_limits_from_config_file()
+        self._apply_env_max_chars_override()
+        self._apply_env_max_words_override()
+        self._apply_env_sentence_mode_override()
+        self._apply_env_bool_override("FRENCH_VOCAB_ROUTE_SENTENCES", "route_sentences")
+        self._apply_env_bool_override("FRENCH_VOCAB_SENTENCE_EXAMPLES", "sentence_examples_in_vocab")
 
     def _should_enable_auto_translator(self) -> bool:
         env_value = os.getenv("FRENCH_VOCAB_AUTO_TRANSLATOR")
@@ -1173,13 +1176,7 @@ class FrenchVocabBuilder:
         """Route Anki workflows (delegated to AnkiExportManager)."""
         return self._ensure_anki_manager().handle_anki_tools()
 
-    def get_word_input(self) -> str:
-        """Read target-language text from the user.
-
-        Instructions:
-        - Type or paste your text, then press Enter to submit.
-        - Press Esc to cancel.
-        """
+    def _build_word_input_prompt(self) -> str:
         language_name = self.language_config.display_name
         limit_descriptors: list[str] = []
         if getattr(self, "max_words", None):
@@ -1187,15 +1184,12 @@ class FrenchVocabBuilder:
         if getattr(self, "max_word_length", None):
             limit_descriptors.append(f"≤{self.max_word_length} chars")
         limit_hint = f" [{' • '.join(limit_descriptors)}]" if limit_descriptors else ""
+        return f"\nEnter {language_name} text{limit_hint} (Esc to cancel): "
 
-        prompt = f"\nEnter {language_name} text{limit_hint} (Esc to cancel): "
-
+    def _read_word_input_line(self, prompt: str) -> str:
         try:
             line = read_line(prompt)
-        except EOFError:
-            self.ui.warning("Input cancelled. Returning to main menu.")
-            return ""
-        except KeyboardInterrupt:
+        except (EOFError, KeyboardInterrupt):
             self.ui.warning("Input cancelled. Returning to main menu.")
             return ""
 
@@ -1204,35 +1198,61 @@ class FrenchVocabBuilder:
             self.ui.warning("Input cancelled via Esc. Returning to main menu.")
             return ""
 
-        word = line.strip()
+        return line
+
+    @staticmethod
+    def _sanitize_word_input(text: str) -> str:
+        word = text.strip()
 
         # Normalize common typography quirks before validation
         word = unicodedata.normalize("NFC", word)
         word = word.replace("’", "'").replace("‘", "'")
+
         zero_width_chars = ("\u00AD", "\u200B", "\u200C", "\u200D", "\u2060", "\ufeff")
         for ch in zero_width_chars:
             if ch in word:
                 word = word.replace(ch, "")
 
-        # Basic validations
+        return word
+
+    def _validate_word_input(self, word: str) -> bool:
         if not word:
             self.ui.error("Cannot add vocabulary entry: input cannot be empty.")
-            return ""
+            return False
+
         if self.max_words is not None and len(word.split()) > self.max_words:
-            self.ui.error(
-                f"Cannot add vocabulary entry: please limit to {self.max_words} words."
-            )
-            return ""
+            self.ui.error(f"Cannot add vocabulary entry: please limit to {self.max_words} words.")
+            return False
+
         if len(word) > self.max_word_length:
             self.ui.error(
                 f"Cannot add vocabulary entry: please limit to {self.max_word_length} characters."
             )
-            return ""
+            return False
+
         if not self.is_valid_input(word):
             self.ui.error(
-                f"Cannot add vocabulary entry: input contains unsupported characters for "
+                "Cannot add vocabulary entry: input contains unsupported characters for "
                 f"{self.language_config.display_name} text."
             )
+            return False
+
+        return True
+
+    def get_word_input(self) -> str:
+        """Read target-language text from the user.
+
+        Instructions:
+        - Type or paste your text, then press Enter to submit.
+        - Press Esc to cancel.
+        """
+        prompt = self._build_word_input_prompt()
+        line = self._read_word_input_line(prompt)
+        if not line:
+            return ""
+
+        word = self._sanitize_word_input(line)
+        if not self._validate_word_input(word):
             return ""
 
         return word
@@ -1340,41 +1360,69 @@ class FrenchVocabBuilder:
         """Format session token usage (delegated to LLMCoordinator)."""
         return self._llm.format_token_summary()
 
-    def show_settings_screen(self):
-        """Display current configuration and allow changes."""
-        # Gather current configuration info
+    def _provider_metadata_or_none(self) -> Optional[ProviderMetadata]:
+        try:
+            return self.provider_metadata
+        except Exception:
+            return None
+
+    def _is_keyring_enabled(self) -> bool:
+        manager = getattr(self, "provider_manager", None)
+        return bool(getattr(manager, "_keyring_enabled", True))
+
+    @staticmethod
+    def _keyring_get_password_best_effort(service: str, username: str) -> Optional[str]:
+        try:
+            import keyring  # type: ignore[import]
+        except Exception:
+            return None
+
+        try:
+            return keyring.get_password(service, username)
+        except Exception:
+            return None
+
+    def _determine_key_source(self, metadata: Optional[ProviderMetadata]) -> str:
+        if metadata is None:
+            return "Unknown"
+
+        env_value = os.environ.get(metadata.env_var)
+        if not env_value:
+            return "Unknown"
+
+        if not self._is_keyring_enabled():
+            return "Environment variable"
+
+        stored_key = self._keyring_get_password_best_effort(
+            "french_vocab_builder",
+            metadata.keyring_name,
+        )
+        if stored_key and stored_key == env_value:
+            return "System keychain"
+        return "Environment variable"
+
+    def _resolve_settings_connection_fields(self) -> tuple[str, str, str]:
+        metadata = self._provider_metadata_or_none()
+        provider_display = metadata.display_name if metadata else "Unknown"
+
         provider_name = "Not configured"
-        provider_display = self.provider_metadata.display_name if self.provider_metadata else "Unknown"
         connection_status = "[red]Disconnected[/red]"
         key_source = "Unknown"
 
         if self.api_available and self.client:
             connection_status = "[green]Connected[/green]"
             provider_name = provider_display
-
-            # Try to determine key source
-            env_var = self.provider_metadata.env_var
-            if os.environ.get(env_var):
-                # Check if it came from keyring
-                try:
-                    import keyring  # type: ignore[import]
-                    skip_keyring = not getattr(self.provider_manager, "_keyring_enabled", True)
-                    if not skip_keyring:
-                        stored_key = keyring.get_password("french_vocab_builder", self.provider_metadata.keyring_name)
-                        if stored_key and stored_key == os.environ.get(env_var):
-                            key_source = "System keychain"
-                        else:
-                            key_source = "Environment variable"
-                    else:
-                        key_source = "Environment variable"
-                except Exception:
-                    key_source = "Environment variable"
+            key_source = self._determine_key_source(metadata)
         elif not self.api_available:
             connection_status = "[yellow]Unavailable[/yellow]"
             provider_name = f"{provider_display} (not connected)"
             key_source = "Not configured"
 
-        # Build status display
+        return provider_name, connection_status, key_source
+
+    def _build_settings_status_text(self) -> str:
+        provider_name, connection_status, key_source = self._resolve_settings_connection_fields()
+
         status_text = (
             f"[bold]AI Provider:[/bold]      {provider_name}\n"
             f"[bold]Connection:[/bold]       {connection_status}\n"
@@ -1386,9 +1434,9 @@ class FrenchVocabBuilder:
         if not self.api_available and self.api_error_reason:
             status_text += f"\n[yellow]Issue: {self.api_error_reason}[/yellow]"
 
-        self.ui.panel(status_text, title="Configuration Status", border_style="cyan")
+        return status_text
 
-        # Settings menu
+    def _prompt_settings_action(self) -> Optional[str]:
         options = [
             ("test", "Test AI connection"),
             ("change_provider", "Change AI provider"),
@@ -1398,25 +1446,36 @@ class FrenchVocabBuilder:
         ]
 
         try:
-            choice = self.ui.interactive_menu(
+            return self.ui.interactive_menu(
                 "Settings Actions",
                 options,
                 "[↑↓] Navigate • [Enter] Select • [Esc] Go back",
                 show_keys=False,
             )
         except KeyboardInterrupt:
+            return None
+
+    def _dispatch_settings_action(self, choice: Optional[str]) -> None:
+        if not choice or choice == "back":
             return
 
-        if choice == "test":
-            self._test_ai_connection()
-        elif choice == "change_provider":
-            self._change_provider_interactive()
-        elif choice == "update_key":
-            self._update_api_key_interactive()
-        elif choice == "view_files":
-            self._show_file_locations()
-        elif choice == "back":
-            return
+        actions = {
+            "test": self._test_ai_connection,
+            "change_provider": self._change_provider_interactive,
+            "update_key": self._update_api_key_interactive,
+            "view_files": self._show_file_locations,
+        }
+        handler = actions.get(choice)
+        if handler is not None:
+            handler()
+
+    def show_settings_screen(self):
+        """Display current configuration and allow changes."""
+        status_text = self._build_settings_status_text()
+        self.ui.panel(status_text, title="Configuration Status", border_style="cyan")
+
+        choice = self._prompt_settings_action()
+        self._dispatch_settings_action(choice)
 
     def _test_ai_connection(self):
         """Test the current AI provider connection."""
@@ -1456,10 +1515,6 @@ class FrenchVocabBuilder:
         )
 
         self.ui.panel(info_text, title="File Locations", border_style="blue")
-
-    def remove_accents(self, input_str):
-        nfkd_form = unicodedata.normalize("NFKD", input_str)
-        return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
 
     def run(self):
         main_menu_loop(self)
@@ -1592,6 +1647,156 @@ class FrenchVocabBuilder:
                 return candidate
             i += 1
 
+    def _merge_into_existing_via_repo(
+        self,
+        key: str,
+        existing_word: str,
+        new_type: str,
+        new_defs: List[str],
+        new_examples: List[Tuple[str, str]],
+    ) -> bool:
+        success = self._vocab_repo.merge_into_existing(existing_word, new_type, new_defs, new_examples)
+        if not success:
+            return False
+
+        updated_entry = self.word_entries.get(key, {})
+        self._log_merge_history(
+            existing_word=updated_entry.get("word", existing_word),
+            final_type=updated_entry.get("type", new_type),
+            merged_definitions=updated_entry.get("definitions_list", new_defs),
+            merged_examples=updated_entry.get("examples_list", []),
+            added_definitions=new_defs,
+            added_examples=new_examples,
+        )
+        return True
+
+    def _fallback_existing_definitions(self, entry: Dict[str, Any]) -> List[str]:
+        definitions_list = entry.get("definitions_list") or []
+        if definitions_list:
+            return list(definitions_list)
+        definitions_raw = entry.get("definitions", "")
+        return [d.strip() for d in definitions_raw.split("; ") if d.strip()]
+
+    def _fallback_existing_examples(self, entry: Dict[str, Any]) -> List[Tuple[str, str]]:
+        examples_list = entry.get("examples_list") or []
+        if examples_list:
+            return list(examples_list)
+        examples_raw = entry.get("examples")
+        if examples_raw:
+            return self._parse_examples_string(examples_raw)
+        return []
+
+    @staticmethod
+    def _norm_text_for_merge(text: str) -> str:
+        normalized = re.sub(r"\s+", " ", text).strip().lower()
+        return normalize_word_key(normalized)
+
+    def _norm_pair_for_merge(self, pair: Tuple[str, str]) -> Tuple[str, str]:
+        return (self._norm_text_for_merge(pair[0]), self._norm_text_for_merge(pair[1]))
+
+    def _dedup_merge_definitions(
+        self,
+        existing_defs: List[str],
+        new_defs: List[str],
+    ) -> tuple[List[str], List[str]]:
+        merged_map: Dict[str, str] = {}
+        for definition in existing_defs:
+            norm_key = self._norm_text_for_merge(definition)
+            if norm_key:
+                merged_map[norm_key] = definition
+
+        added: List[str] = []
+        for definition in new_defs:
+            norm_key = self._norm_text_for_merge(definition)
+            if not norm_key:
+                continue
+            if norm_key in merged_map:
+                continue
+            merged_map[norm_key] = definition
+            added.append(definition)
+
+        return list(merged_map.values()), added
+
+    def _dedup_merge_examples(
+        self,
+        existing_examples: List[Tuple[str, str]],
+        new_examples: List[Tuple[str, str]],
+    ) -> tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
+        merged_map: Dict[Tuple[str, str], Tuple[str, str]] = {}
+        for pair in existing_examples:
+            merged_map[self._norm_pair_for_merge(pair)] = pair
+
+        added: List[Tuple[str, str]] = []
+        for pair in new_examples:
+            norm_key = self._norm_pair_for_merge(pair)
+            if norm_key in merged_map:
+                continue
+            merged_map[norm_key] = pair
+            added.append(pair)
+
+        return list(merged_map.values()), added
+
+    def _update_entry_in_file_checked(self, word: str, latex_block: str) -> bool:
+        try:
+            self.update_entry_in_file(word, latex_block)
+        except EntryNotFoundError as exc:
+            self.ui.error(f"Merge failed: {exc}", with_panel=True)
+            return False
+        except IOError as exc:
+            self.ui.error(f"Merge failed - file I/O error: {exc}", with_panel=True)
+            return False
+        return True
+
+    @staticmethod
+    def _update_entry_memory_after_merge(
+        entry: Dict[str, Any],
+        final_type: str,
+        merged_defs: List[str],
+        merged_exs: List[Tuple[str, str]],
+    ) -> None:
+        entry["type"] = final_type
+        entry["definitions_list"] = merged_defs
+        entry["examples_list"] = merged_exs
+        entry["definitions"] = "; ".join(merged_defs)
+        entry["examples"] = "; ".join([f"{f} ({e})" for f, e in merged_exs])
+
+    def _merge_into_existing_fallback(
+        self,
+        entry: Dict[str, Any],
+        existing_word: str,
+        new_type: str,
+        new_defs: List[str],
+        new_examples: List[Tuple[str, str]],
+    ) -> bool:
+        defs_existing = self._fallback_existing_definitions(entry)
+        exs_existing = self._fallback_existing_examples(entry)
+
+        merged_defs, added_defs = self._dedup_merge_definitions(defs_existing, new_defs)
+        merged_exs, added_examples = self._dedup_merge_examples(exs_existing, new_examples)
+
+        final_type = entry.get("type") or new_type
+        latex_block = self.format_latex_entry(
+            entry["word"],
+            final_type,
+            merged_defs,
+            merged_exs,
+            entry_command=self.entry_command,
+        )
+
+        if not self._update_entry_in_file_checked(entry["word"], latex_block):
+            return False
+
+        self._update_entry_memory_after_merge(entry, final_type, merged_defs, merged_exs)
+        self._log_merge_history(
+            existing_word=entry["word"],
+            final_type=final_type,
+            merged_definitions=merged_defs,
+            merged_examples=merged_exs,
+            added_definitions=added_defs,
+            added_examples=added_examples,
+        )
+        return True
+
     def merge_into_existing(self, existing_word: str, new_type: str, new_defs: List[str], new_examples: List[Tuple[str, str]]) -> bool:
         """Merge new definitions/examples into an existing entry.
 
@@ -1611,91 +1816,10 @@ class FrenchVocabBuilder:
 
         # Delegate to repository if available
         if hasattr(self, "_vocab_repo"):
-            success = self._vocab_repo.merge_into_existing(existing_word, new_type, new_defs, new_examples)
-            if success:
-                updated_entry = self.word_entries.get(key, {})
-                self._log_merge_history(
-                    existing_word=updated_entry.get('word', existing_word),
-                    final_type=updated_entry.get('type', new_type),
-                    merged_definitions=updated_entry.get('definitions_list', new_defs),
-                    merged_examples=updated_entry.get('examples_list', []),
-                    added_definitions=new_defs,
-                    added_examples=new_examples,
-                )
-            return success
+            return self._merge_into_existing_via_repo(key, existing_word, new_type, new_defs, new_examples)
 
         # Fallback for test doubles without _vocab_repo
-        # Use structured lists if available else fallback with robust parsing
-        defs_existing = entry.get('definitions_list') or [
-            d.strip() for d in entry['definitions'].split('; ') if d.strip()
-        ]
-        exs_existing = entry.get('examples_list') or []
-        if not exs_existing and entry.get('examples'):
-            exs_existing = self._parse_examples_string(entry['examples'])
-
-        # Dedup helpers with accent normalization
-        def norm_text(s: str) -> str:
-            text = re.sub(r"\s+", " ", s).strip().lower()
-            return normalize_word_key(text)
-
-        def norm_pair(p: Tuple[str, str]) -> Tuple[str, str]:
-            return (norm_text(p[0]), norm_text(p[1]))
-
-        merged_defs_map = {norm_text(d): d for d in defs_existing}
-        added_defs: List[str] = []
-        for d in new_defs:
-            nd = norm_text(d)
-            if nd and nd not in merged_defs_map:
-                merged_defs_map[nd] = d
-                added_defs.append(d)
-        merged_defs = list(merged_defs_map.values())
-
-        merged_exs_map = {norm_pair(p): p for p in exs_existing}
-        added_examples: List[Tuple[str, str]] = []
-        for p in new_examples:
-            np = norm_pair(p)
-            if np not in merged_exs_map:
-                merged_exs_map[np] = p
-                added_examples.append(p)
-        merged_exs = list(merged_exs_map.values())
-
-        final_type = entry.get('type') or new_type
-
-        # Rebuild LaTeX entry
-        latex_block = self.format_latex_entry(
-            entry['word'],
-            final_type,
-            merged_defs,
-            merged_exs,
-            entry_command=self.entry_command,
-        )
-
-        # Try to update file first (transactional - allows tests to mock failures)
-        try:
-            self.update_entry_in_file(entry['word'], latex_block)
-        except EntryNotFoundError as e:
-            self.ui.error(f"Merge failed: {e}", with_panel=True)
-            return False
-        except IOError as e:
-            self.ui.error(f"Merge failed - file I/O error: {e}", with_panel=True)
-            return False
-
-        # File updated successfully (or no real file in test double), update memory
-        entry['type'] = final_type
-        entry['definitions_list'] = merged_defs
-        entry['examples_list'] = merged_exs
-        entry['definitions'] = "; ".join(merged_defs)
-        entry['examples'] = "; ".join([f"{f} ({e})" for f, e in merged_exs])
-
-        self._log_merge_history(
-            existing_word=entry['word'],
-            final_type=final_type,
-            merged_definitions=merged_defs,
-            merged_examples=merged_exs,
-            added_definitions=added_defs,
-            added_examples=added_examples,
-        )
-        return True
+        return self._merge_into_existing_fallback(entry, existing_word, new_type, new_defs, new_examples)
 
     def _parse_examples_string(self, examples_str: str) -> List[Tuple[str, str]]:
         """Parse examples string into (source, translation) tuples.
@@ -1822,6 +1946,87 @@ class FrenchVocabBuilder:
         """Reconcile menu option (delegated to AnkiExportManager)."""
         self._ensure_anki_manager().reconcile_menu_option()
 
+    @staticmethod
+    def _format_entry_type(entry_type: Any) -> str:
+        if isinstance(entry_type, str):
+            return entry_type
+        if isinstance(entry_type, list):
+            return ", ".join(entry_type)
+        return str(entry_type)
+
+    def _preview_definition_text(self, definitions: str) -> tuple[str, bool]:
+        if len(definitions) <= self.DEFINITION_PREVIEW_LIMIT:
+            return definitions, False
+        return definitions[: self.DEFINITION_PREVIEW_LIMIT - 3] + "...", True
+
+    def _build_all_vocab_table_rows(self) -> tuple[list[list[str]], Dict[int, str]]:
+        sorted_entries = sorted(self.word_entries.items(), key=lambda x: self.normalize_word(x[0]))
+        rows: list[list[str]] = []
+        truncated_definitions: Dict[int, str] = {}
+
+        for index, (_word, entry) in enumerate(sorted_entries, 1):
+            definitions = entry["definitions"]
+            preview, was_truncated = self._preview_definition_text(definitions)
+            if was_truncated:
+                truncated_definitions[index] = definitions
+
+            rows.append(
+                [
+                    str(index),
+                    entry["word"],
+                    self._format_entry_type(entry["type"]),
+                    preview,
+                ]
+            )
+
+        return rows, truncated_definitions
+
+    def _prompt_definition_number(self) -> Optional[int]:
+        try:
+            choice = read_line("Show full definitions for # (Enter/Esc to finish): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            return None
+
+        if "\x1b" in choice:
+            return None
+        if not choice or choice == "0":
+            return None
+        if not choice.isdigit():
+            self.ui.warning("Enter a number or press Enter to finish.")
+            return -1
+        return int(choice)
+
+    def _show_truncated_definitions(self, truncated_definitions: Dict[int, str]) -> None:
+        if not truncated_definitions:
+            return
+
+        self.ui.info(
+            "Some definitions are abbreviated. View any by number; Enter to continue.",
+            accent="dim",
+        )
+
+        while True:
+            entry_number = self._prompt_definition_number()
+            if entry_number is None:
+                return
+            if entry_number < 0:
+                continue
+
+            full_text = truncated_definitions.get(entry_number)
+            if full_text is None:
+                self.ui.warning("Please enter a valid entry number.")
+                continue
+
+            self.ui.panel(
+                full_text,
+                title=f"Definitions for entry {entry_number}",
+                border_style="dark_orange",
+                expand=True,
+            )
+
+    def _prompt_optional_search_query(self) -> str:
+        return self.ui.prompt("Search vocabulary (press Enter to skip)", style="dim").strip()
+
     def display_all_vocabulary(self):
         """Displays all vocabulary entries present in the LaTeX file in a paginated table format.
         
@@ -1832,28 +2037,9 @@ class FrenchVocabBuilder:
         if not self.word_entries:
             self.ui.warning("No vocabulary entries found in the LaTeX file.")
             return
-        
-        # Sort entries alphabetically
-        sorted_entries = sorted(self.word_entries.items(), key=lambda x: self.normalize_word(x[0]))
-        
+
         headers = ["No.", "Word", "Type", "Definitions"]
-        rows = []
-        truncated_definitions: Dict[int, str] = {}
-
-        for index, (word, entry) in enumerate(sorted_entries, 1):
-            definitions = entry["definitions"]
-            display_definitions = definitions
-            if len(definitions) > self.DEFINITION_PREVIEW_LIMIT:
-                display_definitions = definitions[: self.DEFINITION_PREVIEW_LIMIT - 3] + "..."
-                truncated_definitions[index] = definitions
-
-            rows.append([
-                str(index),
-                entry["word"],
-                entry["type"] if isinstance(entry["type"], str) else ", ".join(entry["type"]),
-                display_definitions
-            ])
-
+        rows, truncated_definitions = self._build_all_vocab_table_rows()
         self.ui.render_table(
             title=f"All Vocabulary Entries ({len(self.word_entries)} words)",
             columns=headers,
@@ -1861,98 +2047,97 @@ class FrenchVocabBuilder:
             column_styles=["cyan", "magenta", "green", "white"],
         )
 
-        if truncated_definitions:
-            self.ui.info(
-                "Some definitions are abbreviated. View any by number; Enter to continue.",
-                accent="dim",
-            )
-            while True:
-                try:
-                    choice = read_line("Show full definitions for # (Enter/Esc to finish): ").strip()
-                except (EOFError, KeyboardInterrupt):
-                    break
-                # Check for ESC sequence
-                if "\x1b" in choice:
-                    break
-                if not choice or choice == "0":
-                    break
-                if choice.isdigit():
-                    entry_number = int(choice)
-                    full_text = truncated_definitions.get(entry_number)
-                    if full_text is None:
-                        self.ui.warning("Please enter a valid entry number.")
-                        continue
-                    self.ui.panel(
-                        full_text,
-                        title=f"Definitions for entry {entry_number}",
-                        border_style="dark_orange",
-                        expand=True,
-                    )
-                    continue
-                self.ui.warning("Enter a number or press Enter to finish.")
+        self._show_truncated_definitions(truncated_definitions)
 
-        search_query = self.ui.prompt(
-            "Search vocabulary (press Enter to skip)",
-            style="dim",
-        ).strip()
+        search_query = self._prompt_optional_search_query()
         if search_query:
             self.search_vocabulary(search_query)
+
+    def _resolve_search_term(self, search_term: Optional[str]) -> str:
+        if search_term is None:
+            search_term = self.ui.prompt("Enter search term").strip()
+        return search_term.strip().lower()
+
+    @staticmethod
+    def _entry_matches_search_term(search_term: str, word_key: str, entry: Dict[str, Any]) -> bool:
+        if search_term in word_key.lower():
+            return True
+        if search_term in str(entry.get("definitions", "")).lower():
+            return True
+
+        entry_type = entry.get("type", "")
+        if isinstance(entry_type, str):
+            return search_term in entry_type.lower()
+        if isinstance(entry_type, list):
+            for t in entry_type:
+                if search_term in str(t).lower():
+                    return True
+        return False
+
+    def _collect_search_results(self, search_term: str) -> Dict[str, Any]:
+        results: Dict[str, Any] = {}
+        for word, entry in self.word_entries.items():
+            if self._entry_matches_search_term(search_term, word, entry):
+                results[word] = entry
+        return results
+
+    def _build_search_results_rows(self, results: Dict[str, Any]) -> list[list[str]]:
+        rows: list[list[str]] = []
+        for _word, entry in sorted(results.items(), key=lambda x: self.normalize_word(x[0])):
+            preview, _ = self._preview_definition_text(entry["definitions"])
+            rows.append(
+                [
+                    entry["word"],
+                    self._format_entry_type(entry["type"]),
+                    preview,
+                ]
+            )
+        return rows
+
+    def _maybe_view_full_entry_from_results(self) -> None:
+        if not self.ui.confirm(
+            "Would you like to see the full entry for any of these words?",
+            default=False,
+        ):
+            return
+
+        word_to_view = self.ui.prompt("Enter the word to view").strip()
+        if not word_to_view:
+            return
+
+        word_key = word_to_view.lower()
+        if word_key in self.word_entries:
+            self.display_existing_entry(word_key)
+            return
+
+        normalized_target = self.normalize_word(word_to_view)
+        for candidate in self.word_entries.keys():
+            if self.normalize_word(candidate) == normalized_target:
+                self.display_existing_entry(candidate)
+                return
+
+        self.ui.error(f"Word '{word_to_view}' not found.")
 
     def search_vocabulary(self, search_term: Optional[str] = None):
         """Allows searching for specific vocabulary entries by keyword."""
         self._ensure_entries_loaded()
-        if search_term is None:
-            search_term = self.ui.prompt("Enter search term").strip()
-        search_term = search_term.lower()
+        search_term = self._resolve_search_term(search_term)
         if not search_term:
             self.ui.info("Search skipped.", accent="dim")
             return
-        
-        results = {}
-        for word, entry in self.word_entries.items():
-            if (search_term in word.lower() or 
-                search_term in entry["definitions"].lower() or 
-                (isinstance(entry["type"], str) and search_term in entry["type"].lower()) or
-                (isinstance(entry["type"], list) and any(search_term in t.lower() for t in entry["type"]))):
-                results[word] = entry
-        
+
+        results = self._collect_search_results(search_term)
         if not results:
             self.ui.warning(f"No results found for '{search_term}'.")
             return
-        
-        # Display search results
+
         headers = ["Word", "Type", "Definitions"]
-        rows = []
-        
-        for word, entry in sorted(results.items(), key=lambda x: self.normalize_word(x[0])):
-            definitions = entry["definitions"]
-            display_definitions = definitions
-            if len(definitions) > self.DEFINITION_PREVIEW_LIMIT:
-                display_definitions = definitions[: self.DEFINITION_PREVIEW_LIMIT - 3] + "..."
-            
-            rows.append([
-                entry["word"],
-                entry["type"] if isinstance(entry["type"], str) else ", ".join(entry["type"]),
-                display_definitions
-            ])
-        
+        rows = self._build_search_results_rows(results)
         self.ui.render_table(
             title=f"Search Results for '{search_term}' ({len(results)} matches)",
             columns=headers,
             rows=rows,
             column_styles=["magenta", "green", "white"],
         )
-        
-        # Offer to display full entry for a selected word
-        if self.ui.confirm("Would you like to see the full entry for any of these words?", default=False):
-            word_to_view = self.ui.prompt("Enter the word to view").strip()
-            word_to_view_lower = word_to_view.lower()
-            if word_to_view_lower in self.word_entries:
-                self.display_existing_entry(word_to_view_lower)
-            else:
-                matching_words = [w for w in self.word_entries.keys() 
-                                 if self.normalize_word(w) == self.normalize_word(word_to_view)]
-                if matching_words:
-                    self.display_existing_entry(matching_words[0])
-                else:
-                    self.ui.error(f"Word '{word_to_view}' not found.")
+
+        self._maybe_view_full_entry_from_results()
