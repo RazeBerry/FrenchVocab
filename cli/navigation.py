@@ -338,10 +338,9 @@ def _read_key_windows() -> str:
 
 def _read_key_posix() -> str:
     fd = sys.stdin.fileno()
-    raw = os.read(fd, 1)
-    ch = raw.decode("utf-8", "ignore")
+    ch = _read_char(fd)
 
-    if ch == "":
+    if not ch:
         return "escape"
     if ch in ("\r", "\n"):
         return "enter"
@@ -350,25 +349,37 @@ def _read_key_posix() -> str:
     if ch != "\x1b":
         return ch
 
+    remainder = _read_escape_remainder(fd)
+    return _map_escape_remainder(remainder)
+
+
+def _read_char(fd: int) -> str:
+    raw = os.read(fd, 1)
+    return raw.decode("utf-8", "ignore")
+
+
+def _read_escape_remainder(fd: int) -> str:
     sequence: list[str] = []
     for _ in range(_MAX_ESCAPE_SEQUENCE_BYTES):
         timeouts = [0.0, _ESC_INITIAL_TIMEOUT] if not sequence else [_ESC_SEQUENCE_TIMEOUT]
-        ready = False
-        for timeout in timeouts:
-            ready, _, _ = select.select([fd], [], [], timeout)
-            if ready:
-                break
-        if not ready:
+        if not _stdin_ready(fd, timeouts):
             break
-        next_raw = os.read(fd, 1)
-        if not next_raw:
-            break
-        next_ch = next_raw.decode("utf-8", "ignore")
+        next_ch = _read_char(fd)
         if not next_ch:
             break
         sequence.append(next_ch)
+    return "".join(sequence)
 
-    remainder = "".join(sequence)
+
+def _stdin_ready(fd: int, timeouts: list[float]) -> bool:
+    for timeout in timeouts:
+        ready, _, _ = select.select([fd], [], [], timeout)
+        if ready:
+            return True
+    return False
+
+
+def _map_escape_remainder(remainder: str) -> str:
     if remainder in {"[A", "OA"}:
         return "up"
     if remainder in {"[B", "OB"}:
@@ -377,9 +388,6 @@ def _read_key_posix() -> str:
         return "right"
     if remainder in {"[D", "OD"}:
         return "left"
-    # Only treat bare ESC (no follow-up bytes) as escape key press.
-    # Unrecognized/partial sequences (e.g., from rapid keypresses) should be
-    # ignored rather than triggering an exit.
     if not remainder:
         return "escape"
     return "unknown"

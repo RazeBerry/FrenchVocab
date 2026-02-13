@@ -165,52 +165,36 @@ class AnkiExportManager:
     # Export Operations
     # -------------------------------------------------------------------------
 
-    def export_to_anki(
-        self,
-        deck_name: Optional[str] = None,
-        include_exported_words: bool = False,
-        *,
-        selected_words: Optional[Set[str]] = None,
-        auto_retry_on_empty: bool = True,
-        output_path: Optional[Path] = None,
-        export_context: str = "incremental",
-    ) -> None:
-        """Export vocabulary entries to an Anki deck.
-
-        Args:
-            deck_name: Name of the Anki deck to create
-            include_exported_words: Include previously exported words
-            selected_words: Specific words to export (lowercase keys)
-            auto_retry_on_empty: Retry with all words if export produces no cards
-            output_path: Explicit output location for the deck
-            export_context: Context description for metadata
-        """
-        self._vocab_repo.ensure_entries_loaded()
-        requested_deck_name = deck_name or self._language_config.anki.default_deck_name
-        deck_title = self._normalize_deck_title(requested_deck_name)
-        destination_path = self._normalize_output_path(output_path or requested_deck_name)
-
-        # Ensure the Anki exporter uses the latest genanki module
+    def _sync_anki_exporter_genanki_module(self) -> None:
+        """Ensure the anki_exporter module uses the latest loaded genanki."""
         import anki_exporter as anki_mod
+
         latest_genanki = sys.modules.get("genanki")
         if latest_genanki is not None:
             anki_mod.genanki = latest_genanki
 
+    def _resolve_template_version(self) -> str:
+        """Return a stable identifier for the current Anki template."""
         anki_config = self._language_config.anki
         template_version = getattr(anki_config, "version_id", None)
-        if not template_version:
-            template_version = compute_template_hash(
-                [
-                    {"name": tpl.name, "qfmt": tpl.question_format, "afmt": tpl.answer_format}
-                    for tpl in anki_config.card_templates
-                ],
-                anki_config.card_css or "",
-            )
+        if template_version:
+            return str(template_version)
+        return compute_template_hash(
+            [
+                {"name": tpl.name, "qfmt": tpl.question_format, "afmt": tpl.answer_format}
+                for tpl in anki_config.card_templates
+            ],
+            anki_config.card_css or "",
+        )
 
-        exporter = AnkiExporter(deck_title, anki_config)
-        word_entries = self._vocab_repo.word_entries
-        latex_words = set(word_entries.keys())
-        all_exported_words = set(self._exported_words)
+    def _resolve_include_all(
+        self,
+        *,
+        selected_words: Optional[Set[str]],
+        include_exported_words: bool,
+        template_version: str,
+    ) -> Tuple[bool, bool]:
+        """Return (include_all, auto_due_to_version)."""
         include_all = include_exported_words
         auto_due_to_version = False
 
@@ -224,6 +208,58 @@ class AnkiExportManager:
             include_all = True
             auto_due_to_version = True
 
+        return include_all, auto_due_to_version
+
+    @staticmethod
+    def _coerce_word_type(entry: Dict[str, Any]) -> str:
+        word_type = entry.get("type", "")
+        if isinstance(word_type, list):
+            return ", ".join(word_type)
+        return str(word_type)
+
+    @staticmethod
+    def _coerce_definitions(entry: Dict[str, Any]) -> List[str]:
+        definitions_list = entry.get("definitions_list")
+        if not definitions_list:
+            definitions_source = entry.get("definitions", "")
+            definitions_list = [d.strip() for d in re.split(r";\s*", definitions_source) if d.strip()]
+        return [d for d in definitions_list if d not in {"{", "}"}]
+
+    @staticmethod
+    def _coerce_examples(entry: Dict[str, Any]) -> List[Tuple[str, str]]:
+        examples_list = entry.get("examples_list")
+        if not examples_list:
+            examples_list = []
+            for example in re.split(r";\s*", entry.get("examples", "")):
+                example = example.strip()
+                if not example:
+                    continue
+                if " (" in example and example.endswith(")"):
+                    fr, en = example.rsplit(" (", 1)
+                    examples_list.append((fr, en[:-1]))
+                else:
+                    examples_list.append((example, ""))
+
+        cleaned: List[Tuple[str, str]] = []
+        for fr, en in examples_list:
+            fr_clean = (fr or "").strip()
+            en_clean = (en or "").strip()
+            if fr_clean in {"{", "}"} and not en_clean:
+                continue
+            if en_clean in {"{", "}"} and not fr_clean:
+                en_clean = ""
+            if fr_clean or en_clean:
+                cleaned.append((fr_clean, en_clean))
+        return cleaned
+
+    def _collect_entries_for_export(
+        self,
+        *,
+        word_entries: Dict[str, Any],
+        selected_words: Optional[Set[str]],
+        include_all: bool,
+        all_exported_words: Set[str],
+    ) -> List[Tuple[str, str, AnkiExportEntry, bool]]:
         entries_for_export: List[Tuple[str, str, AnkiExportEntry, bool]] = []
 
         for key, entry in word_entries.items():
@@ -235,110 +271,103 @@ class AnkiExportManager:
             elif already_exported and not include_all:
                 continue
 
-            word_type = ', '.join(entry['type']) if isinstance(entry['type'], list) else entry['type']
-
-            definitions_list = entry.get('definitions_list')
-            if not definitions_list:
-                definitions_source = entry.get('definitions', '')
-                definitions_list = [d.strip() for d in re.split(r';\s*', definitions_source) if d.strip()]
-            definitions_list = [d for d in definitions_list if d not in {'{', '}'}]
-
-            examples_list = entry.get('examples_list')
-            if not examples_list:
-                examples_list = []
-                for example in re.split(r';\s*', entry.get('examples', '')):
-                    example = example.strip()
-                    if not example:
-                        continue
-                    if ' (' in example and example.endswith(')'):
-                        fr, en = example.rsplit(' (', 1)
-                        examples_list.append((fr, en[:-1]))
-                    else:
-                        examples_list.append((example, ''))
-            cleaned_examples: List[Tuple[str, str]] = []
-            for fr, en in examples_list:
-                fr_clean = (fr or '').strip()
-                en_clean = (en or '').strip()
-                if fr_clean in {'{', '}'} and not en_clean:
-                    continue
-                if en_clean in {'{', '}'} and not fr_clean:
-                    en_clean = ''
-                if fr_clean or en_clean:
-                    cleaned_examples.append((fr_clean, en_clean))
-            examples_list = cleaned_examples
-
             export_entry = AnkiExportEntry(
-                word=entry['word'],
-                word_type=word_type,
-                definitions=definitions_list,
-                examples=examples_list,
+                word=entry["word"],
+                word_type=self._coerce_word_type(entry),
+                definitions=self._coerce_definitions(entry),
+                examples=self._coerce_examples(entry),
             )
-            entries_for_export.append((normalized_word, entry['word'], export_entry, already_exported))
+            entries_for_export.append((normalized_word, entry["word"], export_entry, already_exported))
 
-        debug_export = os.getenv("FRENCHVOCAB_DEBUG_EXPORT")
-        if debug_export:
-            print(
-                f"[export_debug] entries={len(entries_for_export)} include_all={include_all} "
-                f"selected={selected_words} exported_words={len(all_exported_words)} "
-                f"word_entries={len(word_entries)}"
+        return entries_for_export
+
+    def _debug_export(
+        self,
+        *,
+        entries_for_export: List[Tuple[str, str, AnkiExportEntry, bool]],
+        include_all: bool,
+        selected_words: Optional[Set[str]],
+        all_exported_words: Set[str],
+        word_entries: Dict[str, Any],
+    ) -> None:
+        if not os.getenv("FRENCHVOCAB_DEBUG_EXPORT"):
+            return
+        self._ui.debug(
+            "[export_debug] "
+            f"entries={len(entries_for_export)} include_all={include_all} "
+            f"selected={selected_words} exported_words={len(all_exported_words)} "
+            f"word_entries={len(word_entries)}"
+        )
+
+    def _handle_empty_export(
+        self,
+        *,
+        entries_for_export: List[Tuple[str, str, AnkiExportEntry, bool]],
+        deck_title: str,
+        destination_path: Path,
+        export_context: str,
+        word_entries: Dict[str, Any],
+        selected_words: Optional[Set[str]],
+        include_all: bool,
+        auto_retry_on_empty: bool,
+    ) -> bool:
+        """Return True if the caller should stop (already handled)."""
+        if entries_for_export:
+            return False
+
+        if selected_words is not None:
+            self._ui.warning("None of the selected words were found or eligible for export.")
+            return True
+        if not word_entries:
+            self._ui.warning("No vocabulary entries available to export.")
+            return True
+        if include_all or not auto_retry_on_empty:
+            self._ui.warning(
+                "No vocabulary entries qualified for Anki export. The generated deck will not contain any cards."
             )
+            return True
 
-        if not entries_for_export:
-            if selected_words is not None:
-                self._ui.warning("None of the selected words were found or eligible for export.")
-                return
-            if not word_entries:
-                self._ui.warning("No vocabulary entries available to export.")
-                return
-            if include_all or not auto_retry_on_empty:
-                self._ui.warning(
-                    "No vocabulary entries qualified for Anki export. The generated deck will not contain any cards."
-                )
-                return
-            self._ui.info(
-                "No new words detected for export. Rebuilding deck with all tracked entries instead."
-            )
-            return self.export_to_anki(
-                deck_title,
-                include_exported_words=True,
-                selected_words=selected_words,
-                auto_retry_on_empty=False,
-                output_path=destination_path,
-                export_context=export_context,
-            )
+        self._ui.info("No new words detected for export. Rebuilding deck with all tracked entries instead.")
+        self.export_to_anki(
+            deck_title,
+            include_exported_words=True,
+            selected_words=selected_words,
+            auto_retry_on_empty=False,
+            output_path=destination_path,
+            export_context=export_context,
+        )
+        return True
 
-        deck = exporter.build_deck([item[2] for item in entries_for_export])
-
-        # Write the deck to a .apkg file with error handling
+    def _ensure_export_directory(self, destination_path: Path) -> Optional[Path]:
         export_directory = destination_path.parent
         try:
             export_directory.mkdir(parents=True, exist_ok=True)
-        except PermissionError as e:
+        except PermissionError as exc:
             self._ui.error(
                 f"Cannot create export directory: {export_directory}\n"
-                f"Permission denied: {e}\n"
+                f"Permission denied: {exc}\n"
                 "Try exporting to a different location.",
-                with_panel=True
+                with_panel=True,
             )
             return None
-        except OSError as e:
-            self._ui.error(f"Failed to create export directory: {e}", with_panel=True)
+        except OSError as exc:
+            self._ui.error(f"Failed to create export directory: {exc}", with_panel=True)
             return None
+        return export_directory
 
+    def _write_package_atomic(self, deck: Any, destination_path: Path, export_directory: Path) -> Optional[Any]:
         self._ui.info(f"Anki deck export directory: {export_directory}")
         import genanki  # type: ignore[import]
 
         package = genanki.Package(deck)
-
-        # Use atomic write pattern: write to temp, backup existing, then rename
         temp_path = destination_path.with_suffix(".apkg.tmp")
+
         try:
             package.write_to_file(str(temp_path))
 
             # Only perform atomic replace if the temp file was actually created
             # (test stubs may not create real files)
             if temp_path.exists():
-                # Backup existing file before replacing
                 if destination_path.exists():
                     backup_path = destination_path.with_suffix(".apkg.bak")
                     try:
@@ -349,66 +378,72 @@ class AnkiExportManager:
                     except OSError:
                         pass  # Best-effort backup
 
-                # Atomic replace
                 os.replace(temp_path, destination_path)
+            return package
 
-        except PermissionError as e:
+        except PermissionError as exc:
             self._ui.error(
                 f"Cannot write to: {destination_path}\n"
-                f"Permission denied: {e}\n\n"
+                f"Permission denied: {exc}\n\n"
                 "Suggestions:\n"
                 "- Check file/folder permissions\n"
                 "- Try a different export location\n"
                 "- Close Anki if it has the file open",
-                with_panel=True
+                with_panel=True,
             )
-            if temp_path.exists():
-                try:
-                    temp_path.unlink()
-                except OSError:
-                    pass
-            return None
-        except OSError as e:
-            if e.errno == errno.ENOSPC or "No space left" in str(e):
+        except OSError as exc:
+            if exc.errno == errno.ENOSPC or "No space left" in str(exc):
                 self._ui.error(
-                    f"Disk full - cannot save Anki deck.\n"
-                    f"Free up space and try again.\n"
+                    "Disk full - cannot save Anki deck.\n"
+                    "Free up space and try again.\n"
                     f"Target: {destination_path}",
-                    with_panel=True
+                    with_panel=True,
                 )
             else:
-                self._ui.error(f"Failed to write Anki deck: {e}", with_panel=True)
+                self._ui.error(f"Failed to write Anki deck: {exc}", with_panel=True)
+        finally:
             if temp_path.exists():
                 try:
                     temp_path.unlink()
                 except OSError:
                     pass
-            return None
 
+        return None
+
+    def _expose_package_for_tests(self, package: Any, deck: Any, destination_path: Path) -> None:
         # Expose last export for test introspection via class attributes
         setattr(package.__class__, "last_deck", deck)
         setattr(package.__class__, "last_written_path", str(destination_path))
 
-        # Also propagate to the genanki.Package class in sys.modules, since test
-        # stubs may replace it and the runtime package.__class__ may differ.
         genanki_pkg = getattr(sys.modules.get("genanki"), "Package", None)
         if genanki_pkg is not None and genanki_pkg is not package.__class__:
             setattr(genanki_pkg, "last_deck", deck)
             setattr(genanki_pkg, "last_written_path", str(destination_path))
 
-        if debug_export:
-            print(
-                f"[export_debug_pkg] package_class={package.__class__} "
+        if os.getenv("FRENCHVOCAB_DEBUG_EXPORT"):
+            self._ui.debug(
+                "[export_debug_pkg] "
+                f"package_class={package.__class__} "
                 f"sys_package={getattr(sys.modules.get('genanki'), 'Package', None)}"
             )
-            print(
-                f"[export_debug_pkg] class_last_deck={getattr(package.__class__, 'last_deck', None)} "
+            self._ui.debug(
+                "[export_debug_pkg] "
+                f"class_last_deck={getattr(package.__class__, 'last_deck', None)} "
                 f"class_last_path={getattr(package.__class__, 'last_written_path', None)}"
             )
 
-        newly_added_words_normalized = set()
-        newly_added_display = set()
-        packaged_count = len(entries_for_export)
+    def _finalize_export_state(
+        self,
+        *,
+        entries_for_export: List[Tuple[str, str, AnkiExportEntry, bool]],
+        all_exported_words: Set[str],
+        deck_title: str,
+        destination_path: Path,
+        template_version: str,
+        export_context: str,
+    ) -> Tuple[Set[str], Set[str]]:
+        newly_added_words_normalized: Set[str] = set()
+        newly_added_display: Set[str] = set()
 
         for normalized_word, display_word, _, already_exported in entries_for_export:
             all_exported_words.add(normalized_word)
@@ -416,7 +451,6 @@ class AnkiExportManager:
                 newly_added_words_normalized.add(normalized_word)
                 newly_added_display.add(display_word)
 
-        # Update state and save
         self._exported_words = all_exported_words
         self._exported_deck_version = template_version
         self._last_export_metadata = {
@@ -428,8 +462,23 @@ class AnkiExportManager:
             "new_words": len(newly_added_words_normalized),
         }
         self.save_exported_words()
+        return newly_added_words_normalized, newly_added_display
 
-        # Build feedback message
+    @staticmethod
+    def _build_export_feedback(
+        *,
+        deck_title: str,
+        destination_path: Path,
+        export_directory: Path,
+        all_exported_words: Set[str],
+        newly_added_words_normalized: Set[str],
+        newly_added_display: Set[str],
+        packaged_count: int,
+        template_version: str,
+        auto_due_to_version: bool,
+        selected_words: Optional[Set[str]],
+        latex_words: Set[str],
+    ) -> str:
         feedback = f"""
         [bold green]Anki deck '{deck_title}.apkg' created successfully![/bold green]
         [bold magenta]Deck file saved to: {destination_path}[/bold magenta]
@@ -463,6 +512,108 @@ class AnkiExportManager:
         if extra_in_anki:
             feedback += f"\n{', '.join(sorted(extra_in_anki))}"
 
+        return feedback
+
+    def export_to_anki(
+        self,
+        deck_name: Optional[str] = None,
+        include_exported_words: bool = False,
+        *,
+        selected_words: Optional[Set[str]] = None,
+        auto_retry_on_empty: bool = True,
+        output_path: Optional[Path] = None,
+        export_context: str = "incremental",
+    ) -> None:
+        """Export vocabulary entries to an Anki deck.
+
+        Args:
+            deck_name: Name of the Anki deck to create
+            include_exported_words: Include previously exported words
+            selected_words: Specific words to export (lowercase keys)
+            auto_retry_on_empty: Retry with all words if export produces no cards
+            output_path: Explicit output location for the deck
+            export_context: Context description for metadata
+        """
+        self._vocab_repo.ensure_entries_loaded()
+        requested_deck_name = deck_name or self._language_config.anki.default_deck_name
+        deck_title = self._normalize_deck_title(requested_deck_name)
+        destination_path = self._normalize_output_path(output_path or requested_deck_name)
+
+        self._sync_anki_exporter_genanki_module()
+
+        anki_config = self._language_config.anki
+        template_version = self._resolve_template_version()
+
+        exporter = AnkiExporter(deck_title, anki_config)
+        word_entries = self._vocab_repo.word_entries
+        latex_words = set(word_entries.keys())
+        all_exported_words = set(self._exported_words)
+        include_all, auto_due_to_version = self._resolve_include_all(
+            selected_words=selected_words,
+            include_exported_words=include_exported_words,
+            template_version=template_version,
+        )
+
+        entries_for_export = self._collect_entries_for_export(
+            word_entries=word_entries,
+            selected_words=selected_words,
+            include_all=include_all,
+            all_exported_words=all_exported_words,
+        )
+        self._debug_export(
+            entries_for_export=entries_for_export,
+            include_all=include_all,
+            selected_words=selected_words,
+            all_exported_words=all_exported_words,
+            word_entries=word_entries,
+        )
+
+        if self._handle_empty_export(
+            entries_for_export=entries_for_export,
+            deck_title=deck_title,
+            destination_path=destination_path,
+            export_context=export_context,
+            word_entries=word_entries,
+            selected_words=selected_words,
+            include_all=include_all,
+            auto_retry_on_empty=auto_retry_on_empty,
+        ):
+            return
+
+        deck = exporter.build_deck([item[2] for item in entries_for_export])
+
+        export_directory = self._ensure_export_directory(destination_path)
+        if export_directory is None:
+            return
+
+        package = self._write_package_atomic(deck, destination_path, export_directory)
+        if package is None:
+            return
+        self._expose_package_for_tests(package, deck, destination_path)
+
+        packaged_count = len(entries_for_export)
+        newly_added_words_normalized, newly_added_display = self._finalize_export_state(
+            entries_for_export=entries_for_export,
+            all_exported_words=all_exported_words,
+            deck_title=deck_title,
+            destination_path=destination_path,
+            template_version=template_version,
+            export_context=export_context,
+        )
+
+        feedback = self._build_export_feedback(
+            deck_title=deck_title,
+            destination_path=destination_path,
+            export_directory=export_directory,
+            all_exported_words=all_exported_words,
+            newly_added_words_normalized=newly_added_words_normalized,
+            newly_added_display=newly_added_display,
+            packaged_count=packaged_count,
+            template_version=template_version,
+            auto_due_to_version=auto_due_to_version,
+            selected_words=selected_words,
+            latex_words=latex_words,
+        )
         self._ui.panel(feedback, title="Export Summary", border_style="green")
 
     # -------------------------------------------------------------------------

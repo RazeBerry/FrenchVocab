@@ -4,15 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import sys
-sys.path.append(str(Path(__file__).parent))
-from _stubs import install_basic_stubs
-
-install_basic_stubs()
-
-
-import FrenchVocab  # noqa: E402
-from models import normalize_word_key  # noqa: E402
+import FrenchVocab
+from models import normalize_word_key
 
 
 GERMAN_ENTRY_TEMPLATE = r"""\entry{{{word}}}{{noun}}

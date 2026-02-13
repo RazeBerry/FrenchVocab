@@ -13,23 +13,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-# Import stubs first
-import sys
-import os
-
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-os.environ.setdefault("FRENCHVOCAB_FORCE_SYNC_LOAD", "1")
-
-try:
-    from tests._stubs import install_basic_stubs
-except ModuleNotFoundError:
-    from _stubs import install_basic_stubs
-
-install_basic_stubs()
-
 from core.vocab_repository import VocabRepository, EntryNotFoundError
 from models import normalize_word_key
 from languages import get_language_config

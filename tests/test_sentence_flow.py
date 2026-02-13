@@ -1,15 +1,8 @@
 import os
-import unittest
-from pathlib import Path
 import tempfile
+import unittest
 
-# Ensure stubs are installed for rich and keyring, etc.
-import sys
-sys.path.append(str(Path(__file__).parent))
-from _stubs import install_basic_stubs
-install_basic_stubs()
-
-import FrenchVocab  # noqa: E402
+import FrenchVocab
 
 
 class _FakeLLMClient:

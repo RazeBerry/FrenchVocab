@@ -1,6 +1,5 @@
 """Unit tests for core/file_safety.py atomic write utilities."""
 
-import os
 import tempfile
 import threading
 import unittest

@@ -1,16 +1,8 @@
 import os
 from pathlib import Path
-import sys
 
-sys.path.append(str(Path(__file__).parent))
-from _stubs import install_basic_stubs  # type: ignore
-
-
-install_basic_stubs()
-
-import FrenchVocab  # noqa: E402,F401
-from core.providers import manager as manager_module  # noqa: E402
-from core.providers.manager import ProviderManager, _get_provider_metadata  # noqa: E402
+from core.providers import manager as manager_module
+from core.providers.manager import ProviderManager, _get_provider_metadata
 
 
 class _StubUI:

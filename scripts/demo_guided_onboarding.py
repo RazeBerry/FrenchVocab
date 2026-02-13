@@ -63,7 +63,7 @@ def demo_guided_flow():
     ))
 
     console.print("\n[dim](In real usage, your key input would be hidden)[/dim]")
-    api_key = Prompt.ask("Enter your Google Gemini API key", default="AIzaSy...")
+    Prompt.ask("Enter your Google Gemini API key", default="AIzaSy...")
 
     console.print("\n[cyan]Testing connection to Google Gemini...[/cyan]")
     import time

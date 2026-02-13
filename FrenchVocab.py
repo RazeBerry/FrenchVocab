@@ -4,14 +4,9 @@ from __future__ import annotations
 
 import argparse
 import os
-from typing import Iterable, Optional, Sequence, TYPE_CHECKING
+from typing import Sequence
 
-__all__ = ["FrenchVocabBuilder", "build_app", "run_cli", "main"]
-
-if TYPE_CHECKING:  # pragma: no cover - for type hints only
-    from core import FrenchVocabBuilder as _FrenchVocabBuilder
-    from cli.bootstrap import build_app as _build_app
-    from cli.bootstrap import run_cli as _run_cli
+__all__ = ["FrenchVocabBuilder", "build_app", "run_cli", "main"]  # noqa: F822
 
 
 def _load_core_builder():

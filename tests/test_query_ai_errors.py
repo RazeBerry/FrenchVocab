@@ -1,13 +1,7 @@
-import sys
-import os
 from types import SimpleNamespace
 
-sys.path.append(os.path.dirname(__file__))
-from _stubs import install_basic_stubs
-install_basic_stubs()
-
-import FrenchVocab  # noqa: E402
-from core.llm_coordinator import LLMCoordinator  # noqa: E402
+import FrenchVocab
+from core.llm_coordinator import LLMCoordinator
 
 
 class _FailingClient:

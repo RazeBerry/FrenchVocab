@@ -69,7 +69,6 @@ class GeminiClient(LLMClient):
         Returns a dictionary with performance metrics upon generator completion.
         Example return: {'ttft': 0.5, 'tps': 50.0, 'tokens_out': 100, 'usage': {...}}
         """
-        types = self._types
         client = self._client
         model_name = self.MODEL_NAME
 

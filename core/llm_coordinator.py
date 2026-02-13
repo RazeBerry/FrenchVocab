@@ -412,51 +412,70 @@ class LLMCoordinator:
             True if client is ready for queries
         """
         while True:
-            state = self.init_state
-
-            # Already ready - fast path
-            if state == InitState.READY:
+            if self.init_state == InitState.READY:
                 return True
 
-            # Background init in progress - wait for it to complete (no arbitrary timeout!)
-            if state == InitState.IN_PROGRESS:
-                self._init_event.wait()  # Block until init signals completion
-                if self.init_state == InitState.READY:
-                    return True
+            if self._wait_for_background_init_if_needed():
+                return True
 
             # If we get here, init failed or was deferred - need user action
             if self.client:
                 return True
 
-            reason = self.api_error_reason or "No AI provider configured."
-            self._ui.warning(f"AI provider unavailable: {reason}")
+            choice = self._prompt_readiness_action()
+            outcome = self._apply_readiness_action(choice, on_settings=on_settings)
+            if outcome is not None:
+                return outcome
 
-            options = [
-                ("retry", "Retry provider setup now"),
-                ("settings", "Open AI settings"),
-                ("skip", "Return without AI features"),
-            ]
+    def _wait_for_background_init_if_needed(self) -> bool:
+        """Wait for background init to complete when needed.
 
-            try:
-                choice = self._ui.interactive_menu(
-                    "AI Provider Required",
-                    options,
-                    "AI-powered features need a configured provider • [Esc] Skip",
-                    show_keys=False,
-                )
-            except KeyboardInterrupt:
-                return False
+        Returns:
+            True if initialization completed successfully and the client is ready.
+        """
+        if self.init_state != InitState.IN_PROGRESS:
+            return False
 
-            if choice == "retry":
-                if self.reconfigure():
-                    return True
-                self._ui.warning("Provider setup failed. Remaining in offline mode.")
-            elif choice == "settings":
-                if on_settings:
-                    on_settings()
-                continue  # Loop back to re-check readiness
-            else:
-                return False
+        self._init_event.wait()  # Block until init signals completion
+        return self.init_state == InitState.READY
+
+    def _prompt_readiness_action(self) -> str:
+        reason = self.api_error_reason or "No AI provider configured."
+        self._ui.warning(f"AI provider unavailable: {reason}")
+
+        options = [
+            ("retry", "Retry provider setup now"),
+            ("settings", "Open AI settings"),
+            ("skip", "Return without AI features"),
+        ]
+
+        try:
+            return self._ui.interactive_menu(
+                "AI Provider Required",
+                options,
+                "AI-powered features need a configured provider • [Esc] Skip",
+                show_keys=False,
+            )
+        except KeyboardInterrupt:
+            return "skip"
+
+    def _apply_readiness_action(
+        self,
+        choice: str,
+        *,
+        on_settings: Optional[Callable[[], None]],
+    ) -> Optional[bool]:
+        """Return True/False to stop, or None to continue loop."""
+        if choice == "retry":
+            if self.reconfigure():
+                return True
+            self._ui.warning("Provider setup failed. Remaining in offline mode.")
+            return None
+        if choice == "settings":
+            if on_settings:
+                on_settings()
+            return None
+        return False
 
     def reconfigure(self, on_success: Optional[Callable[[], None]] = None) -> bool:
         """Run provider setup again and rebuild dependent components.

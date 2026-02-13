@@ -255,7 +255,7 @@ class TranslatorCLI:
     def _collect_multiline_input(self, language_label: str) -> Optional[str]:
         # Instructions panel: wrapped for contextual info
         instructions = (
-            f"[#E67E50]Enter text to translate.[/#E67E50]\n"
+            "[#E67E50]Enter text to translate.[/#E67E50]\n"
             "[dim]- Type or paste your text, then press Enter.\n"
             "- Press Esc to cancel.[/dim]"
         )

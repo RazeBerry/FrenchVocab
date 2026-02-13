@@ -1,10 +1,20 @@
 import getpass
 import os
 import shutil
+import threading
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Tuple
+
+try:
+    from dotenv import load_dotenv
+except ImportError:  # pragma: no cover - dependency should be present in runtime
+    load_dotenv = None  # type: ignore[misc,assignment]
+
+from llm_client import ProviderFactory
+from ui_helper import UIHelper
+
 
 def get_password(service: str, name: str) -> Optional[str]:
     """Lazy wrapper around keyring.get_password to avoid importing keyring at startup."""
@@ -18,14 +28,6 @@ def set_password(service: str, name: str, value: str) -> None:
     import keyring  # type: ignore[import]
 
     keyring.set_password(service, name, value)
-
-try:
-    from dotenv import load_dotenv
-except ImportError:  # pragma: no cover - dependency should be present in runtime
-    load_dotenv = None  # type: ignore[misc,assignment]
-
-from llm_client import ProviderFactory
-from ui_helper import UIHelper
 
 
 @dataclass(frozen=True)
@@ -91,6 +93,8 @@ def _get_provider_metadata(provider: Optional[str]) -> ProviderMetadata:
 
 class ProviderManager:
     """Encapsulates provider configuration, credential storage, and validation."""
+
+    _SILENT_KEYRING_TIMEOUT_S = 1.0
 
     def __init__(self, ui: UIHelper, project_root: Path):
         self.ui = ui
@@ -163,10 +167,46 @@ class ProviderManager:
         decide whether to fall back to interactive flows.
         """
         self._load_env_file()
-        api_key, source = self._resolve_api_key(metadata)
+        api_key, source = self._resolve_api_key(
+            metadata,
+            keyring_timeout_s=self._SILENT_KEYRING_TIMEOUT_S,
+        )
         if not api_key:
             return None
         return ProviderResolution(metadata=metadata, api_key=api_key, source=source)
+
+    def _keyring_get_password(
+        self,
+        service: str,
+        name: str,
+        *,
+        timeout_s: Optional[float],
+    ) -> Tuple[Optional[str], bool]:
+        if timeout_s is None:
+            return get_password(service, name), False
+
+        result: Dict[str, Optional[str]] = {"value": None}
+        error: Dict[str, Exception] = {}
+
+        def _worker() -> None:
+            try:
+                result["value"] = get_password(service, name)
+            except Exception as exc:  # pragma: no cover - defensive
+                error["exc"] = exc
+
+        thread = threading.Thread(
+            target=_worker,
+            name="frenchvocab-keyring-get",
+            daemon=True,
+        )
+        thread.start()
+        thread.join(timeout_s)
+
+        if thread.is_alive():
+            return None, True
+        if "exc" in error:
+            raise error["exc"]
+        return result["value"], False
 
     def change_provider(self, current: ProviderMetadata) -> Optional[ProviderResolution]:
         """Interactive provider switcher; returns new credentials or None on cancel."""
@@ -235,36 +275,52 @@ class ProviderManager:
             return env_path
         return None
 
-    def _resolve_api_key(self, metadata: ProviderMetadata) -> Tuple[Optional[str], Optional[str]]:
-        # Prefer persisted credentials (keyring) over ambient environment variables so that
-        # a stray exported key cannot silently override the saved one.
-        stored_key = None
-        if self._keyring_enabled:
-            try:
-                stored_key = get_password("french_vocab_builder", metadata.keyring_name)
-            except Exception as exc:
-                self.ui.error(f"Error accessing system keyring: {exc}")
+    def _resolve_api_key(
+        self,
+        metadata: ProviderMetadata,
+        *,
+        keyring_timeout_s: Optional[float] = None,
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Resolve an API key from environment first, then keyring as fallback.
 
-        if stored_key:
-            result = self._validate_api_key(metadata, stored_key, perform_connection_test=False)
-            if result.valid:
-                os.environ.setdefault(metadata.env_var, stored_key)
-                return stored_key, "system keyring"
-            self.ui.warning(
-                "Stored keyring credential failed validation; starting setup wizard."
-            )
+        Environment variables (including values loaded from a `.env` file) are treated as
+        explicit session overrides. Keyring is used only if the environment does not
+        provide a valid key.
+        """
 
         env_value = os.environ.get(metadata.env_var)
         if env_value:
             result = self._validate_api_key(metadata, env_value, perform_connection_test=False)
             if result.valid:
-                self.ui.warning(
-                    f"Found {metadata.env_var} in environment; using it for this session. "
-                    "Saved keyring/.env credentials are ignored until you unset it."
-                )
                 return env_value, "environment variable"
             self.ui.warning(
                 f"Ignoring invalid {metadata.env_var} from environment: {result.message}"
+            )
+
+        stored_key = None
+        keyring_timed_out = False
+        if self._keyring_enabled:
+            try:
+                stored_key, keyring_timed_out = self._keyring_get_password(
+                    "french_vocab_builder",
+                    metadata.keyring_name,
+                    timeout_s=keyring_timeout_s,
+                )
+            except Exception as exc:
+                self.ui.error(f"Error accessing system keyring: {exc}")
+
+        if keyring_timed_out:
+            self.ui.warning(
+                "Keychain lookup took too long; skipping it for now. "
+                "You can set FRENCHVOCAB_SKIP_KEYRING=1 to disable keychain lookups."
+            )
+
+        if stored_key:
+            result = self._validate_api_key(metadata, stored_key, perform_connection_test=False)
+            if result.valid:
+                return stored_key, "system keyring"
+            self.ui.warning(
+                "Stored keychain credential failed validation; ignoring it."
             )
 
         return None, None
@@ -601,68 +657,91 @@ class ProviderManager:
 
     def _write_env_file(self, metadata: ProviderMetadata, api_key: str) -> Optional[str]:
         env_path = self._env_path
-        if env_path.exists() and not env_path.is_file():
-            self.ui.error("Cannot write .env file because the path exists and is not a file.")
+        if not self._ensure_env_file_path(env_path):
             return None
 
+        if not self._ensure_parent_dir(env_path):
+            return None
+
+        lines = self._read_env_lines(env_path)
+        if lines is None:
+            return None
+
+        new_lines = self._upsert_env_var(lines, metadata.env_var, api_key)
+        self._backup_env_file_best_effort(env_path)
+
+        if not self._atomic_write_env_lines(env_path, new_lines):
+            return None
+
+        self.ui.success(f"Saved key to {env_path}.")
+        self.ui.info("Future runs will automatically reuse this key from the project .env file.")
+        return f".env ({env_path})"
+
+    def _ensure_env_file_path(self, env_path: Path) -> bool:
+        if env_path.exists() and not env_path.is_file():
+            self.ui.error("Cannot write .env file because the path exists and is not a file.")
+            return False
+        return True
+
+    def _ensure_parent_dir(self, env_path: Path) -> bool:
         try:
             env_path.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             self.ui.error(f"Failed to create config directory {env_path.parent}: {exc}")
+            return False
+        return True
+
+    def _read_env_lines(self, env_path: Path) -> Optional[List[str]]:
+        if not env_path.exists():
+            return []
+        try:
+            return env_path.read_text(encoding="utf-8").splitlines()
+        except OSError as exc:
+            self.ui.error(f"Failed to read existing .env file: {exc}")
             return None
 
-        lines: List[str] = []
-        if env_path.exists():
-            try:
-                lines = env_path.read_text(encoding="utf-8").splitlines()
-            except OSError as exc:
-                self.ui.error(f"Failed to read existing .env file: {exc}")
-                return None
-
-        updated = False
+    @staticmethod
+    def _upsert_env_var(lines: List[str], key_var: str, api_key: str) -> List[str]:
         new_lines: List[str] = []
-        key_var = metadata.env_var
+        updated = False
+        prefix = f"{key_var}="
         for line in lines:
-            if line.strip().startswith(f"{key_var}="):
+            if line.strip().startswith(prefix):
                 new_lines.append(f"{key_var}={api_key}")
                 updated = True
             else:
                 new_lines.append(line)
         if not updated:
             new_lines.append(f"{key_var}={api_key}")
+        return new_lines
 
-        # Create backup before modification (best-effort)
-        if env_path.exists():
-            backup_path = env_path.with_suffix(".env.bak")
+    def _backup_env_file_best_effort(self, env_path: Path) -> None:
+        if not env_path.exists():
+            return
+        backup_path = env_path.with_suffix(".env.bak")
+        try:
             try:
-                try:
-                    os.link(env_path, backup_path)
-                except OSError:
-                    shutil.copy2(env_path, backup_path)
-            except OSError as exc:
-                self.ui.warning(f"Could not create .env backup: {exc}")
-                # Continue anyway - backup is best-effort
+                os.link(env_path, backup_path)
+            except OSError:
+                shutil.copy2(env_path, backup_path)
+        except OSError as exc:
+            self.ui.warning(f"Could not create .env backup: {exc}")
 
-        # Use atomic write pattern: write to temp, then rename
+    def _atomic_write_env_lines(self, env_path: Path, lines: List[str]) -> bool:
         temp_path = env_path.with_suffix(".env.tmp")
         try:
-            temp_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+            temp_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
             os.replace(temp_path, env_path)
+            return True
         except OSError as exc:
             self.ui.error(f"Failed to write .env file: {exc}")
-            # Clean up temp file if it exists
+        finally:
             if temp_path.exists():
                 try:
                     temp_path.unlink()
                 except OSError:
                     pass
-            return None
-
-        self.ui.success(f"Saved key to {env_path}.")
-        self.ui.info(
-            "Future runs will automatically reuse this key from the project .env file."
-        )
-        return f".env ({env_path})"
+        return False
 
     def _display_validation_failure(self, metadata: ProviderMetadata, feedback: ValidationFeedback) -> None:
         details = feedback.message

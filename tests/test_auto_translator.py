@@ -1,11 +1,3 @@
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).parent))
-from _stubs import install_basic_stubs
-
-install_basic_stubs()
-
 from languages.base import (
     LanguageConfig,
     TranslatorConfig,

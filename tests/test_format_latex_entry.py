@@ -1,12 +1,6 @@
-import os
-import sys
 import unittest
 
-sys.path.append(os.path.dirname(__file__))
-from _stubs import install_basic_stubs
-install_basic_stubs()
-
-import FrenchVocab  # noqa: E402
+import FrenchVocab
 
 
 class TestFormatLatexEntry(unittest.TestCase):

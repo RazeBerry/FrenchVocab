@@ -7,25 +7,16 @@ This module tests the complete flow of updating an API key:
 """
 
 import os
-import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
-from _stubs import install_basic_stubs
-
-install_basic_stubs()
-
+from core.providers import manager as manager_module
 from core.providers.manager import (
     ProviderManager,
-    ProviderMetadata,
-    ProviderResolution,
-    ValidationFeedback,
     _get_provider_metadata,
 )
-from core.providers import manager as manager_module
 
 
 class StubUI:

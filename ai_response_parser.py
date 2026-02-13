@@ -106,52 +106,67 @@ def _parse_examples(response: str) -> List[Tuple[str, str]]:
     if not section:
         return []
 
-    examples: List[Tuple[str, str]] = []
-
-    # Try format 1: numbered with newline between source and translation
-    # e.g., "1. French sentence\n   [English translation]"
-    numbered_pattern = re.compile(r"\d+\.\s*(.*?)\n\s*(.*?)(?=\n\d+\.|\Z)", re.DOTALL)
-    matches = numbered_pattern.findall(section)
-    if matches:
-        for source, translation in matches:
-            source = source.strip()
-            translation = translation.strip().strip("[]()").strip()
-            if source:
-                examples.append((source, translation))
-        if examples:
-            return examples
-
-    # Try format 2: each example on one line with parenthesized translation
-    # e.g., "- French sentence (English translation)"
-    paren_pattern = re.compile(r"(?:[-•\d]+\.?\s*)?(.*?)\s*\(([^)]+)\)")
-    for line in section.split('\n'):
-        line = line.strip()
-        if not line:
-            continue
-        match = paren_pattern.search(line)
-        if match:
-            source = match.group(1).strip()
-            translation = match.group(2).strip()
-            if source:
-                examples.append((source, translation))
-
+    examples = _parse_numbered_multiline_examples(section)
     if examples:
         return examples
 
-    # Try format 3: each example on one line with bracketed translation
-    # e.g., "- French sentence [English translation]"
-    bracket_pattern = re.compile(r"(?:[-•\d]+\.?\s*)?(.*?)\s*\[([^\]]+)\]")
-    for line in section.split('\n'):
-        line = line.strip()
+    examples = _parse_parenthesized_line_examples(section)
+    if examples:
+        return examples
+
+    return _parse_bracketed_line_examples(section)
+
+
+def _parse_numbered_multiline_examples(section: str) -> List[Tuple[str, str]]:
+    # Format: "1. Source\n   [Translation]"
+    numbered_pattern = re.compile(r"\d+\.\s*(.*?)\n\s*(.*?)(?=\n\d+\.|\Z)", re.DOTALL)
+    matches = numbered_pattern.findall(section)
+    if not matches:
+        return []
+
+    examples: List[Tuple[str, str]] = []
+    for source, translation in matches:
+        src = source.strip()
+        if not src:
+            continue
+        tr = translation.strip().strip("[]()").strip()
+        examples.append((src, tr))
+    return examples
+
+
+def _parse_parenthesized_line_examples(section: str) -> List[Tuple[str, str]]:
+    # Format: "- Source (Translation)"
+    pattern = re.compile(r"(?:[-•\d]+\.?\s*)?(.*?)\s*\(([^)]+)\)")
+    examples: List[Tuple[str, str]] = []
+    for raw in section.split("\n"):
+        line = raw.strip()
         if not line:
             continue
-        match = bracket_pattern.search(line)
-        if match:
-            source = match.group(1).strip()
-            translation = match.group(2).strip()
-            if source:
-                examples.append((source, translation))
+        match = pattern.search(line)
+        if not match:
+            continue
+        source = match.group(1).strip()
+        translation = match.group(2).strip()
+        if source:
+            examples.append((source, translation))
+    return examples
 
+
+def _parse_bracketed_line_examples(section: str) -> List[Tuple[str, str]]:
+    # Format: "- Source [Translation]"
+    pattern = re.compile(r"(?:[-•\d]+\.?\s*)?(.*?)\s*\[([^\]]+)\]")
+    examples: List[Tuple[str, str]] = []
+    for raw in section.split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        match = pattern.search(line)
+        if not match:
+            continue
+        source = match.group(1).strip()
+        translation = match.group(2).strip()
+        if source:
+            examples.append((source, translation))
     return examples
 
 

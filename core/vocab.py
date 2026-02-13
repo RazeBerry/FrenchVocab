@@ -1020,6 +1020,10 @@ class FrenchVocabBuilder:
 
         # Determine provider name using state machine
         from core.llm_coordinator import InitState
+        if self._llm.init_state == InitState.IN_PROGRESS:
+            # Give background init a moment to settle so the welcome screen doesn't
+            # get stuck showing "initializing" when no credentials are present.
+            self._llm.await_init(timeout=0.2)
         state = self._llm.init_state
 
         provider_name = self.provider_metadata.display_name if hasattr(self, "provider_metadata") else "Unknown"
@@ -1066,12 +1070,13 @@ class FrenchVocabBuilder:
         if self.fr_to_eng_translator:
             fr_eng_count = self.fr_to_eng_translator.entry_count
 
-        exported_count = len(getattr(self, "exported_words", []))
         language_name = self.language_config.display_name
 
         # Display status summary panel above menu for reduced cognitive load
         # Use the state machine for clean, unambiguous status
         from core.llm_coordinator import InitState
+        if self._llm.init_state == InitState.IN_PROGRESS:
+            self._llm.await_init(timeout=0.2)
         state = self._llm.init_state
 
         if state == InitState.READY:
@@ -1365,7 +1370,7 @@ class FrenchVocabBuilder:
                 except Exception:
                     key_source = "Environment variable"
         elif not self.api_available:
-            connection_status = f"[yellow]Unavailable[/yellow]"
+            connection_status = "[yellow]Unavailable[/yellow]"
             provider_name = f"{provider_display} (not connected)"
             key_source = "Not configured"
 

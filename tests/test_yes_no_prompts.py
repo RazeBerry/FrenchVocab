@@ -1,12 +1,4 @@
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).parent))
-from _stubs import install_basic_stubs
-
-install_basic_stubs()
-
-import core.translator as translator_module  # noqa: E402
+import core.translator as translator_module
 
 
 class _SilentConsole:

@@ -1,11 +1,3 @@
-import sys
-from pathlib import Path
-
-sys.path.append(str(Path(__file__).parent))
-from _stubs import install_basic_stubs
-
-install_basic_stubs()
-
 from languages.base import make_text_validator
 from languages.french import FRENCH_CONFIG
 from languages.latex_templates import INITIAL_ENG_FR_TEX_CONTENT, INITIAL_FR_ENG_TEX_CONTENT
@@ -48,4 +40,3 @@ def test_consolidated_latex_translation_templates_are_unescaped_tex():
 def test_french_config_uses_consolidated_translation_templates():
     assert FRENCH_CONFIG.eng_to_target.initial_tex_content == INITIAL_ENG_FR_TEX_CONTENT
     assert FRENCH_CONFIG.target_to_eng.initial_tex_content == INITIAL_FR_ENG_TEX_CONTENT
-

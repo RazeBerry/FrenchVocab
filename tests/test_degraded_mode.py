@@ -1,13 +1,5 @@
-import os
-import sys
-
-sys.path.append(os.path.dirname(__file__))
-from _stubs import install_basic_stubs  # type: ignore
-
-install_basic_stubs()
-
-import FrenchVocab  # noqa: E402
-from core.llm_coordinator import LLMCoordinator, InitState  # noqa: E402
+import FrenchVocab
+from core.llm_coordinator import LLMCoordinator, InitState
 
 
 class _DummyClient:

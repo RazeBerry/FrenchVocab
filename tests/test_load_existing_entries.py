@@ -3,12 +3,7 @@ import unittest
 from pathlib import Path
 import tempfile
 
-import sys
-sys.path.append(str(Path(__file__).parent))
-from _stubs import install_basic_stubs
-install_basic_stubs()
-
-import FrenchVocab  # noqa: E402
+import FrenchVocab
 
 
 SIMPLE_TEX = r"""\documentclass{article}

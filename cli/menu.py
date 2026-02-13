@@ -12,64 +12,87 @@ def main_menu_loop(app: "VocabAppProtocol") -> None:
     """Interactive menu loop driving the CLI session."""
     app.welcome_screen()
     while True:
-        app.entry_count = app.count_entries()
-        if app.eng_to_fr_translator:
-            app.eng_to_fr_translator.entry_count = len(app.eng_to_fr_translator.pairs)
-        if app.fr_to_eng_translator:
-            app.fr_to_eng_translator.entry_count = len(app.fr_to_eng_translator.pairs)
+        _refresh_menu_counts(app)
 
         choice = app.show_menu()
 
-        if choice == "add":
-            app.handle_new_word_entry()
-            continue
-
-        if choice == "translate":
-            translation_choice = app.show_translation_menu()
-            if translation_choice == "auto":
-                if not app.ensure_llm_ready():
-                    continue
-                if app.auto_translator:
-                    app.auto_translator.run()
-                else:
-                    app.ui.error("Auto translator is unavailable because the AI provider could not be initialized.")
-                continue
-            if translation_choice == "eng_to_target":
-                if not app.ensure_llm_ready():
-                    continue
-                if app.eng_to_fr_translator:
-                    app.eng_to_fr_translator.run()
-                else:
-                    title = app._translator_title(app.language_config.eng_to_target)
-                    app.ui.error(f"{title} is unavailable because the AI provider could not be initialized.")
-                continue
-
-            if translation_choice == "target_to_eng":
-                if not app.ensure_llm_ready():
-                    continue
-                if app.fr_to_eng_translator:
-                    app.fr_to_eng_translator.run()
-                else:
-                    title = app._translator_title(app.language_config.target_to_eng)
-                    app.ui.error(f"{title} is unavailable because the AI provider could not be initialized.")
-                continue
-
-            continue  # translation menu returned "back"
-
-        if choice == "anki_tools":
-            app.handle_anki_tools()
-            continue
-
-        if choice == "display_vocab":
-            app.display_all_vocabulary()
-            continue
-
-        if choice == "settings":
-            app.show_settings_screen()
-            continue
-
-        if choice == "exit":
-            app.exit_screen()
+        if not _handle_main_choice(app, choice):
             break
 
-        app.ui.warning("Unrecognized menu option. Please try again.")
+
+def _refresh_menu_counts(app: "VocabAppProtocol") -> None:
+    app.entry_count = app.count_entries()
+    if app.eng_to_fr_translator:
+        app.eng_to_fr_translator.entry_count = len(app.eng_to_fr_translator.pairs)
+    if app.fr_to_eng_translator:
+        app.fr_to_eng_translator.entry_count = len(app.fr_to_eng_translator.pairs)
+
+
+def _handle_main_choice(app: "VocabAppProtocol", choice: str) -> bool:
+    if choice == "add":
+        app.handle_new_word_entry()
+        return True
+
+    if choice == "translate":
+        _handle_translation(app)
+        return True
+
+    if choice == "anki_tools":
+        app.handle_anki_tools()
+        return True
+
+    if choice == "display_vocab":
+        app.display_all_vocabulary()
+        return True
+
+    if choice == "settings":
+        app.show_settings_screen()
+        return True
+
+    if choice == "exit":
+        app.exit_screen()
+        return False
+
+    app.ui.warning("Unrecognized menu option. Please try again.")
+    return True
+
+
+def _handle_translation(app: "VocabAppProtocol") -> None:
+    translation_choice = app.show_translation_menu()
+    handlers = {
+        "auto": _run_auto_translation,
+        "eng_to_target": _run_eng_to_target,
+        "target_to_eng": _run_target_to_eng,
+    }
+    handler = handlers.get(translation_choice)
+    if handler:
+        handler(app)
+
+
+def _run_auto_translation(app: "VocabAppProtocol") -> None:
+    if not app.ensure_llm_ready():
+        return
+    if app.auto_translator:
+        app.auto_translator.run()
+        return
+    app.ui.error("Auto translator is unavailable because the AI provider could not be initialized.")
+
+
+def _run_eng_to_target(app: "VocabAppProtocol") -> None:
+    if not app.ensure_llm_ready():
+        return
+    if app.eng_to_fr_translator:
+        app.eng_to_fr_translator.run()
+        return
+    title = app._translator_title(app.language_config.eng_to_target)
+    app.ui.error(f"{title} is unavailable because the AI provider could not be initialized.")
+
+
+def _run_target_to_eng(app: "VocabAppProtocol") -> None:
+    if not app.ensure_llm_ready():
+        return
+    if app.fr_to_eng_translator:
+        app.fr_to_eng_translator.run()
+        return
+    title = app._translator_title(app.language_config.target_to_eng)
+    app.ui.error(f"{title} is unavailable because the AI provider could not be initialized.")

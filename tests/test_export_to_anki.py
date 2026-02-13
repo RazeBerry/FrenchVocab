@@ -1,17 +1,12 @@
 import os
-import sys
 import tempfile
 import types
 import unittest
 from pathlib import Path
 
-sys.path.append(os.path.dirname(__file__))
-from _stubs import install_basic_stubs
-install_basic_stubs()
-
-import FrenchVocab  # noqa: E402
-import genanki  # noqa: E402
-from languages.french import FRENCH_CONFIG  # noqa: E402
+import FrenchVocab
+import genanki
+from languages.french import FRENCH_CONFIG
 
 
 class _StubUI:
