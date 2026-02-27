@@ -12,6 +12,13 @@ try:
 except ImportError:  # pragma: no cover - dependency should be present in runtime
     load_dotenv = None  # type: ignore[misc,assignment]
 
+try:
+    from keyring.errors import KeyringError
+except Exception:  # pragma: no cover - keyring may be absent in some environments
+    class KeyringError(Exception):
+        """Fallback keyring error when keyring is unavailable."""
+
+
 from llm_client import ProviderFactory
 from ui_helper import UIHelper
 
@@ -266,7 +273,7 @@ class ProviderManager:
 
         try:
             loaded = load_dotenv(dotenv_path=env_path, override=False)
-        except Exception as exc:
+        except OSError as exc:
             self.ui.warning(f"Failed to load {env_path}: {exc}")
             return None
 
@@ -306,7 +313,7 @@ class ProviderManager:
                     metadata.keyring_name,
                     timeout_s=keyring_timeout_s,
                 )
-            except Exception as exc:
+            except (KeyringError, RuntimeError, OSError, ValueError, ImportError) as exc:
                 self.ui.error(f"Error accessing system keyring: {exc}")
 
         if keyring_timed_out:
@@ -595,7 +602,7 @@ class ProviderManager:
             set_password("french_vocab_builder", metadata.keyring_name, api_key)
             self.ui.success("✓ API key securely saved to system keychain.")
             return "system keyring"
-        except Exception as exc:
+        except (KeyringError, RuntimeError, OSError) as exc:
             self.ui.warning(
                 f"Could not access system keychain: {exc}\n"
                 "Falling back to .env file storage."
@@ -635,7 +642,7 @@ class ProviderManager:
                     set_password("french_vocab_builder", metadata.keyring_name, api_key)
                     self.ui.success("Saved API key to system keyring.")
                     return "system keyring"
-                except Exception:
+                except (KeyringError, RuntimeError, OSError):
                     self.ui.warning(
                         "Keyring is not available right now. Choose another storage option."
                     )

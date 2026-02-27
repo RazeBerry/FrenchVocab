@@ -1,101 +1,116 @@
-# CLAUDE.md
+# Repository Guidelines
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Sync Requirement
+- `AGENTS.md` and `CLAUDE.md` must stay byte-for-byte identical.
+- Update both files in the same change.
+- Run `pytest tests/test_agent_docs_sync.py` to validate alignment.
 
 ## Project Overview
-
 FrenchVocab is an AI-assisted CLI for building bilingual vocabulary lists, producing LaTeX documents, and exporting Anki decks. It uses a terminal-based Rich UI with arrow-key navigation and supports multiple AI providers (Google Gemini, Anthropic Claude).
 
-## Common Commands
+## Project Structure and Module Organization
+- `FrenchVocab.py` bootstraps the CLI and delegates startup flow to `cli/bootstrap.py`.
+- `cli/` contains menu orchestration, navigation helpers, and bootstrap wiring.
+- `core/` contains reusable workflows (vocab ingestion, translators, Anki export, LaTeX repository helpers).
+- `languages/` contains per-language validators, prompts, templates, and registry configuration.
+- `ui_helper.py` centralizes styled console interactions and messaging helpers.
+- `tests/` is a pytest suite (`test_*.py`) covering parsing, language configs, exporters, and sentence flow.
 
+## Build, Test, and Development Commands
 ```bash
-# Install dependencies (Python 3.11 required)
+# Install dependencies (Python 3.11)
 pip install -r requirements.txt
 
 # Run the CLI
-python FrenchVocab.py --help                     # See all CLI options
-python FrenchVocab.py --language fr              # French mode
-python FrenchVocab.py --language de              # German mode
-python FrenchVocab.py --language fr --provider claude  # Use Claude instead of Gemini
-python FrenchVocab.py --language fr --latex-file ./FrenchVocab.custom.tex  # Custom LaTeX file
-python FrenchVocab.py --language fr --eager-llm  # Initialize provider at startup
+python FrenchVocab.py --help
+python FrenchVocab.py --language fr
+python FrenchVocab.py --language de
+python FrenchVocab.py --language fr --provider claude
+python FrenchVocab.py --language fr --provider gemini
+python FrenchVocab.py --language fr --latex-file ./FrenchVocab.custom.tex
+python FrenchVocab.py --language fr --eager-llm
 
 # Run tests
-pytest                                           # Full test suite
-pytest tests/test_sentence_flow.py              # Single test file
-pytest -k "anki"                                 # Tests matching pattern
+pytest
+pytest tests/test_sentence_flow.py
+pytest -k "anki"
 
-# Quick UI smoke test (menu rendering)
+# Quick UI smoke test
 python -m cli.menu
 
-# Verbose/debug modes
-python FrenchVocab.py --language fr --verbose   # Timing details
-python FrenchVocab.py --esc-debug               # ESC key latency tracing
+# Verbose and debug modes
+python FrenchVocab.py --language fr --verbose
+python FrenchVocab.py --esc-debug
 python FrenchVocab.py --esc-debug --esc-debug-log /tmp/esc_latency.log
 ```
 
 ## Architecture
 
-### Entry Point & Bootstrap
-- `FrenchVocab.py` - CLI entry point with argument parsing; delegates to `cli/bootstrap.py`
-- `cli/bootstrap.py` - Creates `FrenchVocabBuilder` instances, prompts for language selection
-- `cli/menu.py` - Main menu loop orchestration
-- `cli/navigation.py` - Interactive arrow-key menus using Rich Live rendering
+### Entry Point and Bootstrap
+- `FrenchVocab.py` handles argument parsing and startup flow.
+- `cli/bootstrap.py` creates `FrenchVocabBuilder` instances and language selection flow.
+- `core/menu_loop.py` runs the main menu loop; `cli/menu.py` is a compatibility shim.
+- `cli/navigation.py` implements interactive arrow-key menus with Rich live rendering.
 
 ### Shared Modules (root level)
-- `models.py` - `WordEntry` dataclass with normalization utilities
-- `anki_exporter.py` - Anki deck export utilities (genanki wrapper)
-- `latex_repository.py` - Low-level LaTeX parsing helpers used by repositories and translators
+- `models.py` defines the `WordEntry` dataclass and normalization helpers.
+- `anki_exporter.py` contains Anki deck export utilities.
+- `latex_repository.py` contains low-level LaTeX parsing helpers.
 
 ### Core Application (`core/`)
-- `vocab.py` - `FrenchVocabBuilder` class: the main application controller
-- `vocab_repository.py` - LaTeX file parsing/persistence, entry management
-- `word_entry_workflow.py` - `WordEntryWorkflow` class: orchestrates word entry flow from input to save
-- `spelling_checker.py` - `SpellingChecker` class: extracts spelling suggestions from AI responses
-- `translator.py` - `TranslatorCLI` for bidirectional translation workflows
-- `auto_translator.py` - Intelligent translator with language detection
-- `anki_manager.py` - Anki deck export workflows
-- `llm_coordinator.py` - LLM provider lifecycle, streaming queries, usage tracking
-- `file_safety.py` - Atomic file operations with backup/restore
-- `history_logger.py` - Append-only JSONL translation history logging
-- `protocols.py` - Protocol interfaces for structural typing
-- `providers/manager.py` - `ProviderManager`: credential storage (keyring/.env), validation, setup wizard
+- `vocab.py` contains `FrenchVocabBuilder`, the main application controller.
+- `vocab_repository.py` handles LaTeX file parsing, persistence, and entry management.
+- `word_entry_workflow.py` orchestrates word entry from input to save.
+- `spelling_checker.py` extracts spelling suggestions from AI responses.
+- `translator.py` and `auto_translator.py` handle translation workflows.
+- `anki_manager.py` coordinates Anki deck export flows.
+- `llm_coordinator.py` handles provider lifecycle, streaming queries, and usage tracking.
+- `file_safety.py` provides atomic file operations with backup and restore support.
+- `history_logger.py` writes append-only JSONL translation history (default `~/.frenchvocab/history`).
+- `protocols.py` defines protocol interfaces for structural typing.
+- `core/providers/manager.py` manages credential storage, validation, and setup wizard flow.
 
 ### Language System (`languages/`)
-- `base.py` - `LanguageConfig`, `TranslatorConfig`, `VocabTemplate`, `AnkiConfig` dataclasses
-- `french.py`, `german.py` - Per-language configurations (prompts, validators)
-- `latex_templates.py` - Consolidated LaTeX document templates (shared across languages)
-- `anki_shared_styles.py`, `anki_themes.py` - Anki card styling and themes
-- `__init__.py` - Language registry; use `get_language_config(code)` to resolve
+- `base.py` defines `LanguageConfig`, `TranslatorConfig`, `VocabTemplate`, and `AnkiConfig`.
+- `french.py` and `german.py` define per-language prompts and validators.
+- `latex_templates.py` contains shared LaTeX templates.
+- `anki_shared_styles.py` and `anki_themes.py` contain Anki card styling.
+- `__init__.py` registers language configs and resolves via `get_language_config(code)`.
 
 ### UI Layer
-- `ui_helper.py` - `UIHelper` class centralizing Rich console output (panels, tables, menus, prompts)
-- Design follows Anthropic-inspired palette: `#E67E50` (orange), `#ff6b6b` (error), `#51cf66` (success), `#ffd43b` (warning)
+- `ui_helper.py` contains the `UIHelper` class for Rich panels, menus, prompts, and status messages.
+- Keep UI messaging declarative (for example, `self.ui.warning(...)`) and avoid bare `print()` in new code.
 
 ### AI Integration
-- `llm_client.py` - `LLMClient` ABC, `GeminiClient` and `ClaudeClient` implementations (see `MODEL_NAME` constants)
-- `ai_prompts.py` - Shared prompt templates
-- `ai_response_parser.py` - Parse word type, definitions, examples from AI responses
+- `llm_client.py` defines `LLMClient`, `GeminiClient`, and `ClaudeClient`.
+- `ai_prompts.py` contains shared prompt templates.
+- `ai_response_parser.py` parses word type, definitions, and examples from AI responses.
 
-### Data & Utilities
-- `diagnostics/esc_latency.py` - ESC key latency tracing (enabled via `--esc-debug`)
-- `scripts/` - Utility scripts (demo_guided_onboarding.py, merge_tex_vocab.py)
-- `data/history/` - JSONL translation history logs per language (fr_translations.jsonl, de_translations.jsonl)
+### Data and Utilities
+- `diagnostics/esc_latency.py` contains ESC key latency tracing used by `--esc-debug`.
+- `scripts/` contains utility scripts.
+- Runtime history logs default to `~/.frenchvocab/history` (override with `FRENCH_VOCAB_HISTORY_DIR`).
+
+## Coding Style and Naming Conventions
+- Follow PEP 8 with 4-space indentation.
+- Use `snake_case` for functions and variables, `PascalCase` for classes, and descriptive module names.
+- Prefer dataclasses for config objects and use type hints throughout.
+- Use ASCII by default; introduce Unicode only when lexically required (language samples, LaTeX templates).
 
 ## Key Patterns
 
 ### Adding a New Language
-1. Create `languages/<lang>.py` with `LanguageConfig` (see `french.py` as template)
-2. Register in `languages/__init__.py` via the `_CONFIGS` dict
-3. Add LaTeX templates and Anki card templates to the config
+1. Create `languages/<lang>.py` with a `LanguageConfig` (use `french.py` as template).
+2. Register the language in `languages/__init__.py`.
+3. Add language-specific LaTeX and Anki templates in the language config.
 
 ### UI Messaging
-Route all status messages through `UIHelper` methods:
+Route status messaging through `UIHelper` methods:
 ```python
-self.ui.success("Entry saved!")      # Green checkmark
-self.ui.error("Failed", with_panel=True)  # Red panel
-self.ui.warning("Duplicate detected")     # Yellow warning
-self.ui.info("Processing...", accent="dim")  # Dimmed info
+self.ui.success("Entry saved!")
+self.ui.error("Failed", with_panel=True)
+self.ui.warning("Duplicate detected")
+self.ui.info("Processing...", accent="dim")
 self.ui.panel(content, title="Title", border_style="dark_orange")
 ```
 
@@ -109,31 +124,38 @@ choice = self.ui.interactive_menu(
 ```
 
 ### Provider Credential Flow
-1. Auto-load a `.env` file (project root when writable; else `~/.frenchvocab/.env`; override with `FRENCHVOCAB_CONFIG_DIR`)
-2. System keyring (preferred; service: `french_vocab_builder`)
-3. Environment variable (`GEMINI_API_KEY` / `ANTHROPIC_API_KEY`) including values loaded from `.env`
-4. Interactive setup wizard (can persist to keyring or `.env`)
+1. Auto-load `.env` from the project root when writable, otherwise use `~/.frenchvocab/.env`.
+2. Use system keyring when available (service name: `french_vocab_builder`).
+3. Fall back to environment variables (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`).
+4. Use interactive setup wizard when credentials are missing.
 
 ## Environment Variables
+- `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`: API credentials.
+- `FRENCHVOCAB_FORCE_SYNC_LOAD=1`: Force synchronous loading (useful in tests).
+- `FRENCHVOCAB_ESC_SEQUENCE_TIMEOUT`: ESC key sequence timeout in seconds (default: `0.03`).
+- `FRENCHVOCAB_ESC_DEBUG=1`: Enable ESC latency tracing.
+- `FRENCHVOCAB_ESC_DEBUG_LOG`: Custom log path for ESC latency tracing.
+- `FRENCHVOCAB_CONFIG_DIR`: Directory for `.env` when project root is not writable.
+- `FRENCHVOCAB_SKIP_KEYRING=1`: Disable keyring usage (useful for CI).
+- `FRENCHVOCAB_DEBUG_EXPORT=1`: Print export debug details during Anki deck generation.
 
-- `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` - API credentials (or use keyring/`.env`)
-- `FRENCHVOCAB_FORCE_SYNC_LOAD=1` - Force synchronous loading (useful for tests)
-- `FRENCHVOCAB_ESC_SEQUENCE_TIMEOUT` - ESC key sequence timeout in seconds (default: 0.03)
-- `FRENCHVOCAB_ESC_DEBUG=1` - Enable ESC latency tracing (same as `--esc-debug`)
-- `FRENCHVOCAB_ESC_DEBUG_LOG` - Custom log path for ESC latency tracing
-- `FRENCHVOCAB_CONFIG_DIR` - Directory to store `.env` when project dir is not writable
-- `FRENCHVOCAB_SKIP_KEYRING=1` - Skip system keyring usage (forces `.env`/env-only flows; useful for CI)
-- `FRENCHVOCAB_DEBUG_EXPORT=1` - Print export debug info during Anki deck builds
+## Testing Guidelines
+- Tests should mirror target modules (for example, `core/vocab.py` -> `tests/test_sentence_flow.py`).
+- Name new files `test_<feature>.py` and individual cases `test_<behavior>`.
+- Use stubs and fixtures (`tests/_stubs.py`) to avoid real API calls.
+- Keep tests deterministic and run `pytest` before opening a pull request.
 
-## Testing
+## Commit and Pull Request Guidelines
+- Write imperative, present-tense commit subjects near 60 characters.
+- Keep unrelated edits out of the same commit.
+- Ensure each commit compiles and passes tests.
+- Pull requests should summarize behavior changes, include test evidence, and link related issues.
+- Include terminal captures only for user-facing UX changes.
 
-- Tests use stubs for external services (`tests/_stubs.py`) - no real API calls
-- `conftest.py` sets up isolated temp directories for history logging
-- Mock LLM clients via dependency injection in `FrenchVocabBuilder(client=...)`
-- Key test files: `test_file_safety.py` (atomic writes), `test_update_api_key.py` (provider setup)
+## Git Safety Rules
+- NEVER use `git checkout <file>` or restore files without explicit approval.
 
-## Git Guidelines
-
-- Never use `git checkout <file>` or restore files without explicit approval
-- Imperative commit messages, ~60 char limit (e.g., "Add German language support")
-- Each commit should compile and pass tests
+## Security and Configuration Tips
+- Store provider keys in keyring or environment variables; never commit secrets.
+- Avoid checking in generated LaTeX, PDF, or Anki export artifacts.
+- Extend `.gitignore` when new generated outputs are introduced.

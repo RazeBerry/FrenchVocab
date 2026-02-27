@@ -4,8 +4,7 @@ This module handles the complete flow from user input to saved vocabulary entry,
 including duplicate checking, AI querying, spelling correction, and persistence.
 """
 
-import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from ai_response_parser import parse_ai_response_text
@@ -14,6 +13,7 @@ from ui_helper import UIHelper, read_line
 
 from .spelling_checker import SpellingChecker
 from .history_logger import TranslationLogger
+from .text_utils import detect_input_type, sanitize_user_text, translator_title
 
 if TYPE_CHECKING:
     from .vocab_repository import VocabRepository
@@ -37,6 +37,34 @@ class _ParsedEntry:
     examples: List[Tuple[str, str]]
 
 
+@dataclass(frozen=True)
+class WorkflowOptions:
+    max_word_length: int = 1000
+    max_words: Optional[int] = None
+    allow_sentence_punctuation: bool = True
+    route_sentences: bool = True
+    sentence_examples_in_vocab: bool = False
+    entry_command: str = "\\entry"
+
+
+@dataclass(frozen=True)
+class WorkflowCallbacks:
+    provider_label_fn: Callable[[], str] = field(default=lambda: "AI")
+    on_settings: Optional[Callable[[], None]] = None
+    on_entry_saved: Optional[Callable[[str], None]] = None
+    on_post_translation_menu: Optional[Callable[[], None]] = None
+    get_word_input_fn: Optional[Callable[[], str]] = None
+    query_ai_fn: Optional[Callable[[str], str]] = None
+    check_spelling_fn: Optional[Callable[[str, str], Optional[str]]] = None
+    parse_ai_response_fn: Optional[Callable[[str], Tuple[str, List[str], List[Tuple[str, str]]]]] = None
+    check_duplicate_fn: Optional[Callable[[str], Optional[str]]] = None
+    display_parsed_info_fn: Optional[Callable[[str, Any, List[str], List[Tuple[str, str]]], None]] = None
+    display_latex_entry_fn: Optional[Callable[[str], None]] = None
+    is_valid_latex_entry_fn: Optional[Callable[[str], bool]] = None
+    insert_entry_alphabetically_fn: Optional[Callable[[str, str], None]] = None
+    add_word_to_entries_fn: Optional[Callable[[str, str, List[str], List[Tuple[str, str]]], None]] = None
+
+
 class WordEntryWorkflow:
     """Orchestrates the complete word entry flow from input to save.
 
@@ -54,26 +82,8 @@ class WordEntryWorkflow:
         history_logger: Optional[TranslationLogger] = None,
         spelling_checker: Optional[SpellingChecker] = None,
         fr_to_eng_translator: Optional["TranslatorCLI"] = None,
-        max_word_length: int = 1000,
-        max_words: Optional[int] = None,
-        allow_sentence_punctuation: bool = True,
-        route_sentences: bool = True,
-        sentence_examples_in_vocab: bool = False,
-        entry_command: str = "\\entry",
-        provider_label_fn: Optional[Callable[[], str]] = None,
-        on_settings: Optional[Callable[[], None]] = None,
-        on_entry_saved: Optional[Callable[[str], None]] = None,
-        get_word_input_fn: Optional[Callable[[], str]] = None,
-        # Additional callbacks for test compatibility
-        query_ai_fn: Optional[Callable[[str], str]] = None,
-        check_spelling_fn: Optional[Callable[[str, str], Optional[str]]] = None,
-        parse_ai_response_fn: Optional[Callable[[str], Tuple[str, List[str], List[Tuple[str, str]]]]] = None,
-        check_duplicate_fn: Optional[Callable[[str], Optional[str]]] = None,
-        display_parsed_info_fn: Optional[Callable[[str, Any, List[str], List[Tuple[str, str]]], None]] = None,
-        display_latex_entry_fn: Optional[Callable[[str], None]] = None,
-        is_valid_latex_entry_fn: Optional[Callable[[str], bool]] = None,
-        insert_entry_alphabetically_fn: Optional[Callable[[str, str], None]] = None,
-        add_word_to_entries_fn: Optional[Callable[[str, str, List[str], List[Tuple[str, str]]], None]] = None,
+        options: Optional[WorkflowOptions] = None,
+        callbacks: Optional[WorkflowCallbacks] = None,
     ):
         self.vocab_repo = vocab_repo
         self.llm = llm
@@ -82,27 +92,31 @@ class WordEntryWorkflow:
         self.history_logger = history_logger
         self.spelling_checker = spelling_checker or SpellingChecker(ui)
         self.fr_to_eng_translator = fr_to_eng_translator
-        self.max_word_length = max_word_length
-        self.max_words = max_words
-        self.allow_sentence_punctuation = allow_sentence_punctuation
-        self.route_sentences = route_sentences
-        self.sentence_examples_in_vocab = sentence_examples_in_vocab
-        self.entry_command = entry_command
-        self._provider_label_fn = provider_label_fn or (lambda: "AI")
-        self._on_settings = on_settings
-        self._on_entry_saved = on_entry_saved
-        self._get_word_input_fn = get_word_input_fn
+        resolved_options = options or WorkflowOptions()
+        resolved_callbacks = callbacks or WorkflowCallbacks()
 
-        # Callbacks for test compatibility - these override internal implementations
-        self._query_ai_fn = query_ai_fn
-        self._check_spelling_fn = check_spelling_fn
-        self._parse_ai_response_fn = parse_ai_response_fn
-        self._check_duplicate_fn = check_duplicate_fn
-        self._display_parsed_info_fn = display_parsed_info_fn
-        self._display_latex_entry_fn = display_latex_entry_fn
-        self._is_valid_latex_entry_fn = is_valid_latex_entry_fn
-        self._insert_entry_alphabetically_fn = insert_entry_alphabetically_fn
-        self._add_word_to_entries_fn = add_word_to_entries_fn
+        self.max_word_length = resolved_options.max_word_length
+        self.max_words = resolved_options.max_words
+        self.allow_sentence_punctuation = resolved_options.allow_sentence_punctuation
+        self.route_sentences = resolved_options.route_sentences
+        self.sentence_examples_in_vocab = resolved_options.sentence_examples_in_vocab
+        self.entry_command = resolved_options.entry_command
+        self._provider_label_fn = resolved_callbacks.provider_label_fn
+        self._on_settings = resolved_callbacks.on_settings
+        self._on_entry_saved = resolved_callbacks.on_entry_saved
+        self._on_post_translation_menu = resolved_callbacks.on_post_translation_menu
+        self._get_word_input_fn = resolved_callbacks.get_word_input_fn
+
+        # Optional callbacks for tests and adapter layers.
+        self._query_ai_fn = resolved_callbacks.query_ai_fn
+        self._check_spelling_fn = resolved_callbacks.check_spelling_fn
+        self._parse_ai_response_fn = resolved_callbacks.parse_ai_response_fn
+        self._check_duplicate_fn = resolved_callbacks.check_duplicate_fn
+        self._display_parsed_info_fn = resolved_callbacks.display_parsed_info_fn
+        self._display_latex_entry_fn = resolved_callbacks.display_latex_entry_fn
+        self._is_valid_latex_entry_fn = resolved_callbacks.is_valid_latex_entry_fn
+        self._insert_entry_alphabetically_fn = resolved_callbacks.insert_entry_alphabetically_fn
+        self._add_word_to_entries_fn = resolved_callbacks.add_word_to_entries_fn
 
         # Per-run state
         self.duplicate_resolution: Optional[Dict[str, str]] = None
@@ -236,7 +250,7 @@ class WordEntryWorkflow:
         self.duplicate_resolution = None
 
         entry_count = len(self.vocab_repo.word_entries)
-        self.ui.success(f"Entry saved successfully! ({entry_count - 1} {entry_count} entries)")
+        self.ui.success(f"Entry saved successfully! ({entry_count} entries total)")
 
         if self._on_entry_saved:
             self._on_entry_saved(insert_word)
@@ -463,13 +477,7 @@ class WordEntryWorkflow:
 
     @staticmethod
     def _sanitize_input(word: str) -> str:
-        word = unicodedata.normalize("NFC", word)
-        word = word.replace("'", "'").replace("'", "'")
-        zero_width_chars = ("\u00AD", "\u200B", "\u200C", "\u200D", "\u2060", "\ufeff")
-        for ch in zero_width_chars:
-            if ch in word:
-                word = word.replace(ch, "")
-        return word
+        return sanitize_user_text(word)
 
     def _validate_input(self, word: str) -> str:
         if not word:
@@ -496,23 +504,7 @@ class WordEntryWorkflow:
         return self.language_config.input_validator(word, self.allow_sentence_punctuation)
 
     def _detect_input_type(self, text: str) -> str:
-        """Classify input as 'word', 'expression', or 'sentence' using simple heuristics."""
-        if not text:
-            return 'word'
-        t = text.strip()
-        # Newlines strongly indicate sentence text
-        if '\n' in t:
-            return 'sentence'
-        # Sentence-ending punctuation or long length
-        if any(p in t for p in '.!?;:') or len(t) > 120:
-            return 'sentence'
-        # Word count thresholds
-        wc = len(t.split())
-        if wc >= 9:
-            return 'sentence'
-        if wc >= 2:
-            return 'expression'
-        return 'word'
+        return detect_input_type(text)
 
     def _query_ai_with_recovery(self, word: str) -> Optional[str]:
         """Query AI with recovery options on failure."""
@@ -703,18 +695,12 @@ class WordEntryWorkflow:
 
     def _translator_title(self, config: TranslatorConfig) -> str:
         """Get display title for a translator."""
-        title = getattr(config, "ui_title", None)
-        if title:
-            return title
-        source = getattr(config, "source_label", "Source")
-        target = getattr(config, "target_label", "Target")
-        return f"{source}  {target} Translator"
+        return translator_title(config)
 
     def _show_post_translation_menu(self) -> None:
-        """Show quick action menu after successful sentence translation."""
-        # This is a simplified version - the full menu interaction
-        # is handled by the caller when it detects sentence routing
-        pass
+        """Show quick actions after sentence routing."""
+        if self._on_post_translation_menu:
+            self._on_post_translation_menu()
 
     def _handle_merge(
         self,
@@ -796,8 +782,8 @@ class WordEntryWorkflow:
                     latex_file=self.vocab_repo.latex_file,
                     metadata=history_metadata or None,
                 )
-            except Exception:
-                pass  # Errors reported via logger's error handler
+            except Exception as exc:
+                self.ui.warning(f"History logging failed: {exc}")
 
     def _show_quick_actions(self) -> bool:
         """Show quick action menu after successful entry.

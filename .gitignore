@@ -36,3 +36,6 @@ __pycache__/
 # Ignore macOS custom attributes
 .DS_Store
 vocab_builder_config.json
+
+# Runtime translation history (machine-local state)
+data/history/*.jsonl

@@ -125,42 +125,36 @@ class VocabRepository:
 
     def ensure_entries_loaded(self) -> None:
         """Load LaTeX entries on first access to avoid startup penalty."""
-        # Thread-safe fast path using Event (avoids lock for common case)
-        if self._entries_ready.is_set():
-            return
+        while True:
+            with self._entries_lock:
+                if self._entries_loaded:
+                    return
 
-        should_load = False
-        with self._entries_lock:
-            # Re-check under lock
-            if self._entries_ready.is_set():
+                if self._entries_loading:
+                    wait_event = self._entries_ready
+                    should_load = False
+                else:
+                    self._entries_loading = True
+                    self._entries_ready.clear()
+                    should_load = True
+                    wait_event = None
+
+            if should_load:
+                try:
+                    self.load_existing_entries()
+                except Exception:
+                    with self._entries_lock:
+                        self._entries_loaded = False
+                    raise
+                finally:
+                    with self._entries_lock:
+                        self._entries_loading = False
+                        self._entries_ready.set()
                 return
 
-            if self._entries_loading:
-                # Another thread is loading - we'll wait outside the lock
-                pass
-            elif self.word_entries:
-                # Entries already populated (shouldn't happen, but be safe)
-                self._entries_loaded = True
-                self._entries_ready.set()
-                return
-            else:
-                # We're the loading thread
-                self._entries_loading = True
-                should_load = True
-
-        if should_load:
-            try:
-                self.load_existing_entries()
-                self._entries_loaded = True
-            except Exception:
-                self._entries_loaded = False
-                raise
-            finally:
-                self._entries_loading = False
-                self._entries_ready.set()
-        else:
-            # Wait for loading thread to finish (30s timeout for large files)
-            if not self._entries_ready.wait(timeout=30.0):
+            # Wait for the active loading thread to finish and retry.
+            assert wait_event is not None
+            if not wait_event.wait(timeout=30.0):
                 raise TimeoutError("Timed out waiting for vocabulary entries to load")
 
     def load_existing_entries(self) -> None:
@@ -211,7 +205,9 @@ class VocabRepository:
             )
 
         self.entry_count = len(self.word_entries)
-        self._entries_loaded = True
+        with self._entries_lock:
+            self._entries_loaded = True
+            self._entries_ready.set()
 
     def count_entries(self) -> int:
         """Count entries with file stat caching for performance."""

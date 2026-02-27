@@ -248,7 +248,6 @@ class TranslatorCLI:
             panel_content,
             title="Duplicate Found",
             border_style="yellow3",
-            expand=False,
             box_style=box.ROUNDED,
         )
 
@@ -262,7 +261,6 @@ class TranslatorCLI:
         self.ui.panel(
             instructions,
             border_style="dark_orange",
-            expand=False,
             box_style=box.ROUNDED,
         )
 

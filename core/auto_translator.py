@@ -129,7 +129,6 @@ class AutoTranslator:
         self.ui.panel(
             instructions,
             border_style="dark_orange",
-            expand=False,
             box_style=box.ROUNDED,
         )
 
@@ -247,7 +246,6 @@ class AutoTranslator:
             message,
             title="Auto Translator",
             border_style="dark_orange",
-            expand=False,
             box_style=box.ROUNDED,
         )
 
@@ -255,7 +253,6 @@ class AutoTranslator:
             self.ui.panel(
                 f"[bold]Notes:[/bold]\n{result.notes.strip()}",
                 border_style="dim cyan",
-                expand=False,
                 box_style=box.ROUNDED,
             )
 

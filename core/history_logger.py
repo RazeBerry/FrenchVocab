@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import os
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Sequence, Tuple
 
@@ -21,6 +22,11 @@ def _normalize_examples(examples: Iterable[Tuple[str, str]]) -> List[Dict[str, s
 def _ensure_path(path: Path) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def default_history_base_dir() -> Path:
+    """Default history location outside the repository working tree."""
+    return Path(os.path.expanduser("~/.frenchvocab/history"))
 
 
 ErrorHandler = Optional[Callable[[str], None]]

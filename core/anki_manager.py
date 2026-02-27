@@ -62,6 +62,7 @@ class AnkiExportManager:
             self._exported_deck_version,
             self._last_export_metadata,
         ) = self._load_exported_words()
+        self._last_export_path: Optional[Path] = None
 
     # -------------------------------------------------------------------------
     # Properties
@@ -152,7 +153,7 @@ class AnkiExportManager:
         try:
             from core.file_safety import atomic_write_text
             atomic_write_text(path, content, create_backup=False)
-        except Exception:
+        except OSError:
             # Fallback to direct write if atomic write fails
             with path.open('w', encoding='utf-8') as f:
                 f.write(content)
@@ -366,7 +367,7 @@ class AnkiExportManager:
             package.write_to_file(str(temp_path))
 
             # Only perform atomic replace if the temp file was actually created
-            # (test stubs may not create real files)
+            # (some test doubles / mocked writers may not create real files)
             if temp_path.exists():
                 if destination_path.exists():
                     backup_path = destination_path.with_suffix(".apkg.bak")
@@ -379,6 +380,10 @@ class AnkiExportManager:
                         pass  # Best-effort backup
 
                 os.replace(temp_path, destination_path)
+            else:
+                # Non-file writers (commonly used in tests) should still receive
+                # the final destination path without test-only instrumentation.
+                package.write_to_file(str(destination_path))
             return package
 
         except PermissionError as exc:
@@ -409,28 +414,6 @@ class AnkiExportManager:
                     pass
 
         return None
-
-    def _expose_package_for_tests(self, package: Any, deck: Any, destination_path: Path) -> None:
-        # Expose last export for test introspection via class attributes
-        setattr(package.__class__, "last_deck", deck)
-        setattr(package.__class__, "last_written_path", str(destination_path))
-
-        genanki_pkg = getattr(sys.modules.get("genanki"), "Package", None)
-        if genanki_pkg is not None and genanki_pkg is not package.__class__:
-            setattr(genanki_pkg, "last_deck", deck)
-            setattr(genanki_pkg, "last_written_path", str(destination_path))
-
-        if os.getenv("FRENCHVOCAB_DEBUG_EXPORT"):
-            self._ui.debug(
-                "[export_debug_pkg] "
-                f"package_class={package.__class__} "
-                f"sys_package={getattr(sys.modules.get('genanki'), 'Package', None)}"
-            )
-            self._ui.debug(
-                "[export_debug_pkg] "
-                f"class_last_deck={getattr(package.__class__, 'last_deck', None)} "
-                f"class_last_path={getattr(package.__class__, 'last_written_path', None)}"
-            )
 
     def _finalize_export_state(
         self,
@@ -589,7 +572,7 @@ class AnkiExportManager:
         package = self._write_package_atomic(deck, destination_path, export_directory)
         if package is None:
             return
-        self._expose_package_for_tests(package, deck, destination_path)
+        self._last_export_path = destination_path
 
         packaged_count = len(entries_for_export)
         newly_added_words_normalized, newly_added_display = self._finalize_export_state(
@@ -628,7 +611,7 @@ class AnkiExportManager:
         pending = len(in_latex_not_exported)
         extra = len(in_exports_not_latex)
         status_text = f"[bold]Pending exports:[/bold] {pending}  |  [bold]Extra in Anki:[/bold] {extra}"
-        self._ui.panel(status_text, title="Anki Status", border_style="dim dark_orange", expand=False)
+        self._ui.panel(status_text, title="Anki Status", border_style="dim dark_orange")
 
         export_label = self._ui_text("menu.anki_export", f"Export {language_name} words to Anki")
         reconcile_label = self._ui_text(
@@ -684,7 +667,8 @@ class AnkiExportManager:
         except KeyboardInterrupt:
             self._ui.warning("Anki export cancelled.")
             return
-        except Exception:
+        except Exception as exc:
+            self._ui.warning(f"Could not open interactive export menu ({exc}); defaulting to incremental mode.")
             export_mode = "incremental"
 
         selected_words: Optional[Set[str]] = None
@@ -837,7 +821,10 @@ class AnkiExportManager:
                 )
             except KeyboardInterrupt:
                 raise
-            except Exception:
+            except Exception as exc:
+                self._ui.warning(
+                    f"Could not open destination chooser ({exc}); reusing the previous deck destination."
+                )
                 choice = "reuse_previous"
 
             if choice == "reuse_previous":

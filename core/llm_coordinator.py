@@ -55,7 +55,7 @@ def _suppress_stdin_echo():
             termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
             # Flush any buffered input that accumulated during the query
             termios.tcflush(fd, termios.TCIFLUSH)
-    except Exception:
+    except (OSError, ValueError, AttributeError):
         yield
 
 if TYPE_CHECKING:
@@ -220,7 +220,7 @@ class LLMCoordinator:
             if callable(getter):
                 try:
                     label = getter()
-                except Exception:
+                except (RuntimeError, ValueError, TypeError, AttributeError):
                     label = self._client.__class__.__name__
         return label
 

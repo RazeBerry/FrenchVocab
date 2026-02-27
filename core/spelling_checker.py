@@ -93,7 +93,6 @@ class SpellingChecker:
             suggestion_panel,
             title="Spelling Suggestion",
             border_style="yellow",
-            expand=False,
         )
 
         # Ask user to choose immediately (before generating LaTeX)

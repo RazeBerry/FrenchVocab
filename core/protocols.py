@@ -1,7 +1,7 @@
 """Protocol interfaces for core components.
 
 This module defines structural typing contracts (Protocols) to:
-1. Break circular import dependencies between core/ and cli/
+1. Keep menu orchestration decoupled from concrete app classes
 2. Enable duck typing for test doubles
 3. Document the public interface contract
 """
@@ -16,15 +16,15 @@ if TYPE_CHECKING:  # pragma: no cover - for type hints only
 
 
 class VocabAppProtocol(Protocol):
-    """Contract that cli/menu.py depends on.
+    """Contract that menu orchestration depends on.
 
-    This Protocol defines the minimal interface required by main_menu_loop()
-    and other CLI orchestration code. FrenchVocabBuilder implements this
-    protocol implicitly through structural subtyping.
+    This Protocol defines the minimal interface required by
+    ``core.menu_loop.main_menu_loop()`` and related helpers.
+    FrenchVocabBuilder implements this protocol implicitly through structural
+    subtyping.
 
-    Using a Protocol instead of direct imports:
-    - Breaks circular dependency: core/vocab.py imports cli/menu.py,
-      but cli/menu.py only needs this protocol, not the full class
+    Using a Protocol:
+    - Keeps menu loop helpers independent from the concrete builder class
     - Enables testing with lightweight mock objects
     - Documents the public API surface for menu orchestration
     """

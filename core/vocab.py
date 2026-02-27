@@ -7,7 +7,6 @@ import unicodedata
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from pathlib import Path
 from rich.console import Console
-from cli.menu import main_menu_loop
 from anki_exporter import latex_to_anki_format as latex_to_anki_html
 from ai_response_parser import parse_ai_response_text
 import time
@@ -15,12 +14,21 @@ import threading
 from languages import LanguageConfig, TranslatorConfig, default_language_code, get_language_config
 from typing import TYPE_CHECKING
 
-from .history_logger import TranslationLogger
+from .history_logger import TranslationLogger, default_history_base_dir
 from .vocab_repository import VocabRepository, EntryNotFoundError
 from .llm_coordinator import LLMCoordinator
 from .anki_manager import AnkiExportManager
 from .spelling_checker import SpellingChecker
-from .word_entry_workflow import WordEntryWorkflow
+from .word_entry_workflow import WordEntryWorkflow, WorkflowCallbacks, WorkflowOptions
+from .text_utils import detect_input_type as classify_input_type, sanitize_user_text, translator_title
+from .menu_loop import main_menu_loop
+from .session_ui import (
+    build_welcome_message,
+    resolve_welcome_provider_name,
+    show_main_menu,
+    show_post_translation_menu,
+    show_translation_menu,
+)
 from models import normalize_word_key
 from ui_helper import UIHelper, read_line
 from core.providers.manager import (
@@ -47,16 +55,17 @@ class _TestDoubleVocabRepoAdapter:
 
     @property
     def word_entries(self) -> Dict[str, Any]:
-        return getattr(self._builder, "word_entries", {})
+        try:
+            return self._builder.word_entries
+        except RuntimeError:
+            return {}
 
     def ensure_entries_loaded(self) -> None:
         pass  # Test doubles set word_entries directly
 
     def normalize_word(self, word: str) -> str:
-        # Simple normalization for test doubles
-        import unicodedata
-        normalized = unicodedata.normalize("NFD", word.lower())
-        return "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+        # Keep adapter behavior aligned with production normalization.
+        return normalize_word_key(word)
 
     def get_all_latex_entries(self) -> Set[str]:
         return set(self.word_entries.keys())
@@ -70,26 +79,52 @@ class FrenchVocabBuilder:
     language_code: str = DEFAULT_LANGUAGE_CODE
     DEFINITION_PREVIEW_LIMIT = 60
 
-    def __getattribute__(self, name):
-        # Delegate word_entries and normalized_entries to _vocab_repo
-        if name in {"word_entries", "normalized_entries"}:
-            try:
-                vocab_repo = object.__getattribute__(self, "_vocab_repo")
-                vocab_repo.ensure_entries_loaded()
-                return getattr(vocab_repo, name)
-            except AttributeError:
-                # Fallback for test doubles using object.__new__()
-                # Check if the attribute was set directly on the instance (test double pattern)
-                try:
-                    return object.__getattribute__(self, name)
-                except AttributeError:
-                    # Fail explicitly - don't silently create empty dicts
-                    raise RuntimeError(
-                        f"Cannot access {name}: VocabRepository not initialized. "
-                        f"Ensure FrenchVocabBuilder is properly constructed or use "
-                        f"the test double pattern by setting {name} directly on the instance."
-                    )
-        return object.__getattribute__(self, name)
+    @property
+    def word_entries(self) -> Dict[str, Any]:
+        """Vocabulary entries keyed by lower-case token."""
+        repo = getattr(self, "_vocab_repo", None)
+        if repo is not None:
+            repo.ensure_entries_loaded()
+            return repo.word_entries
+        fallback = getattr(self, "_word_entries_fallback", None)
+        if fallback is not None:
+            return fallback
+        raise RuntimeError(
+            "Cannot access word_entries: VocabRepository is not initialized. "
+            "Construct FrenchVocabBuilder normally or set word_entries on test doubles."
+        )
+
+    @word_entries.setter
+    def word_entries(self, value: Dict[str, Any]) -> None:
+        repo = getattr(self, "_vocab_repo", None)
+        if repo is not None:
+            repo.word_entries = value
+            repo.entry_count = len(value)
+            return
+        object.__setattr__(self, "_word_entries_fallback", value)
+
+    @property
+    def normalized_entries(self) -> Dict[str, str]:
+        """Normalized lookup index mapping normalized text to canonical key."""
+        repo = getattr(self, "_vocab_repo", None)
+        if repo is not None:
+            repo.ensure_entries_loaded()
+            return repo.normalized_entries
+        fallback = getattr(self, "_normalized_entries_fallback", None)
+        if fallback is not None:
+            return fallback
+        raise RuntimeError(
+            "Cannot access normalized_entries: VocabRepository is not initialized. "
+            "Construct FrenchVocabBuilder normally or set normalized_entries on test doubles."
+        )
+
+    @normalized_entries.setter
+    def normalized_entries(self, value: Dict[str, str]) -> None:
+        repo = getattr(self, "_vocab_repo", None)
+        if repo is not None:
+            repo.normalized_entries = value
+            return
+        object.__setattr__(self, "_normalized_entries_fallback", value)
 
     def _ensure_anki_manager(self) -> "AnkiExportManager":
         """Return the AnkiExportManager, creating one for test doubles if needed.
@@ -146,49 +181,67 @@ class FrenchVocabBuilder:
         eager_provider: bool = False,
     ):
         init_start = time.time()
+        self._verbose_fallback = bool(verbose)
+        self._configure_language(language=language, language_config=language_config)
+        self._initialize_context()
+        self._configure_file_paths(latex_file)
+        self._initialize_vocab_repository()
+        self._initialize_runtime_flags()
+        self._spelling_checker = SpellingChecker(self.ui)
 
-        # Local import to avoid pulling heavy provider SDKs at module import time.
-        from llm_client import ProviderFactory
+        load_config_start, load_config_end = self._initialize_llm(
+            provider=provider,
+            verbose=verbose,
+            client=client,
+            eager_provider=eager_provider,
+        )
+        self._initialize_anki_and_translators()
+        self._complete_startup(
+            init_start=init_start,
+            load_config_start=load_config_start,
+            load_config_end=load_config_end,
+        )
 
+    def _configure_language(
+        self,
+        *,
+        language: Optional[str],
+        language_config: Optional[LanguageConfig],
+    ) -> None:
         if language and language_config:
             raise ValueError("Provide either language or language_config, not both.")
 
-        if language_config is None:
+        resolved_config = language_config
+        if resolved_config is None:
             resolved_language = language or self.DEFAULT_LANGUAGE_CODE
-            language_config = get_language_config(resolved_language)
+            resolved_config = get_language_config(resolved_language)
 
-        self.language_config = language_config
-        self.language_code = language_config.code
-        self.vocab_template = language_config.vocab
+        self.language_config = resolved_config
+        self.language_code = resolved_config.code
+        self.vocab_template = resolved_config.vocab
         entry_command = self.vocab_template.entry_command or "\\entry"
-        if not entry_command.startswith("\\"):
-            entry_command = f"\\{entry_command}"
-        self.entry_command = entry_command
+        self.entry_command = entry_command if entry_command.startswith("\\") else f"\\{entry_command}"
 
+    def _initialize_context(self) -> None:
         self.console = Console()
-        self.ui = UIHelper(self.console)  # Initialize UIHelper
-        # Determine project root (one level above this module)
+        self.ui = UIHelper(self.console)
         module_dir = Path(__file__).resolve().parent
-        project_root = module_dir.parent
-        self.project_root = project_root
+        self.project_root = module_dir.parent
         self.provider_manager = ProviderManager(self.ui, self.project_root)
 
+    def _configure_file_paths(self, latex_file: Optional[str]) -> None:
         self.default_vocab_filename = self.language_config.vocab_filename
         if latex_file is None:
-            self.latex_file = project_root / self.default_vocab_filename
-            self.eng_to_fr_latex_file = project_root / self.language_config.eng_to_target_filename
-            self.fr_to_eng_latex_file = project_root / self.language_config.target_to_eng_filename
+            self.latex_file = self.project_root / self.default_vocab_filename
+            base_dir = self.project_root
         else:
             self.latex_file = Path(latex_file)
-            # Assume the Eng->Fr file lives alongside the main one if a path is given
             base_dir = self.latex_file.parent
-            self.eng_to_fr_latex_file = base_dir / self.language_config.eng_to_target_filename
-            self.fr_to_eng_latex_file = base_dir / self.language_config.target_to_eng_filename
+        self.eng_to_fr_latex_file = base_dir / self.language_config.eng_to_target_filename
+        self.fr_to_eng_latex_file = base_dir / self.language_config.target_to_eng_filename
 
-        # Create vocab repository (handles LaTeX persistence)
-        # Note: We create a temporary one first to check/create the file
+    def _initialize_vocab_repository(self) -> None:
         if not self.latex_file.exists():
-            # Create file before initializing repository
             temp_repo = VocabRepository(
                 latex_file=self.latex_file,
                 entry_command=self.entry_command,
@@ -198,7 +251,6 @@ class FrenchVocabBuilder:
             )
             temp_repo.create_initial_tex_file()
 
-        # Initialize the main vocab repository
         self._vocab_repo = VocabRepository(
             latex_file=self.latex_file,
             entry_command=self.entry_command,
@@ -206,43 +258,43 @@ class FrenchVocabBuilder:
             ui=self.ui,
             vocab_template=self.vocab_template,
         )
-
-        # Backward compatibility: expose repo directly
         self.repo = self._vocab_repo.repo
 
-        # Allow longer phrases before triggering the length check
-        self.max_word_length = 1000  # default max characters (overridable)
-        self.max_words: Optional[int] = None  # unlimited by default; overridable
-        self.allow_sentence_punctuation: bool = True  # allow punctuation by default
-        self.route_sentences: bool = True  # default: route sentences to Fr->En translator
-        self.sentence_examples_in_vocab: bool = False  # default: omit examples for sentences
+    def _initialize_runtime_flags(self) -> None:
+        self.max_word_length = 1000
+        self.max_words: Optional[int] = None
+        self.allow_sentence_punctuation: bool = True
+        self.route_sentences: bool = True
+        self.sentence_examples_in_vocab: bool = False
         self.config_file = "vocab_builder_config.json"
         self._config_data: Dict[str, Any] = {}
         self.history_logger: Optional[TranslationLogger] = None
         self._warmup_threads: List[threading.Thread] = []
         self._last_warmup_error: Optional[str] = None
-        
-        # Apply optional runtime settings (env/config overrides)
+
         self._load_input_limits()
         self.history_logger = self._create_history_logger()
 
-        # Initialize translator attribute
         self.eng_to_fr_translator: Optional["TranslatorCLI"] = None
         self.fr_to_eng_translator: Optional["TranslatorCLI"] = None
         self.auto_translator: Optional["AutoTranslator"] = None
-        self.duplicate_resolution: Optional[Dict[str, str]] = None  # stores {'mode': 'merge'|'force', 'existing': <word>}
+        self.duplicate_resolution: Optional[Dict[str, str]] = None
         self.enable_auto_translator: bool = self._should_enable_auto_translator()
 
-        # Create spelling checker (used by word entry workflow)
-        self._spelling_checker = SpellingChecker(self.ui)
+    def _initialize_llm(
+        self,
+        *,
+        provider: Optional[str],
+        verbose: bool,
+        client: Optional["GeminiClient"],
+        eager_provider: bool,
+    ) -> tuple[float, float]:
+        from llm_client import ProviderFactory
 
         self.eager_provider = eager_provider or (provider is not None)
-
-        # Determine provider early and set verbosity before key bootstrapping
         requested_provider = provider or ProviderFactory.default_provider()
         provider_metadata: ProviderMetadata = self.provider_manager.get_metadata(requested_provider)
 
-        # Create LLM coordinator (handles provider lifecycle, queries, usage tracking)
         load_config_start = time.time()
         self._llm = LLMCoordinator(
             ui=self.ui,
@@ -252,31 +304,30 @@ class FrenchVocabBuilder:
             client=client,
             eager=self.eager_provider,
         )
-        # Register callback to clear translators when entering degraded mode
         self._llm.set_degraded_mode_callback(self._on_llm_degraded)
-        # Register callback to initialize translators when client becomes ready
         self._llm.set_client_ready_callback(self._init_translators)
         load_config_end = time.time()
+        return load_config_start, load_config_end
 
-        # Defer LaTeX parsing until first use to reduce startup time for large libraries.
-
-        # Create Anki export manager (handles export workflows, tracking)
-        exported_words_file = self._resolve_exported_words_path(project_root, self.latex_file.parent)
+    def _initialize_anki_and_translators(self) -> None:
+        exported_words_file = self._resolve_exported_words_path(self.project_root, self.latex_file.parent)
         self._anki = AnkiExportManager(
             ui=self.ui,
             language_config=self.language_config,
             vocab_repo=self._vocab_repo,
             exported_words_file=exported_words_file,
-            project_root=project_root,
+            project_root=self.project_root,
         )
-        # entry_count is now a property that delegates to _vocab_repo
-        
-        # Initialize translators based on current client availability
         self._init_translators()
 
-        # Kick off background warm-up tasks (LaTeX parse/history) in parallel with UI readiness.
+    def _complete_startup(
+        self,
+        *,
+        init_start: float,
+        load_config_start: float,
+        load_config_end: float,
+    ) -> None:
         if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("FRENCHVOCAB_FORCE_SYNC_LOAD"):
-            # Tests expect entries to be immediately available.
             self._ensure_entries_loaded()
         else:
             self._start_warmup_tasks()
@@ -379,11 +430,17 @@ class FrenchVocabBuilder:
     @property
     def verbose(self) -> bool:
         """Whether verbose output is enabled (delegated to LLMCoordinator)."""
-        return self._llm.verbose
+        llm = getattr(self, "_llm", None)
+        if llm is not None:
+            return llm.verbose
+        return bool(getattr(self, "_verbose_fallback", False))
 
     @verbose.setter
     def verbose(self, value: bool):
-        self._llm.verbose = value
+        self._verbose_fallback = bool(value)
+        llm = getattr(self, "_llm", None)
+        if llm is not None:
+            llm.verbose = bool(value)
 
     @property
     def session_usage(self) -> Dict[str, int]:
@@ -562,12 +619,7 @@ class FrenchVocabBuilder:
         return strings.get(key, fallback)
 
     def _translator_title(self, config: TranslatorConfig) -> str:
-        title = getattr(config, "ui_title", None)
-        if title:
-            return title
-        source = getattr(config, "source_label", "Source")
-        target = getattr(config, "target_label", "Target")
-        return f"{source} → {target} Translator"
+        return translator_title(config)
 
     def _resolve_exported_words_path(self, project_root: Path, target_dir: Path) -> Path:
         """Resolve the exported words tracker, preferring the LaTeX file's directory."""
@@ -604,23 +656,8 @@ class FrenchVocabBuilder:
         return entry_cmd
 
     def detect_input_type(self, text: str) -> str:
-        """Classify input as 'word', 'expression', or 'sentence' using simple heuristics."""
-        if not text:
-            return 'word'
-        t = text.strip()
-        # Newlines strongly indicate sentence text
-        if '\n' in t:
-            return 'sentence'
-        # Sentence-ending punctuation or long length
-        if any(p in t for p in '.!?;:') or len(t) > 120:
-            return 'sentence'
-        # Word count thresholds
-        wc = len(t.split())
-        if wc >= 9:
-            return 'sentence'
-        if wc >= 2:
-            return 'expression'
-        return 'word'
+        """Classify input as word/expression/sentence."""
+        return classify_input_type(text)
 
     def create_initial_tex_file(self):
         try:
@@ -682,7 +719,9 @@ class FrenchVocabBuilder:
                 return
             with cfg_path.open("r", encoding="utf-8") as f:
                 data = json.load(f)
-        except Exception:
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            if self.verbose:
+                self.ui.debug(f"Skipping config load from {self.config_file}: {exc}")
             return
 
         self._config_data = data if isinstance(data, dict) else {}
@@ -783,7 +822,7 @@ class FrenchVocabBuilder:
                 if not base_dir.is_absolute():
                     base_dir = (self.project_root / base_dir).resolve()
             else:
-                base_dir = self.project_root / "data" / "history"
+                base_dir = default_history_base_dir()
 
         file_pattern = config_section.get("file_pattern", "{language}_translations.jsonl")
 
@@ -798,7 +837,7 @@ class FrenchVocabBuilder:
     def _history_log_error(self, message: str) -> None:
         try:
             self.ui.warning(message)
-        except Exception as e:
+        except (RuntimeError, OSError, AttributeError) as e:
             # Fallback: print to stderr if UI fails
             import sys
             print(f"WARNING: {message}", file=sys.stderr)
@@ -834,9 +873,8 @@ class FrenchVocabBuilder:
                 latex_file=self.latex_file,
                 metadata=metadata,
             )
-        except Exception:
-            # Errors are reported via the logger's error handler
-            pass
+        except Exception as exc:
+            self._history_log_error(f"Failed to write vocab history: {exc}")
 
     def _log_merge_history(
         self,
@@ -862,8 +900,8 @@ class FrenchVocabBuilder:
                 latex_file=self.latex_file,
                 normalized_key=self.normalize_word(existing_word),
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            self._history_log_error(f"Failed to write merge history: {exc}")
 
 
 
@@ -899,7 +937,7 @@ class FrenchVocabBuilder:
             self._vocab_repo.load_existing_entries()
             return
         # Fallback for test doubles - this path should rarely be hit
-        pass
+        return
 
     def normalize_word(self, word: str) -> str:
         """Normalize a given word by converting it to lowercase and removing accents."""
@@ -1013,160 +1051,31 @@ class FrenchVocabBuilder:
         self.display_parsed_info(entry['word'], [entry['type']], defs, exs)
 
     
-    def welcome_screen(self):
-        # Alphabetize entries on launch to ensure consistent ordering.
-        # This also fixes any unsorted state from previous Ctrl+C exits.
+    def _startup_alphabetize_best_effort(self) -> None:
         try:
             self.alphabetize_entries(silent=True)
-        except Exception:
-            pass  # Non-critical; continue even if alphabetization fails
+        except (OSError, ValueError, RuntimeError) as exc:
+            if self.verbose:
+                self.ui.debug(f"Startup alphabetization skipped: {exc}")
 
-        # Determine provider name using state machine
-        from core.llm_coordinator import InitState
-        if self._llm.init_state == InitState.IN_PROGRESS:
-            # Give background init a moment to settle so the welcome screen doesn't
-            # get stuck showing "initializing" when no credentials are present.
-            self._llm.await_init(timeout=0.2)
-        state = self._llm.init_state
+    def _resolve_welcome_provider_name(self) -> str:
+        return resolve_welcome_provider_name(self)
 
-        provider_name = self.provider_metadata.display_name if hasattr(self, "provider_metadata") else "Unknown"
-        if self.client is not None:
-            label_getter = getattr(self.client, "model_label", None)
-            if callable(label_getter):
-                try:
-                    provider_name = label_getter()
-                except Exception:
-                    provider_name = self.client.__class__.__name__
-            elif isinstance(self.client, GeminiClient):
-                provider_name = f"Google Gemini ({self.client.MODEL_NAME})"
-        else:
-            # Use state machine for clean status
-            if state == InitState.IN_PROGRESS:
-                provider_name = f"{provider_name} (initializing)"
-            elif state == InitState.DEFERRED:
-                provider_name = f"{provider_name} (init deferred)"
-            else:
-                provider_name = f"{provider_name} (not configured)"
+    def _build_welcome_message(self, provider_name: str) -> tuple[str, str]:
+        return build_welcome_message(self, provider_name)
 
-        language_name = self.language_config.display_name
-        app_title = self._ui_text("app.title", f"{language_name} Vocabulary LaTeX Builder")
-
-        self.ui.panel(
-            f"[bold #E67E50]Welcome to the {app_title}![/bold #E67E50]\n\n"
-            f"This application helps you build a LaTeX document for {language_name} vocabulary.\n"
-            f"You can input {language_name} words, and the AI will provide definitions and examples.\n\n"
-            f"[bold green]Your current vocabulary library contains {self.entry_count} words.[/bold green]\n"
-            f"[bold cyan]Using LLM provider: {provider_name}[/bold cyan]\n"
-            f"[bold magenta]Active language: {language_name}[/bold magenta]\n\n"
-            f"[italic cyan]Version 2.1[/italic cyan]\n"
-            f"[dim]GitHub: https://github.com/RazeBerry/FrenchVocab/tree/main[/dim]",
-            title=self._ui_text("app.panel_title", f"{language_name} Vocab Builder"),
-            border_style="dark_orange"
-        )
+    def welcome_screen(self):
+        self._startup_alphabetize_best_effort()
+        provider_name = self._resolve_welcome_provider_name()
+        message, panel_title = self._build_welcome_message(provider_name)
+        self.ui.panel(message, title=panel_title, border_style="dark_orange")
 
     def show_menu(self):
-        eng_fr_count = 0
-        if self.eng_to_fr_translator:
-            eng_fr_count = self.eng_to_fr_translator.entry_count
-
-        fr_eng_count = 0
-        if self.fr_to_eng_translator:
-            fr_eng_count = self.fr_to_eng_translator.entry_count
-
-        language_name = self.language_config.display_name
-
-        # Display status summary panel above menu for reduced cognitive load
-        # Use the state machine for clean, unambiguous status
-        from core.llm_coordinator import InitState
-        if self._llm.init_state == InitState.IN_PROGRESS:
-            self._llm.await_init(timeout=0.2)
-        state = self._llm.init_state
-
-        if state == InitState.READY:
-            provider_status = "✓ Connected"
-            provider_color = "green"
-        elif state == InitState.IN_PROGRESS:
-            provider_status = "⏳ Initializing"
-            provider_color = "yellow"
-        elif state == InitState.DEFERRED:
-            provider_status = "⏳ Deferred"
-            provider_color = "yellow"
-        else:  # FAILED or NOT_STARTED
-            provider_status = "⚠ Unavailable"
-            provider_color = "yellow"
-
-        total_translation_pairs = eng_fr_count + fr_eng_count
-        status_text = (
-            f"[bold]Library:[/bold] {self.entry_count} vocab words  |  "
-            f"[bold]Translations:[/bold] {total_translation_pairs} pairs  |  "
-            f"[bold]AI:[/bold] [{provider_color}]{provider_status}[/{provider_color}]"
-        )
-        self.ui.panel(status_text, title="Status", border_style="dim dark_orange", expand=False)
-
-        # Clean, action-focused menu items without inline metadata
-        add_word_label = self._ui_text("menu.add_word", f"Add {language_name} word")
-        display_all_label = self._ui_text("menu.display_all", f"Display all {language_name} words")
-
-        options = [
-            ("add", add_word_label),
-            ("translate", "Translate text"),
-            ("anki_tools", "Anki tools"),
-            ("display_vocab", display_all_label),
-            ("settings", "Settings & Configuration"),
-            ("exit", "[bold yellow]Exit[/bold yellow]"),
-        ]
-
-        try:
-            return self.ui.interactive_menu(
-                "Main Menu",
-                options,
-                "[↑↓] Navigate • [Enter] Select • [Esc] Exit",
-            )
-        except KeyboardInterrupt:
-            return "exit"
+        return show_main_menu(self)
 
     def show_translation_menu(self) -> str:
         """Display translation direction submenu."""
-        eng_fr_count = 0
-        if self.eng_to_fr_translator:
-            eng_fr_count = self.eng_to_fr_translator.entry_count
-
-        fr_eng_count = 0
-        if self.fr_to_eng_translator:
-            fr_eng_count = self.fr_to_eng_translator.entry_count
-
-        eng_to_cfg = self.language_config.eng_to_target
-        target_to_cfg = self.language_config.target_to_eng
-
-        # Show translation stats in a clean status panel
-        status_text = (
-            f"[bold]{target_to_cfg.source_label} → {target_to_cfg.target_label}:[/bold] {fr_eng_count} pairs  |  "
-            f"[bold]{eng_to_cfg.source_label} → {eng_to_cfg.target_label}:[/bold] {eng_fr_count} pairs"
-        )
-        self.ui.panel(status_text, title="Translation Status", border_style="dim dark_orange", expand=False)
-
-        options = []
-        if self.auto_translator:
-            options.append(("auto", f"Intelligent ({target_to_cfg.source_label} ↔ {eng_to_cfg.source_label})"))
-
-        # Clean menu items focused on the action choice
-        options.extend(
-            [
-                ("target_to_eng", f"{target_to_cfg.source_label} → {target_to_cfg.target_label}"),
-                ("eng_to_target", f"{eng_to_cfg.source_label} → {eng_to_cfg.target_label}"),
-                ("back", "Back to main menu"),
-            ]
-        )
-
-        try:
-            return self.ui.interactive_menu(
-                "Translation Direction",
-                options,
-                "[↑↓] Navigate • [Enter] Select • [Esc] Go back",
-                show_keys=False,
-            )
-        except KeyboardInterrupt:
-            return "back"
+        return show_translation_menu(self)
 
     def show_anki_menu(self) -> str:
         """Display Anki submenu (delegated to AnkiExportManager)."""
@@ -1202,18 +1111,7 @@ class FrenchVocabBuilder:
 
     @staticmethod
     def _sanitize_word_input(text: str) -> str:
-        word = text.strip()
-
-        # Normalize common typography quirks before validation
-        word = unicodedata.normalize("NFC", word)
-        word = word.replace("’", "'").replace("‘", "'")
-
-        zero_width_chars = ("\u00AD", "\u200B", "\u200C", "\u200D", "\u2060", "\ufeff")
-        for ch in zero_width_chars:
-            if ch in word:
-                word = word.replace(ch, "")
-
-        return word
+        return sanitize_user_text(text)
 
     def _validate_word_input(self, word: str) -> bool:
         if not word:
@@ -1334,8 +1232,9 @@ class FrenchVocabBuilder:
         # Best-effort alphabetization on clean exit
         try:
             self.alphabetize_entries(silent=True)
-        except Exception:
-            pass  # Non-critical; proceed with exit
+        except (OSError, ValueError, RuntimeError) as exc:
+            if self.verbose:
+                self.ui.debug(f"Exit alphabetization skipped: {exc}")
 
         language_name = self.language_config.display_name
         app_title = self._ui_text("app.title", f"{language_name} Vocabulary LaTeX Builder")
@@ -1363,7 +1262,7 @@ class FrenchVocabBuilder:
     def _provider_metadata_or_none(self) -> Optional[ProviderMetadata]:
         try:
             return self.provider_metadata
-        except Exception:
+        except (AttributeError, RuntimeError):
             return None
 
     def _is_keyring_enabled(self) -> bool:
@@ -1374,7 +1273,7 @@ class FrenchVocabBuilder:
     def _keyring_get_password_best_effort(service: str, username: str) -> Optional[str]:
         try:
             import keyring  # type: ignore[import]
-        except Exception:
+        except ImportError:
             return None
 
         try:
@@ -1528,24 +1427,19 @@ class FrenchVocabBuilder:
         """
         while True:
             # Create workflow with current state
-            workflow = WordEntryWorkflow(
-                vocab_repo=self._vocab_repo,
-                llm=self._llm,
-                ui=self.ui,
-                language_config=self.language_config,
-                history_logger=self.history_logger,
-                spelling_checker=self._spelling_checker,
-                fr_to_eng_translator=self.fr_to_eng_translator,
+            workflow_options = WorkflowOptions(
                 max_word_length=self.max_word_length,
                 max_words=self.max_words,
                 allow_sentence_punctuation=self.allow_sentence_punctuation,
                 route_sentences=self.route_sentences,
                 sentence_examples_in_vocab=self.sentence_examples_in_vocab,
                 entry_command=self.entry_command,
+            )
+            workflow_callbacks = WorkflowCallbacks(
                 provider_label_fn=self._provider_label,
                 on_settings=self.show_settings_screen,
+                on_post_translation_menu=self._show_post_translation_menu,
                 get_word_input_fn=self.get_word_input,
-                # Pass builder methods as callbacks for test compatibility
                 query_ai_fn=self.query_ai,
                 check_spelling_fn=self.check_spelling,
                 parse_ai_response_fn=self.parse_ai_response,
@@ -1555,6 +1449,17 @@ class FrenchVocabBuilder:
                 is_valid_latex_entry_fn=self.is_valid_latex_entry,
                 insert_entry_alphabetically_fn=self.insert_entry_alphabetically,
                 add_word_to_entries_fn=self.add_word_to_entries,
+            )
+            workflow = WordEntryWorkflow(
+                vocab_repo=self._vocab_repo,
+                llm=self._llm,
+                ui=self.ui,
+                language_config=self.language_config,
+                history_logger=self.history_logger,
+                spelling_checker=self._spelling_checker,
+                fr_to_eng_translator=self.fr_to_eng_translator,
+                options=workflow_options,
+                callbacks=workflow_callbacks,
             )
 
             # Run the workflow
@@ -1597,37 +1502,7 @@ class FrenchVocabBuilder:
             return None
 
     def _show_post_translation_menu(self) -> None:
-        """Show quick action menu after successful sentence translation."""
-        try:
-            quick_action = self.ui.interactive_menu(
-                "What's next?",
-                [
-                    ("translate", "Translate another sentence"),
-                    ("add", "Add a vocabulary word"),
-                    ("menu", "Return to main menu"),
-                ],
-                "Press Esc to return to main menu",
-            )
-
-            if quick_action == "translate":
-                # Go to translation menu
-                translation_choice = self.show_translation_menu()
-                if translation_choice == "auto" and self.auto_translator:
-                    if self.ensure_llm_ready():
-                        self.auto_translator.run()
-                elif translation_choice == "eng_to_target" and self.eng_to_fr_translator:
-                    if self.ensure_llm_ready():
-                        self.eng_to_fr_translator.run()
-                elif translation_choice == "target_to_eng" and self.fr_to_eng_translator:
-                    if self.ensure_llm_ready():
-                        self.fr_to_eng_translator.run()
-            elif quick_action == "add":
-                self.handle_new_word_entry()
-            # If "menu" selected, just return normally
-
-        except KeyboardInterrupt:
-            # User pressed Esc - return to main menu
-            pass
+        show_post_translation_menu(self)
 
     def create_unique_variant(self, base_word: str) -> str:
         """Create a unique variant label for a duplicate word using hyphenated suffixes."""

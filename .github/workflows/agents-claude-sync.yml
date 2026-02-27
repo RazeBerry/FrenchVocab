@@ -1,0 +1,24 @@
+name: Enforce AGENTS and CLAUDE Sync
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  docs-sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure AGENTS.md and CLAUDE.md are identical
+        run: |
+          if cmp -s AGENTS.md CLAUDE.md; then
+            echo "AGENTS.md and CLAUDE.md are aligned."
+            exit 0
+          fi
+
+          echo "::error::AGENTS.md and CLAUDE.md are out of sync. Keep them identical in the same PR."
+          diff -u AGENTS.md CLAUDE.md || true
+          exit 1

@@ -99,6 +99,23 @@ def test_prepare_provider_reads_env_file(tmp_path, monkeypatch):
     monkeypatch.delenv(metadata.env_var, raising=False)
 
 
+def test_resolve_api_key_handles_missing_keyring_module(tmp_path, monkeypatch):
+    manager, ui = _make_manager(tmp_path)
+    metadata = _get_provider_metadata("gemini")
+    monkeypatch.delenv(metadata.env_var, raising=False)
+
+    def _missing_keyring(*_args, **_kwargs):
+        raise ModuleNotFoundError("No module named 'keyring'")
+
+    monkeypatch.setattr(manager_module, "get_password", _missing_keyring)
+
+    api_key, source = manager._resolve_api_key(metadata)
+
+    assert api_key is None
+    assert source is None
+    assert any("Error accessing system keyring" in msg for msg in ui.messages["error"])
+
+
 def test_store_api_key_respects_config_dir_env(tmp_path, monkeypatch):
     cfg_dir = tmp_path / "cfg"
     monkeypatch.setenv("FRENCHVOCAB_CONFIG_DIR", str(cfg_dir))
