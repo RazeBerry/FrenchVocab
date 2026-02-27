@@ -170,7 +170,6 @@ class UIHelper:
     
     def __init__(self, console: Optional[Console] = None):
         self.console = console or Console()
-        self._progress_stack = []  # Reserved for future progress integrations
         self._message_indent = 2  # Consistent gutter for inline status text
     
     # ========== Basic Message Methods ==========
@@ -443,15 +442,6 @@ class UIHelper:
     
     # ========== Utility Methods ==========
     
-    def clear_line(self) -> None:
-        """Clear the current line"""
-        self.console.print("\r", end="")
-    
-    def input_with_style(self, prompt: str, style: str = "bold cyan") -> str:
-        """Get input with styled prompt"""
-        self.console.print(f"[{style}]{prompt}[/]", end="")
-        return read_line()
-
     def prompt(
         self,
         prompt: str = "",

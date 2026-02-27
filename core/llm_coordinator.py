@@ -113,9 +113,8 @@ class LLMCoordinator:
         if client:
             self._init_event.set()  # Already initialized
 
-        # Background initialization state (legacy, kept for property compatibility)
+        # Background initialization state
         self._llm_thread: Optional[threading.Thread] = None
-        self._llm_init_error: Optional[Exception] = None
 
         # Session usage tracking
         self._session_usage: Dict[str, int] = {
@@ -327,7 +326,6 @@ class LLMCoordinator:
                 # _initialize_client sets state to READY on success
                 self._initialize_client(announce=False)
             except Exception as exc:  # pragma: no cover - defensive
-                self._llm_init_error = exc
                 with self._state_lock:
                     self._init_state = InitState.FAILED
                     self._api_error_reason = str(exc)
@@ -336,7 +334,6 @@ class LLMCoordinator:
                 self._init_event.set()
                 self._llm_thread = None
 
-        self._llm_init_error = None
         self._llm_thread = threading.Thread(target=_worker, name="llm-init", daemon=True)
         self._llm_thread.start()
 
@@ -351,13 +348,6 @@ class LLMCoordinator:
         """
         self._init_event.wait(timeout=timeout)
         return self.init_state == InitState.READY
-
-    def await_background_init(self, timeout: float = 5.0) -> bool:
-        """Wait for background init to finish; return True if client available.
-
-        DEPRECATED: Use await_init() instead for cleaner semantics.
-        """
-        return self.await_init(timeout=timeout)
 
     # -------------------------------------------------------------------------
     # Degraded Mode

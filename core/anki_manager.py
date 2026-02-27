@@ -54,7 +54,6 @@ class AnkiExportManager:
         self._language_config = language_config
         self._vocab_repo = vocab_repo
         self._exported_words_file = exported_words_file
-        self._project_root = project_root
 
         # Load exported words state
         (
@@ -62,7 +61,6 @@ class AnkiExportManager:
             self._exported_deck_version,
             self._last_export_metadata,
         ) = self._load_exported_words()
-        self._last_export_path: Optional[Path] = None
 
     # -------------------------------------------------------------------------
     # Properties
@@ -572,7 +570,6 @@ class AnkiExportManager:
         package = self._write_package_atomic(deck, destination_path, export_directory)
         if package is None:
             return
-        self._last_export_path = destination_path
 
         packaged_count = len(entries_for_export)
         newly_added_words_normalized, newly_added_display = self._finalize_export_state(

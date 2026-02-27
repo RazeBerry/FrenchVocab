@@ -74,7 +74,6 @@ class _TestDoubleVocabRepoAdapter:
 class FrenchVocabBuilder:
     DEFAULT_LANGUAGE_CONFIG = get_language_config(None)
     DEFAULT_LANGUAGE_CODE = default_language_code()
-    DEFAULT_FILENAME = DEFAULT_LANGUAGE_CONFIG.vocab_filename
     language_config: LanguageConfig = DEFAULT_LANGUAGE_CONFIG
     language_code: str = DEFAULT_LANGUAGE_CODE
     DEFINITION_PREVIEW_LIMIT = 60
@@ -270,7 +269,6 @@ class FrenchVocabBuilder:
         self._config_data: Dict[str, Any] = {}
         self.history_logger: Optional[TranslationLogger] = None
         self._warmup_threads: List[threading.Thread] = []
-        self._last_warmup_error: Optional[str] = None
 
         self._load_input_limits()
         self.history_logger = self._create_history_logger()
@@ -593,7 +591,8 @@ class FrenchVocabBuilder:
         try:
             fn()
         except Exception as exc:  # pragma: no cover - best-effort telemetry
-            self._last_warmup_error = f"{label}: {exc}"
+            if self.verbose:
+                self.ui.debug(f"Warm-up task failed [{label}]: {exc}")
 
     def _start_warmup_tasks(self) -> None:
         """Run non-critical startup tasks in parallel (e.g., LaTeX parse)."""
@@ -648,12 +647,6 @@ class FrenchVocabBuilder:
                 return legacy_path
 
         return candidate
-
-    def _entry_command(self) -> str:
-        entry_cmd = getattr(self, "entry_command", self.DEFAULT_LANGUAGE_CONFIG.vocab.entry_command)
-        if not entry_cmd.startswith('\\'):
-            entry_cmd = f"\\{entry_cmd}"
-        return entry_cmd
 
     def detect_input_type(self, text: str) -> str:
         """Classify input as word/expression/sentence."""
@@ -847,35 +840,6 @@ class FrenchVocabBuilder:
         """Human-readable provider label (delegated to LLMCoordinator)."""
         return self._llm.provider_label
 
-    def _log_vocab_history(
-        self,
-        *,
-        action: str,
-        original_text: Optional[str],
-        saved_word: str,
-        word_type: str,
-        definitions: List[str],
-        examples: List[Tuple[str, str]],
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        if not self.history_logger or not self.history_logger.enabled:
-            return
-        try:
-            self.history_logger.log_vocab_entry(
-                action=action,
-                word=saved_word,
-                word_type=word_type,
-                definitions=definitions,
-                examples=examples,
-                source_text=original_text,
-                normalized_key=self.normalize_word(saved_word),
-                provider=self._provider_label(),
-                latex_file=self.latex_file,
-                metadata=metadata,
-            )
-        except Exception as exc:
-            self._history_log_error(f"Failed to write vocab history: {exc}")
-
     def _log_merge_history(
         self,
         *,
@@ -902,11 +866,6 @@ class FrenchVocabBuilder:
             )
         except Exception as exc:
             self._history_log_error(f"Failed to write merge history: {exc}")
-
-
-
-    def get_llm_client(self):
-        return self.client
 
     def load_exported_words(self) -> Tuple[Set[str], Optional[str], Optional[Dict[str, Any]]]:
         """Load exported words (delegated to AnkiExportManager)."""
@@ -974,61 +933,6 @@ class FrenchVocabBuilder:
     def check_duplicate(self, word: str) -> Optional[str]:
         """Check if a word already exists (returns existing key if duplicate)."""
         return self._vocab_repo.check_duplicate(word)
-
-    def handle_duplicate(self, word: str, existing_word: str) -> bool:
-        # Use the actual key from normalized_entries for consistency
-        normalized_word = self.normalize_word(word)
-        actual_existing_word = self.normalized_entries.get(normalized_word, existing_word) # Get the stored version
-
-        warning_text = f"Duplicate Warning:\nWord '{word}' (normalized: '{normalized_word}') already exists in the dictionary as '{actual_existing_word}'."
-        # Use yellow3 border for warnings per design system
-        self.ui.panel(warning_text, title="⚡ Duplicate Detected", border_style="yellow3")
-
-        # Create options with clear descriptions of outcomes
-        options = [
-            ("view", "👁 View existing entry first"),
-            ("merge", "⊕ Merge - Combine new definitions into existing entry"),
-            ("force", "⊞ Force - Save as variant (e.g., 'word - alt')"),
-            ("skip", "✗ Skip - Keep existing, discard new"),
-        ]
-
-        try:
-            choice = self.ui.interactive_menu(
-                "How should I handle this duplicate?",
-                options,
-                "Merge = 1 entry with all definitions • Force = 2 separate entries • Esc to cancel",
-            )
-        except KeyboardInterrupt:
-            self.ui.warning("Duplicate handling cancelled. Returning to main menu.")
-            return False
-
-        if choice == "skip":
-            self.ui.info("Skipping this word. Returning to main menu.")
-            return False
-        elif choice == "view":
-            self.ui.panel(f"Displaying existing entry for '{actual_existing_word}':", border_style="cyan")
-            # Ensure you use the correct key to retrieve the entry
-            self.display_existing_entry(actual_existing_word.lower()) # Use the lowercase version which should be the key
-            
-            # Changed: Don't make a recursive call, just return to main menu
-            self.ui.panel("Displayed existing entry. Returning to main menu.", border_style="blue")
-            return False # Return False, indicating not to add the word
-        elif choice == "merge":
-            # Defer merging until after AI response is parsed
-            self.duplicate_resolution = {"mode": "merge", "existing": actual_existing_word}
-            self.ui.info(
-                f"✓ Will merge new definitions into existing '{actual_existing_word}'\n"
-                f"  Result: 1 combined entry with all definitions"
-            )
-            return True
-        elif choice == "force":
-            # Proceed to add; may need to create a unique variant label later
-            self.duplicate_resolution = {"mode": "force", "existing": actual_existing_word}
-            self.ui.info(
-                f"✓ Will create variant entry: '{word} - alt'\n"
-                f"  Result: 2 separate entries (original + variant)"
-            )
-            return True
 
     def display_existing_entry(self, word: str):
         self._ensure_entries_loaded()
@@ -1503,24 +1407,6 @@ class FrenchVocabBuilder:
 
     def _show_post_translation_menu(self) -> None:
         show_post_translation_menu(self)
-
-    def create_unique_variant(self, base_word: str) -> str:
-        """Create a unique variant label for a duplicate word using hyphenated suffixes."""
-        candidate = f"{base_word} - alt"
-        if not self.check_duplicate(candidate):
-            return candidate
-        # Try alphabetical suffixes
-        for suffix in 'abcdefghijklmnopqrstuvwxyz':
-            candidate = f"{base_word} - alt {suffix}"
-            if not self.check_duplicate(candidate):
-                return candidate
-        # Fallback with repeated 'alt'
-        i = 2
-        while True:
-            candidate = f"{base_word} - alt x{i}"
-            if not self.check_duplicate(candidate):
-                return candidate
-            i += 1
 
     def _merge_into_existing_via_repo(
         self,

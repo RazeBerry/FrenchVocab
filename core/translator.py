@@ -251,7 +251,7 @@ class TranslatorCLI:
             box_style=box.ROUNDED,
         )
 
-    def _collect_multiline_input(self, language_label: str) -> Optional[str]:
+    def _collect_multiline_input(self) -> Optional[str]:
         # Instructions panel: wrapped for contextual info
         instructions = (
             "[#E67E50]Enter text to translate.[/#E67E50]\n"
@@ -286,7 +286,7 @@ class TranslatorCLI:
 
     def get_source_input(self) -> Optional[str]:
         while True:
-            text = self._collect_multiline_input(self.source_label)
+            text = self._collect_multiline_input()
             if text is None:
                 return None
             if text:

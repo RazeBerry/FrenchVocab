@@ -180,7 +180,7 @@ def latex_to_anki_format(text: str) -> str:
 
 @dataclass
 class AnkiExportEntry:
-    """Structured vocabulary payload for deck export and JSON interchange."""
+    """Structured vocabulary payload for deck export."""
 
     word: str
     word_type: str
@@ -202,15 +202,6 @@ class AnkiExportEntry:
             else:
                 rendered.append(fr_part)
         return "\n".join(rendered)
-
-    def to_json_dict(self) -> dict:
-        """Return a JSON-serializable representation of the entry."""
-        return {
-            "word": self.word,
-            "type": self.word_type,
-            "definitions": list(self.definitions),
-            "examples": [list(example) for example in self.examples],
-        }
 
 
 class AnkiExporter:

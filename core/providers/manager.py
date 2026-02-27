@@ -5,7 +5,7 @@ import threading
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 try:
     from dotenv import load_dotenv
@@ -114,9 +114,6 @@ class ProviderManager:
     # Public API ---------------------------------------------------------
     def get_metadata(self, provider: Optional[str]) -> ProviderMetadata:
         return _get_provider_metadata(provider)
-
-    def available_providers(self) -> Iterable[ProviderMetadata]:
-        return _PROVIDER_REGISTRY.values()
 
     # Helper: decide where to read/write the .env file
     def _determine_env_path(self, project_root: Path) -> Path:
@@ -254,9 +251,6 @@ class ProviderManager:
         os.environ[metadata.env_var] = api_key
         self.ui.info(f"Key stored via {storage}.")
         return ProviderResolution(metadata=metadata, api_key=api_key, source=storage)
-
-    def validate_connection(self, metadata: ProviderMetadata, api_key: str) -> ValidationFeedback:
-        return self._validate_with_provider(metadata, api_key)
 
     # Private helpers ----------------------------------------------------
     def _load_env_file(self) -> Optional[Path]:

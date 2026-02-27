@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # pragma: no cover - for type hints only
-    from core.protocols import VocabAppProtocol
+from core.protocols import VocabAppProtocol
 
 
-def main_menu_loop(app: "VocabAppProtocol") -> None:
+def main_menu_loop(app: VocabAppProtocol) -> None:
     """Interactive menu loop driving the CLI session."""
     app.welcome_screen()
     while True:
@@ -20,7 +17,7 @@ def main_menu_loop(app: "VocabAppProtocol") -> None:
             break
 
 
-def _refresh_menu_counts(app: "VocabAppProtocol") -> None:
+def _refresh_menu_counts(app: VocabAppProtocol) -> None:
     app.entry_count = app.count_entries()
     if app.eng_to_fr_translator:
         app.eng_to_fr_translator.entry_count = len(app.eng_to_fr_translator.pairs)
@@ -28,7 +25,7 @@ def _refresh_menu_counts(app: "VocabAppProtocol") -> None:
         app.fr_to_eng_translator.entry_count = len(app.fr_to_eng_translator.pairs)
 
 
-def _handle_main_choice(app: "VocabAppProtocol", choice: str) -> bool:
+def _handle_main_choice(app: VocabAppProtocol, choice: str) -> bool:
     if choice == "exit":
         app.exit_screen()
         return False
@@ -49,7 +46,7 @@ def _handle_main_choice(app: "VocabAppProtocol", choice: str) -> bool:
     return True
 
 
-def _handle_translation(app: "VocabAppProtocol") -> None:
+def _handle_translation(app: VocabAppProtocol) -> None:
     translation_choice = app.show_translation_menu()
     handlers = {
         "auto": _run_auto_translation,
@@ -61,7 +58,7 @@ def _handle_translation(app: "VocabAppProtocol") -> None:
         handler(app)
 
 
-def _run_auto_translation(app: "VocabAppProtocol") -> None:
+def _run_auto_translation(app: VocabAppProtocol) -> None:
     if not app.ensure_llm_ready():
         return
     if app.auto_translator:
@@ -70,7 +67,7 @@ def _run_auto_translation(app: "VocabAppProtocol") -> None:
     app.ui.error("Auto translator is unavailable because the AI provider could not be initialized.")
 
 
-def _run_eng_to_target(app: "VocabAppProtocol") -> None:
+def _run_eng_to_target(app: VocabAppProtocol) -> None:
     if not app.ensure_llm_ready():
         return
     if app.eng_to_fr_translator:
@@ -80,7 +77,7 @@ def _run_eng_to_target(app: "VocabAppProtocol") -> None:
     app.ui.error(f"{title} is unavailable because the AI provider could not be initialized.")
 
 
-def _run_target_to_eng(app: "VocabAppProtocol") -> None:
+def _run_target_to_eng(app: VocabAppProtocol) -> None:
     if not app.ensure_llm_ready():
         return
     if app.fr_to_eng_translator:

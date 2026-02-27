@@ -784,30 +784,3 @@ class WordEntryWorkflow:
                 )
             except Exception as exc:
                 self.ui.warning(f"History logging failed: {exc}")
-
-    def _show_quick_actions(self) -> bool:
-        """Show quick action menu after successful entry.
-
-        Returns True if user wants to add another word, False otherwise.
-        """
-        try:
-            quick_action = self.ui.interactive_menu(
-                "What's next?",
-                [
-                    ("add", "Add another word"),
-                    ("view", "View all vocabulary"),
-                    ("search", "Search vocabulary"),
-                    ("menu", "Return to main menu"),
-                ],
-                "Press Esc to return to main menu",
-            )
-
-            if quick_action == "add":
-                return True
-            # "view", "search", "menu" all return to caller
-            return False
-
-        except KeyboardInterrupt:
-            pass
-
-        return False

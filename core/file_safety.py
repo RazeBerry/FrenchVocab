@@ -48,7 +48,7 @@ class AtomicFileWriter:
         self._temp_file = Path(temp_path)
         return self._temp_file
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    def __exit__(self, exc_type, _exc_val, _exc_tb):
         if exc_type is not None:
             # Exception occurred - clean up temp file, don't modify original
             self._cleanup_temp()
@@ -111,5 +111,4 @@ def atomic_write_text(
     if create_backup and path.with_suffix(path.suffix + ".bak").exists():
         return path.with_suffix(path.suffix + ".bak")
     return None
-
 

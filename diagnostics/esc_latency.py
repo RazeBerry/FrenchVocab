@@ -30,11 +30,6 @@ _LOG_PATH = _default_log_path()
 _LOCK = threading.Lock()
 
 
-def is_enabled() -> bool:
-    """Return True when ESC latency tracing is active."""
-    return _ENABLED
-
-
 def _write_log_line(event: str, **payload: Any) -> None:
     if not _ENABLED:
         return
@@ -98,4 +93,3 @@ def tracer() -> Optional[_EscLatencyTracer]:
 
 if _ENABLED:
     _write_log_line("tracer.init", log_path=str(_LOG_PATH))
-
