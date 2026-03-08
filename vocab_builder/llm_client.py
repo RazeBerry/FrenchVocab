@@ -36,7 +36,7 @@ def _candidate_env_paths() -> Tuple[Path, ...]:
     config_dir = get_env("VOCABBUILDER_CONFIG_DIR")
     if config_dir:
         candidates.append(Path(config_dir).expanduser() / ".env")
-    candidates.append(Path(__file__).resolve().parent / ".env")
+    candidates.append(Path(__file__).resolve().parent.parent / ".env")
     candidates.append(config_home() / ".env")
 
     deduped = []

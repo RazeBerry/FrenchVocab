@@ -52,7 +52,7 @@ class VocabRuntimeMixin:
 
     def _load_input_limits_from_config_file(self) -> None:
         try:
-            cfg_path = Path(__file__).parent / str(self.config_file)
+            cfg_path = Path(__file__).parent.parent.parent / str(self.config_file)
             if not cfg_path.exists():
                 return
             with cfg_path.open("r", encoding="utf-8") as f:

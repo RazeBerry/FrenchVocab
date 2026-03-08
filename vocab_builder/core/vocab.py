@@ -230,8 +230,8 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
     def _initialize_context(self) -> None:
         self.console = Console()
         self.ui = UIHelper(self.console)
-        module_dir = Path(__file__).resolve().parent
-        self.project_root = module_dir.parent
+        module_dir = Path(__file__).resolve().parent  # vocab_builder/core/
+        self.project_root = module_dir.parent.parent  # project root
         self.provider_manager = ProviderManager(self.ui, self.project_root)
 
     def _configure_file_paths(self, latex_file: Optional[str]) -> None:
