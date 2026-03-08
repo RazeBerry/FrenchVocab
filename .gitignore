@@ -33,6 +33,11 @@ credentials.json
 # Ignore compiled Python bytecode
 __pycache__/
 
+# PyPI packaging artifacts
+dist/
+build/
+*.egg-info/
+
 # Ignore macOS custom attributes
 .DS_Store
 vocab_builder_config.json
