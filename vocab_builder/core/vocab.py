@@ -228,10 +228,13 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
         self.entry_command = entry_command if entry_command.startswith("\\") else f"\\{entry_command}"
 
     def _initialize_context(self) -> None:
+        from vocab_builder.compat import runtime_root
+
         self.console = Console()
         self.ui = UIHelper(self.console)
-        module_dir = Path(__file__).resolve().parent  # vocab_builder/core/
-        self.project_root = module_dir.parent.parent  # project root
+        module_dir = Path(__file__).resolve().parent
+        self.source_root = module_dir.parent.parent
+        self.project_root = runtime_root(self.source_root, create=True)
         self.provider_manager = ProviderManager(self.ui, self.project_root)
 
     def _configure_file_paths(self, latex_file: Optional[str]) -> None:
@@ -1029,11 +1032,15 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
         if not self._is_keyring_enabled():
             return "Environment variable"
 
-        from vocab_builder.compat import KEYRING_SERVICE
-        stored_key = self._keyring_get_password_best_effort(
-            KEYRING_SERVICE,
-            metadata.keyring_name,
-        )
+        from vocab_builder.compat import KEYRING_SERVICE, keyring_get_with_fallback
+
+        if KEYRING_SERVICE:
+            stored_key, _service = keyring_get_with_fallback(metadata.keyring_name)
+        else:
+            stored_key = self._keyring_get_password_best_effort(
+                KEYRING_SERVICE,
+                metadata.keyring_name,
+            )
         if stored_key and stored_key == env_value:
             return "System keychain"
         return "Environment variable"

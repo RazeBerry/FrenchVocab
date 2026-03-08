@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 import tempfile
 
-import FrenchVocab
+from vocab_builder.core import VocabBuilder
 
 
 SIMPLE_TEX = r"""\documentclass{article}
@@ -67,7 +67,7 @@ class TestLoadExistingEntries(unittest.TestCase):
             tex_path = Path(td) / 'FrenchVocab.tex'
             tex_path.write_text(SIMPLE_TEX, encoding='utf-8')
 
-            app = FrenchVocab.FrenchVocabBuilder(str(tex_path), provider='gemini', verbose=False)
+            app = VocabBuilder(str(tex_path), provider='gemini', verbose=False)
             # Should parse 2 entries
             self.assertIn('abîmer', app.word_entries)
             self.assertIn('cafe', app.word_entries)
@@ -94,7 +94,7 @@ class TestLoadExistingEntries(unittest.TestCase):
             tex_path = Path(td) / 'Custom.tex'
             tex_path.write_text(MISSING_TEX, encoding='utf-8')
 
-            app = FrenchVocab.FrenchVocabBuilder(
+            app = VocabBuilder(
                 str(tex_path),
                 provider='gemini',
                 verbose=False,

@@ -2,7 +2,7 @@ import os
 import tempfile
 import unittest
 
-import FrenchVocab
+from vocab_builder.core import VocabBuilder
 from vocab_builder.core import session_ui as session_ui_module
 
 
@@ -40,7 +40,7 @@ class TestSentenceFlow(unittest.TestCase):
         if tex_path is None:
             with tempfile.NamedTemporaryFile(delete=False, suffix='.tex') as tf:
                 tex_path = tf.name
-        return FrenchVocab.FrenchVocabBuilder(tex_path, provider='gemini', verbose=False, client=client)
+        return VocabBuilder(tex_path, provider='gemini', verbose=False, client=client)
 
     def test_detect_input_type_sentence(self):
         b = self._builder(client=_FakeLLMClient())
@@ -123,7 +123,7 @@ class TestSentenceFlow(unittest.TestCase):
         # Trailing punctuation normalized - no user confirmation needed
 
     def test_format_latex_entry_preserves_sentence_casing(self):
-        latex = FrenchVocab.FrenchVocabBuilder.format_latex_entry(
+        latex = VocabBuilder.format_latex_entry(
             "“Mais le devoir…”,", "sentence", ["t"], [("fr", "en")]
         )
         # Word appears exactly (escaped for LaTeX may not change curly quotes)

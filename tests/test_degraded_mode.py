@@ -1,4 +1,4 @@
-import FrenchVocab
+from vocab_builder.core import VocabBuilder
 import threading
 import os
 from types import SimpleNamespace
@@ -51,7 +51,7 @@ def test_builder_enters_degraded_mode_when_setup_fails(monkeypatch, tmp_path):
 
     monkeypatch.setattr(LLMCoordinator, "_prepare_provider", _failing_prepare)
 
-    builder = FrenchVocab.FrenchVocabBuilder(
+    builder = VocabBuilder(
         latex_file=str(tmp_path / "vocab.tex"),
         provider="gemini",
     )
@@ -87,7 +87,7 @@ def test_reconfigure_provider_restores_client(monkeypatch, tmp_path):
     monkeypatch.setattr(LLMCoordinator, "_prepare_provider", _prepare)
     monkeypatch.setattr(LLMCoordinator, "_initialize_client", _initialize_client)
 
-    builder = FrenchVocab.FrenchVocabBuilder(
+    builder = VocabBuilder(
         latex_file=str(tmp_path / "reconfigure.tex"),
         provider="gemini",
     )
@@ -113,7 +113,7 @@ def test_ensure_llm_ready_skip_returns_false(monkeypatch, tmp_path):
 
     monkeypatch.setattr(LLMCoordinator, "_prepare_provider", _prepare)
 
-    builder = FrenchVocab.FrenchVocabBuilder(
+    builder = VocabBuilder(
         latex_file=str(tmp_path / "ensure.tex"),
         provider="gemini",
     )

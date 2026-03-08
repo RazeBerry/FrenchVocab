@@ -11,7 +11,6 @@ records prompt lifecycle events to a log file.  The destination defaults to
 from __future__ import annotations
 
 import datetime as _dt
-import os
 import threading
 import time
 from pathlib import Path
@@ -26,7 +25,7 @@ def _default_log_path() -> Path:
     custom = get_env("VOCABBUILDER_ESC_DEBUG_LOG")
     if custom:
         return Path(custom).expanduser()
-    return config_home() / "esc_latency.log"
+    return config_home(warn_on_legacy=False) / "esc_latency.log"
 
 _LOG_PATH = _default_log_path()
 _LOCK = threading.Lock()

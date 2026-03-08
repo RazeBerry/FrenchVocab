@@ -19,13 +19,23 @@ except Exception:  # pragma: no cover - keyring may be absent in some environmen
         """Fallback keyring error when keyring is unavailable."""
 
 
-from vocab_builder.compat import get_env, config_home, KEYRING_SERVICE
+from vocab_builder.compat import (
+    KEYRING_SERVICE,
+    config_home,
+    config_homes_for_read,
+    get_env,
+    keyring_get_with_fallback,
+    keyring_set,
+)
 from vocab_builder.llm_client import ProviderFactory
 from vocab_builder.ui_helper import UIHelper
 
 
 def get_password(service: str, name: str) -> Optional[str]:
     """Lazy wrapper around keyring.get_password to avoid importing keyring at startup."""
+    if service == KEYRING_SERVICE:
+        value, _service = keyring_get_with_fallback(name)
+        return value
     import keyring  # type: ignore[import]
 
     return keyring.get_password(service, name)
@@ -33,6 +43,9 @@ def get_password(service: str, name: str) -> Optional[str]:
 
 def set_password(service: str, name: str, value: str) -> None:
     """Lazy wrapper around keyring.set_password to avoid importing keyring at startup."""
+    if service == KEYRING_SERVICE:
+        keyring_set(name, value)
+        return
     import keyring  # type: ignore[import]
 
     keyring.set_password(service, name, value)
@@ -129,7 +142,9 @@ class ProviderManager:
         Order of preference:
         1) VOCABBUILDER_CONFIG_DIR/.env (explicit override)
         2) project_root/.env if writable
-        3) ~/.vocabbuilder/.env (falls back to ~/.frenchvocab/ if it exists)
+        3) ~/.vocabbuilder/.env
+
+        Legacy ~/.frenchvocab/.env remains readable through _candidate_env_paths().
         """
 
         # 1) Explicit override for tests or custom deployments
@@ -153,9 +168,30 @@ class ProviderManager:
                 return project_env
 
         # 3) User config dir (with legacy fallback)
-        fallback_dir = config_home()
+        fallback_dir = config_home(create=True)
         fallback_dir.mkdir(parents=True, exist_ok=True)
         return fallback_dir / ".env"
+
+    def _candidate_env_paths(self) -> Tuple[Path, ...]:
+        candidates: List[Path] = []
+
+        env_dir_override = get_env("VOCABBUILDER_CONFIG_DIR")
+        if env_dir_override:
+            candidates.append(Path(env_dir_override).expanduser() / ".env")
+
+        candidates.append(self.project_root / ".env")
+        for config_dir in config_homes_for_read():
+            candidates.append(config_dir / ".env")
+
+        deduped: List[Path] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            key = str(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(candidate)
+        return tuple(deduped)
 
     def prepare_provider(self, metadata: ProviderMetadata) -> ProviderResolution:
         """Ensure an API key exists for the given provider, prompting if needed."""
@@ -261,27 +297,25 @@ class ProviderManager:
 
     # Private helpers ----------------------------------------------------
     def _load_env_file(self) -> Optional[Path]:
-        env_path = self._env_path
+        existing_paths = [path for path in self._candidate_env_paths() if path.exists()]
         if load_dotenv is None:
-            if env_path.exists():
+            if existing_paths:
                 self.ui.warning(
                     "python-dotenv is not installed; skipping automatic .env loading."
                 )
             return None
 
-        if not env_path.exists():
-            return None
-
-        try:
-            loaded = load_dotenv(dotenv_path=env_path, override=False)
-        except OSError as exc:
-            self.ui.warning(f"Failed to load {env_path}: {exc}")
-            return None
-
-        if loaded:
-            self.ui.info(f"Loaded environment variables from {env_path}.")
-            return env_path
-        return None
+        loaded_path: Optional[Path] = None
+        for env_path in existing_paths:
+            try:
+                loaded = load_dotenv(dotenv_path=env_path, override=False)
+            except OSError as exc:
+                self.ui.warning(f"Failed to load {env_path}: {exc}")
+                continue
+            if loaded:
+                self.ui.info(f"Loaded environment variables from {env_path}.")
+                loaded_path = env_path
+        return loaded_path
 
     def _resolve_api_key(
         self,
@@ -621,7 +655,7 @@ class ProviderManager:
         options: List[Tuple[str, str]] = []
         if keyring_available:
             options.append(("keyring", "Secure system keyring [dim](recommended)[/dim]"))
-        options.append(("env_file", ".env file in project directory"))
+        options.append(("env_file", f".env file [dim]({self._env_path})[/dim]"))
         options.append(("session", "Current session only (environment variable)"))
         try:
             choice = self.ui.interactive_menu(
@@ -682,7 +716,7 @@ class ProviderManager:
         self._remove_env_backup_best_effort(env_path)
 
         self.ui.success(f"Saved key to {env_path}.")
-        self.ui.info("Future runs will automatically reuse this key from the project .env file.")
+        self.ui.info("Future runs will automatically reuse this key from the app .env file.")
         return f".env ({env_path})"
 
     def _ensure_env_file_path(self, env_path: Path) -> bool:

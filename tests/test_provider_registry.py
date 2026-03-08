@@ -1,5 +1,5 @@
-import importlib.util
-from pathlib import Path
+import importlib
+import sys
 
 import pytest
 
@@ -7,12 +7,10 @@ from vocab_builder.core.providers.manager import _get_provider_metadata
 
 
 def _load_actual_llm_client():
-    module_path = Path(__file__).resolve().parent.parent / "vocab_builder" / "llm_client.py"
-    spec = importlib.util.spec_from_file_location("llm_client_actual_provider_tests", module_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+    sys.modules.pop("vocab_builder.llm_client", None)
+    sys.modules.pop("llm_client", None)
+    module = importlib.import_module("vocab_builder.llm_client")
+    return importlib.reload(module)
 
 
 def test_unknown_provider_raises_value_error():
@@ -33,7 +31,7 @@ def test_default_provider_prefers_saved_env_credentials(tmp_path, monkeypatch):
 
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setenv("FRENCHVOCAB_TEST_PROVIDER_AUTODETECT", "1")
+    monkeypatch.setenv("VOCABBUILDER_TEST_PROVIDER_AUTODETECT", "1")
     monkeypatch.setattr(llm_client, "_candidate_env_paths", lambda: (env_path,))
 
     assert llm_client.ProviderFactory.default_provider() == "claude"
@@ -45,7 +43,7 @@ def test_default_provider_prefers_saved_keyring_credentials(tmp_path, monkeypatc
 
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setenv("FRENCHVOCAB_TEST_PROVIDER_AUTODETECT", "1")
+    monkeypatch.setenv("VOCABBUILDER_TEST_PROVIDER_AUTODETECT", "1")
     monkeypatch.setattr(llm_client, "_candidate_env_paths", lambda: (env_path,))
 
     def _fake_get_password(_service: str, name: str):

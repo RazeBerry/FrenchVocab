@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 import warnings
 
 warnings.warn(
@@ -12,6 +13,9 @@ warnings.warn(
 
 # Re-export for backward compatibility
 from vocab_builder.cli.main import main  # noqa: E402
+
+if TYPE_CHECKING:
+    from vocab_builder.core import VocabBuilder as FrenchVocabBuilder
 
 __all__ = ["FrenchVocabBuilder", "main"]
 

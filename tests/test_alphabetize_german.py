@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import FrenchVocab
+from vocab_builder.core import VocabBuilder
 from vocab_builder.models import normalize_word_key
 
 
@@ -43,7 +43,7 @@ class TestGermanAlphabetization(unittest.TestCase):
             tmp_dir = Path(td)
             tex_path = self._create_tex(unsorted_words, tmp_dir)
 
-            builder = FrenchVocab.FrenchVocabBuilder(
+            builder = VocabBuilder(
                 str(tex_path), provider="gemini", verbose=False, language="de"
             )
             builder.alphabetize_entries()

@@ -16,5 +16,5 @@ except ModuleNotFoundError:
 
 install_basic_stubs()
 
-_HISTORY_TMP = tempfile.mkdtemp(prefix="frenchvocab_history_")
-os.environ.setdefault("FRENCH_VOCAB_HISTORY_DIR", _HISTORY_TMP)
+_HISTORY_TMP = tempfile.mkdtemp(prefix="vocabbuilder_history_")
+os.environ.setdefault("VOCABBUILDER_HISTORY_DIR", _HISTORY_TMP)

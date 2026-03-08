@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-import FrenchVocab
+from vocab_builder.core import VocabBuilder
 from vocab_builder.cli.bootstrap import build_app
 from vocab_builder.languages import available_language_codes, get_language_config
 from vocab_builder.languages.anki_shared_styles import compute_template_hash
@@ -15,7 +15,7 @@ def test_builder_initializes_for_language(language_code, monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
     with tempfile.TemporaryDirectory() as tmpdir:
         tex_path = Path(tmpdir) / f"{language_code}_vocab.tex"
-        builder = FrenchVocab.FrenchVocabBuilder(
+        builder = VocabBuilder(
             str(tex_path),
             provider="gemini",
             verbose=False,

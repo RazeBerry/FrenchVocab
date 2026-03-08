@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-import FrenchVocab
+from vocab_builder.core import VocabBuilder
 from vocab_builder.core.llm_coordinator import InitState, LLMCoordinator
 
 
@@ -77,13 +77,13 @@ def test_query_ai_surfaces_provider_error_label():
     coordinator._on_degraded_mode = None
 
     # Create a minimal builder with the coordinator
-    builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
+    builder = object.__new__(VocabBuilder)
     builder._llm = coordinator
     builder.ui = ui
     builder.console = SimpleNamespace()
-    builder.language_config = FrenchVocab.FrenchVocabBuilder.DEFAULT_LANGUAGE_CONFIG
+    builder.language_config = VocabBuilder.DEFAULT_LANGUAGE_CONFIG
 
-    result = FrenchVocab.FrenchVocabBuilder.query_ai(builder, "mot")
+    result = VocabBuilder.query_ai(builder, "mot")
 
     assert result == ""
     assert ui.errors, "Expected an error message to be emitted"

@@ -1,12 +1,12 @@
 import unittest
 
-import FrenchVocab
+from vocab_builder.core import VocabBuilder
 
 
 class TestParsingAndValidation(unittest.TestCase):
     def setUp(self):
         # Create a bare instance without running __init__ where needed
-        self.builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
+        self.builder = object.__new__(VocabBuilder)
 
     def test_parse_ai_response_valid(self):
         resp = (
@@ -62,11 +62,11 @@ class TestParsingAndValidation(unittest.TestCase):
     def test_is_valid_french_input(self):
         b = self.builder
         # bind method still works
-        self.assertTrue(FrenchVocab.FrenchVocabBuilder.is_valid_french_input(b, "café"))
-        self.assertTrue(FrenchVocab.FrenchVocabBuilder.is_valid_french_input(b, "aujourd’hui"))  # curly apostrophe
-        self.assertTrue(FrenchVocab.FrenchVocabBuilder.is_valid_french_input(b, "porte-monnaie"))
-        self.assertFalse(FrenchVocab.FrenchVocabBuilder.is_valid_french_input(b, "bonjour!"))
-        self.assertFalse(FrenchVocab.FrenchVocabBuilder.is_valid_french_input(b, "123"))
+        self.assertTrue(VocabBuilder.is_valid_french_input(b, "café"))
+        self.assertTrue(VocabBuilder.is_valid_french_input(b, "aujourd’hui"))  # curly apostrophe
+        self.assertTrue(VocabBuilder.is_valid_french_input(b, "porte-monnaie"))
+        self.assertFalse(VocabBuilder.is_valid_french_input(b, "bonjour!"))
+        self.assertFalse(VocabBuilder.is_valid_french_input(b, "123"))
 
 
 if __name__ == '__main__':

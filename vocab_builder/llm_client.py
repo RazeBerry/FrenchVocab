@@ -31,13 +31,15 @@ _PROVIDER_DISCOVERY_ORDER: Tuple[Tuple[str, str, str], ...] = (
 
 
 def _candidate_env_paths() -> Tuple[Path, ...]:
-    from vocab_builder.compat import get_env, config_home
+    from vocab_builder.compat import config_homes_for_read, get_env, runtime_root
     candidates = []
     config_dir = get_env("VOCABBUILDER_CONFIG_DIR")
     if config_dir:
         candidates.append(Path(config_dir).expanduser() / ".env")
-    candidates.append(Path(__file__).resolve().parent.parent / ".env")
-    candidates.append(config_home() / ".env")
+    source_root = Path(__file__).resolve().parent.parent
+    candidates.append(runtime_root(source_root) / ".env")
+    for config_dir in config_homes_for_read():
+        candidates.append(config_dir / ".env")
 
     deduped = []
     seen = set()
@@ -74,12 +76,17 @@ def _read_env_file_value(path: Path, env_var: str) -> Optional[str]:
 
 
 def _keyring_get_password_best_effort(service: str, name: str) -> Optional[str]:
+    from vocab_builder.compat import KEYRING_SERVICE, keyring_get_with_fallback
+
     try:
         import keyring  # type: ignore[import]
     except ImportError:
         return None
 
     try:
+        if service == KEYRING_SERVICE:
+            value, _service = keyring_get_with_fallback(name)
+            return value
         return keyring.get_password(service, name)
     except Exception:
         return None

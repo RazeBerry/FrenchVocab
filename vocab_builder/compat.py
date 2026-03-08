@@ -1,4 +1,4 @@
-"""Backward-compatibility helpers for the FrenchVocab → VocabBuilder rename.
+"""Backward-compatibility helpers for the FrenchVocab -> VocabBuilder rename.
 
 This module provides dual-read wrappers for environment variables, config
 directories, and keyring service names so existing users are not broken by
@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import warnings
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 # ---------------------------------------------------------------------------
 # Environment variable mapping: new name → old name(s)
@@ -72,30 +72,93 @@ _NEW_CONFIG_DIR_NAME = ".vocabbuilder"
 _OLD_CONFIG_DIR_NAME = ".frenchvocab"
 
 
-def config_home() -> Path:
-    """Return the preferred config directory, falling back to the legacy path.
+def _dedupe_paths(paths: Iterable[Path]) -> tuple[Path, ...]:
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for path in paths:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(path)
+    return tuple(deduped)
+
+
+def _explicit_config_home() -> Optional[Path]:
+    raw = get_env("VOCABBUILDER_CONFIG_DIR")
+    if not raw:
+        return None
+    return Path(raw).expanduser()
+
+
+def config_home(*, create: bool = False, warn_on_legacy: bool = True) -> Path:
+    """Return the preferred writable config directory.
 
     Preference order:
-    1. ``~/.vocabbuilder/`` if it exists or is freshly created
-    2. ``~/.frenchvocab/`` if it exists (legacy fallback)
-    3. ``~/.vocabbuilder/`` (created on demand)
-    """
-    new_dir = Path.home() / _NEW_CONFIG_DIR_NAME
-    if new_dir.is_dir():
-        return new_dir
+    1. ``VOCABBUILDER_CONFIG_DIR`` / legacy alias when set
+    2. ``~/.vocabbuilder/`` for all default writes
 
+    Legacy ``~/.frenchvocab/`` remains part of the read path via
+    :func:`config_homes_for_read`, but new state is written to the new
+    directory so the renamed app does not keep extending the deprecated path.
+    """
+    explicit = _explicit_config_home()
+    if explicit is not None:
+        if create:
+            explicit.mkdir(parents=True, exist_ok=True)
+        return explicit
+
+    new_dir = Path.home() / _NEW_CONFIG_DIR_NAME
     old_dir = Path.home() / _OLD_CONFIG_DIR_NAME
-    if old_dir.is_dir():
+    if old_dir.is_dir() and warn_on_legacy:
         warnings.warn(
-            f"Config directory {old_dir} is deprecated; migrate to {new_dir}.",
+            f"Config directory {old_dir} is deprecated; new state is written to {new_dir}.",
             DeprecationWarning,
             stacklevel=2,
         )
-        return old_dir
 
-    # Neither exists; create the new one
-    new_dir.mkdir(parents=True, exist_ok=True)
+    if create:
+        new_dir.mkdir(parents=True, exist_ok=True)
+
+    if new_dir.is_dir():
+        return new_dir
+
     return new_dir
+
+
+def config_homes_for_read() -> tuple[Path, ...]:
+    """Return config directories to consult when reading persisted user state."""
+    explicit = _explicit_config_home()
+    if explicit is not None:
+        return (explicit,)
+
+    new_dir = Path.home() / _NEW_CONFIG_DIR_NAME
+    old_dir = Path.home() / _OLD_CONFIG_DIR_NAME
+    candidates = [new_dir]
+    if old_dir.is_dir():
+        candidates.append(old_dir)
+    return _dedupe_paths(candidates)
+
+
+def runtime_root(source_root: Optional[Path] = None, *, create: bool = False) -> Path:
+    """Return the writable root for mutable runtime files.
+
+    A writable git checkout continues to use its repository root so existing
+    source-based users keep their current files. Installed wheels fall back to
+    the user config directory instead of writing into ``site-packages``.
+    """
+    explicit = _explicit_config_home()
+    if explicit is not None:
+        if create:
+            explicit.mkdir(parents=True, exist_ok=True)
+        return explicit
+
+    if source_root is not None:
+        root = Path(source_root).expanduser().resolve()
+        if (root / ".git").exists() and os.access(root, os.W_OK):
+            return root
+
+    return config_home(create=create)
 
 
 # ---------------------------------------------------------------------------

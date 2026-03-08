@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from vocab_builder.compat import get_env
+from vocab_builder.compat import config_homes_for_read, config_home, get_env
 
 from .history_logger import TranslationLogger, default_history_base_dir
 
@@ -51,20 +50,31 @@ class VocabRuntimeMixin:
         self._apply_config_bool_override(limits, "sentence_examples", "sentence_examples_in_vocab")
 
     def _load_input_limits_from_config_file(self) -> None:
-        try:
-            cfg_path = Path(__file__).parent.parent.parent / str(self.config_file)
-            if not cfg_path.exists():
-                return
-            with cfg_path.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
-            if self.verbose:
-                self.ui.debug(f"Skipping config load from {self.config_file}: {exc}")
+        candidate_paths = [Path(getattr(self, "project_root", config_home())) / str(self.config_file)]
+        for config_dir in config_homes_for_read():
+            candidate_paths.append(config_dir / str(self.config_file))
+
+        data: Dict[str, Any] | None = None
+        for cfg_path in dict.fromkeys(candidate_paths):
+            try:
+                if not cfg_path.exists():
+                    continue
+                with cfg_path.open("r", encoding="utf-8") as f:
+                    loaded = json.load(f)
+            except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+                if self.verbose:
+                    self.ui.debug(f"Skipping config load from {cfg_path}: {exc}")
+                continue
+            if isinstance(loaded, dict):
+                data = loaded
+            else:
+                data = {}
+            break
+
+        if data is None:
             return
 
-        self._config_data = data if isinstance(data, dict) else {}
-        if not isinstance(data, dict):
-            return
+        self._config_data = data
 
         limits = data.get("input_limits", {})
         if isinstance(limits, dict):
@@ -162,6 +172,16 @@ class VocabRuntimeMixin:
             else:
                 base_dir = default_history_base_dir()
 
+        fallback_history_dirs: tuple[Path, ...] = ()
+        if not base_dir_override and not configured_dir:
+            primary_base_dir = config_home(create=True) / "history"
+            fallback_history_dirs = tuple(
+                candidate / "history"
+                for candidate in config_homes_for_read()
+                if candidate / "history" != primary_base_dir
+            )
+            base_dir = primary_base_dir
+
         file_pattern = config_section.get("file_pattern", "{language}_translations.jsonl")
 
         return TranslationLogger(
@@ -169,6 +189,7 @@ class VocabRuntimeMixin:
             base_dir=base_dir,
             enabled=enabled,
             file_pattern=file_pattern,
+            fallback_base_dirs=fallback_history_dirs,
             on_error=self._history_log_error,
         )
 

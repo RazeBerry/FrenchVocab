@@ -14,6 +14,7 @@ from rich.table import Table
 from rich.text import Text
 from rich import box
 
+from vocab_builder.compat import runtime_root
 from vocab_builder.languages import TranslatorConfig
 from vocab_builder.llm_client import LLMClient
 from vocab_builder.ui_helper import UIHelper, read_line
@@ -55,7 +56,11 @@ class TranslatorCLI:
         self.final_tex_content = config.final_tex_content
 
         filename = config.default_filename
-        self.latex_file = latex_file_path if latex_file_path is not None else Path.cwd() / filename
+        if latex_file_path is None:
+            source_root = Path(__file__).resolve().parent.parent.parent
+            self.latex_file = runtime_root(source_root, create=True) / filename
+        else:
+            self.latex_file = latex_file_path
 
         self._pairs: Dict[str, Dict[str, str]] = {}
         self._entries_loaded = False

@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from vocab_builder.core.anki_manager import AnkiExportManager
 from vocab_builder.languages import get_language_config

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import deque
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -34,7 +33,7 @@ def _ensure_path(path: Path) -> Path:
 def default_history_base_dir() -> Path:
     """Default history location outside the repository working tree."""
     from vocab_builder.compat import config_home
-    return config_home() / "history"
+    return config_home(create=True) / "history"
 
 
 ErrorHandler = Optional[Callable[[str], None]]
@@ -50,11 +49,13 @@ class TranslationLogger:
     base_dir: Path
     enabled: bool = True
     file_pattern: str = "{language}_translations.jsonl"
+    fallback_base_dirs: Sequence[Path] = ()
     on_error: ErrorHandler = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.base_dir, Path):
             self.base_dir = Path(self.base_dir)
+        self.fallback_base_dirs = tuple(Path(path) for path in self.fallback_base_dirs)
 
     # --------------------------------------------------------------------- #
     # Public API
@@ -160,32 +161,32 @@ class TranslationLogger:
         if limit is not None and limit <= 0:
             return []
 
-        path = self._record_path()
-        if not path.exists():
+        paths = [path for path in self._record_paths_for_read() if path.exists()]
+        if not paths:
             return []
 
         allowed_actions = {str(action) for action in actions} if actions else None
         try:
-            vocab_records: List[Dict[str, Any]] | deque[Dict[str, Any]]
-            if limit is None:
-                vocab_records = []
-            else:
-                vocab_records = deque(maxlen=limit)
-            with path.open("r", encoding="utf-8") as fh:
-                for line in fh:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        record = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    if record.get("flow") != "vocab":
-                        continue
-                    if allowed_actions is not None and record.get("action", "new") not in allowed_actions:
-                        continue
-                    vocab_records.append(record)
-            return list(reversed(list(vocab_records)))
+            vocab_records: List[Dict[str, Any]] = []
+            for path in paths:
+                with path.open("r", encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            record = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if record.get("flow") != "vocab":
+                            continue
+                        if allowed_actions is not None and record.get("action", "new") not in allowed_actions:
+                            continue
+                        vocab_records.append(record)
+            vocab_records.sort(key=lambda record: str(record.get("timestamp", "")))
+            if limit is not None:
+                vocab_records = vocab_records[-limit:]
+            return list(reversed(vocab_records))
         except OSError:
             return []
 
@@ -194,6 +195,20 @@ class TranslationLogger:
     # --------------------------------------------------------------------- #
     def _record_path(self) -> Path:
         return self.base_dir / self.file_pattern.format(language=self.language_code)
+
+    def _record_paths_for_read(self) -> Tuple[Path, ...]:
+        paths = [self._record_path()]
+        for base_dir in self.fallback_base_dirs:
+            paths.append(Path(base_dir) / self.file_pattern.format(language=self.language_code))
+        deduped: List[Path] = []
+        seen: set[str] = set()
+        for path in paths:
+            key = str(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(path)
+        return tuple(deduped)
 
     def _append_record(self, flow: str, payload: Dict[str, Any]) -> None:
         if not self.enabled:

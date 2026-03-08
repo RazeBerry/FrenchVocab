@@ -7,7 +7,7 @@ name = "vocab-builder"
 version = "3.0.0"
 description = "AI-assisted CLI for building bilingual vocabulary lists, generating LaTeX documents, and exporting Anki decks"
 readme = "README.md"
-license = "MIT"
+license = { file = "LICENSE" }
 requires-python = ">=3.11"
 authors = [
     { name = "RazeBerry" },
@@ -17,6 +17,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -39,6 +40,10 @@ vocabbuilder = "vocab_builder.cli.main:main"
 [project.urls]
 Homepage = "https://github.com/RazeBerry/FrenchVocab"
 Repository = "https://github.com/RazeBerry/FrenchVocab"
+
+[tool.setuptools]
+py-modules = ["FrenchVocab"]
+license-files = ["LICENSE"]
 
 [tool.setuptools.packages.find]
 include = ["vocab_builder*"]

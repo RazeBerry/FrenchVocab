@@ -44,3 +44,6 @@ vocab_builder_config.json
 
 # Runtime translation history (machine-local state)
 data/history/*.jsonl
+
+# Local delayed-audit scheduler output
+.codex_audits/

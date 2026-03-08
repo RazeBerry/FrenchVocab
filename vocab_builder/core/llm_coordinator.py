@@ -96,9 +96,14 @@ class LLMCoordinator:
         """
         self._ui = ui
         if provider_manager is None:
+            from vocab_builder.compat import runtime_root
             from vocab_builder.core.providers.manager import ProviderManager as _ProviderManager
 
-            root = Path(project_root) if project_root is not None else Path.cwd()
+            if project_root is not None:
+                root = Path(project_root)
+            else:
+                source_root = Path(__file__).resolve().parent.parent.parent
+                root = runtime_root(source_root, create=True)
             provider_manager = _ProviderManager(ui, root)
 
         self._provider_manager = provider_manager

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-import FrenchVocab
+from vocab_builder.core import VocabBuilder
 
 
 class _StubClient:
@@ -12,11 +12,11 @@ class _StubClient:
 
 
 def test_handle_new_word_entry_logs(tmp_path, monkeypatch):
-    monkeypatch.setenv("FRENCH_VOCAB_HISTORY_DIR", str(tmp_path))
+    monkeypatch.setenv("VOCABBUILDER_HISTORY_DIR", str(tmp_path))
     monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
 
     tex_path = tmp_path / "FrenchVocab.tex"
-    builder = FrenchVocab.FrenchVocabBuilder(str(tex_path), provider="gemini", verbose=False, client=_StubClient())
+    builder = VocabBuilder(str(tex_path), provider="gemini", verbose=False, client=_StubClient())
 
     builder.get_word_input = lambda: "bonjour"
     builder.query_ai = lambda _: "stub"

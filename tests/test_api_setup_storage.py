@@ -136,8 +136,8 @@ def test_resolve_api_key_handles_missing_keyring_module(tmp_path, monkeypatch):
 
 def test_store_api_key_respects_config_dir_env(tmp_path, monkeypatch):
     cfg_dir = tmp_path / "cfg"
-    monkeypatch.setenv("FRENCHVOCAB_CONFIG_DIR", str(cfg_dir))
-    monkeypatch.setenv("FRENCHVOCAB_SKIP_KEYRING", "1")
+    monkeypatch.setenv("VOCABBUILDER_CONFIG_DIR", str(cfg_dir))
+    monkeypatch.setenv("VOCABBUILDER_SKIP_KEYRING", "1")
 
     manager, _ = _make_manager(tmp_path)
     metadata = _get_provider_metadata("gemini")
@@ -148,6 +148,46 @@ def test_store_api_key_respects_config_dir_env(tmp_path, monkeypatch):
     assert env_path.exists()
     assert "GEMINI_API_KEY=AIza" in env_path.read_text(encoding="utf-8")
     assert storage.startswith(".env")
+
+
+def test_resolve_api_key_reads_legacy_keyring_service(tmp_path, monkeypatch):
+    manager, _ = _make_manager(tmp_path)
+    metadata = _get_provider_metadata("gemini")
+    api_key = "AIza" + "k" * 36
+
+    monkeypatch.delenv(metadata.env_var, raising=False)
+
+    import keyring
+
+    keyring._store.clear()
+    keyring.set_password("french_vocab_builder", metadata.keyring_name, api_key)
+
+    resolved, source = manager._resolve_api_key(metadata)
+
+    assert resolved == api_key
+    assert source == "system keyring"
+    assert keyring.get_password("vocab_builder", metadata.keyring_name) == api_key
+
+
+def test_prepare_provider_reads_legacy_env_file_after_new_dir_exists(tmp_path, monkeypatch):
+    manager, _ = _make_manager(tmp_path)
+    metadata = _get_provider_metadata("gemini")
+    old_dir = tmp_path / ".frenchvocab"
+    new_dir = tmp_path / ".vocabbuilder"
+    old_dir.mkdir()
+    new_dir.mkdir()
+    env_value = "AIza" + "z" * 36
+    legacy_env = old_dir / ".env"
+    (new_dir / ".env").write_text("UNRELATED_VALUE=1\n", encoding="utf-8")
+    legacy_env.write_text(f"{metadata.env_var}={env_value}\n", encoding="utf-8")
+
+    monkeypatch.delenv(metadata.env_var, raising=False)
+    monkeypatch.setattr(manager, "_candidate_env_paths", lambda: (new_dir / ".env", legacy_env))
+
+    resolution = manager.prepare_provider(metadata)
+
+    assert resolution.api_key == env_value
+    assert os.environ[metadata.env_var] == env_value
 
 
 def test_write_env_file_hardens_permissions_and_removes_stale_backup(tmp_path):

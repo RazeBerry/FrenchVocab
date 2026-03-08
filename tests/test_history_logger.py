@@ -77,3 +77,32 @@ def test_logger_disabled(tmp_path):
         action="new",
     )
     assert not (tmp_path / "fr_translations.jsonl").exists()
+
+
+def test_logger_reads_recent_entries_from_legacy_fallback_dir(tmp_path):
+    primary_dir = tmp_path / "new"
+    legacy_dir = tmp_path / "old"
+    logger = TranslationLogger(
+        language_code="fr",
+        base_dir=primary_dir,
+        fallback_base_dirs=(legacy_dir,),
+        enabled=True,
+    )
+
+    legacy_logger = TranslationLogger(language_code="fr", base_dir=legacy_dir, enabled=True)
+    legacy_logger.log_vocab_entry(
+        word="bonjour",
+        word_type="noun",
+        definitions=["greeting"],
+        examples=[],
+        source_text="bonjour",
+        normalized_key="bonjour",
+        provider="gemini",
+        latex_file=tmp_path / "FrenchVocab.tex",
+        action="new",
+    )
+
+    recent = logger.read_recent_vocab_entries(limit=5)
+
+    assert len(recent) == 1
+    assert recent[0]["word"] == "bonjour"

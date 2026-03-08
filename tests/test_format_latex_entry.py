@@ -1,11 +1,11 @@
 import unittest
 
-import FrenchVocab
+from vocab_builder.core import VocabBuilder
 
 
 class TestFormatLatexEntry(unittest.TestCase):
     def setUp(self):
-        self.formatter = FrenchVocab.FrenchVocabBuilder.format_latex_entry
+        self.formatter = VocabBuilder.format_latex_entry
 
     def test_escapes_special_chars_in_definitions_and_examples(self):
         word = "cafe"

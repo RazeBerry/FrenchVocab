@@ -4,7 +4,7 @@ import types
 import unittest
 from pathlib import Path
 
-import FrenchVocab
+from vocab_builder.core import VocabBuilder
 import genanki
 from vocab_builder.languages.french import FRENCH_CONFIG
 
@@ -80,7 +80,7 @@ class TestExportToAnki(unittest.TestCase):
         genanki.Package = self._orig_package
 
     def test_export_to_anki_exports_new_words_and_updates_tracking(self):
-        builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
+        builder = object.__new__(VocabBuilder)
         builder.ui = _StubUI()
         builder.console = types.SimpleNamespace()
         builder.word_entries = {
@@ -128,7 +128,7 @@ class TestExportToAnki(unittest.TestCase):
         self.assertEqual(builder.exported_deck_version, FRENCH_CONFIG.anki.version_id)
 
     def test_export_selected_words_only(self):
-        builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
+        builder = object.__new__(VocabBuilder)
         builder.ui = _StubUI()
         builder.console = types.SimpleNamespace()
         builder.word_entries = {
@@ -163,7 +163,7 @@ class TestExportToAnki(unittest.TestCase):
         self.assertIn('salut', builder.exported_words)
 
     def test_export_strips_brace_artifacts(self):
-        builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
+        builder = object.__new__(VocabBuilder)
         builder.ui = _StubUI()
         builder.console = types.SimpleNamespace()
         builder.word_entries = {
@@ -196,7 +196,7 @@ class TestExportToAnki(unittest.TestCase):
         self.assertNotIn('}', deck.notes[0].fields[2])
         self.assertNotIn('}', deck.notes[0].fields[3])
     def test_export_to_anki_can_include_already_exported_words(self):
-        builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
+        builder = object.__new__(VocabBuilder)
         builder.ui = _StubUI()
         builder.console = types.SimpleNamespace()
         builder.word_entries = {
@@ -240,7 +240,7 @@ class TestExportToAnki(unittest.TestCase):
         self.assertEqual(builder.exported_deck_version, FRENCH_CONFIG.anki.version_id)
 
     def test_export_auto_rebuilds_when_template_version_changes(self):
-        builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
+        builder = object.__new__(VocabBuilder)
         builder.ui = _StubUI()
         builder.console = types.SimpleNamespace()
         builder.word_entries = {
@@ -275,7 +275,7 @@ class TestExportToAnki(unittest.TestCase):
         self.assertEqual(builder.exported_deck_version, FRENCH_CONFIG.anki.version_id)
 
     def test_export_records_metadata_and_honors_output_path(self):
-        builder = object.__new__(FrenchVocab.FrenchVocabBuilder)
+        builder = object.__new__(VocabBuilder)
         builder.ui = _StubUI()
         builder.console = types.SimpleNamespace()
         builder.word_entries = {

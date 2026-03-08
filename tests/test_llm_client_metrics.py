@@ -1,8 +1,7 @@
-import importlib.util
+import importlib
 import os
 import sys
 import types
-from pathlib import Path
 from types import SimpleNamespace
 
 
@@ -101,11 +100,10 @@ def test_gemini_client_uses_structured_token_payload(tmp_path):
     os.environ["GEMINI_API_KEY"] = "AIza" + "x" * 36
     saved = _install_google_stub()
     try:
-        module_path = Path(__file__).resolve().parent.parent / "vocab_builder" / "llm_client.py"
-        spec = importlib.util.spec_from_file_location("llm_client_actual", module_path)
-        llm_client = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(llm_client)
+        sys.modules.pop("vocab_builder.llm_client", None)
+        sys.modules.pop("llm_client", None)
+        llm_client = importlib.import_module("vocab_builder.llm_client")
+        llm_client = importlib.reload(llm_client)
 
         client = llm_client.GeminiClient()
         stream = client.stream("prompt")
@@ -150,11 +148,10 @@ def test_gemini_client_reports_usage_metadata(tmp_path):
 
     saved = _install_google_stub(stream_factory=stream_factory)
     try:
-        module_path = Path(__file__).resolve().parent.parent / "vocab_builder" / "llm_client.py"
-        spec = importlib.util.spec_from_file_location("llm_client_actual", module_path)
-        llm_client = importlib.util.module_from_spec(spec)
-        assert spec.loader is not None
-        spec.loader.exec_module(llm_client)
+        sys.modules.pop("vocab_builder.llm_client", None)
+        sys.modules.pop("llm_client", None)
+        llm_client = importlib.import_module("vocab_builder.llm_client")
+        llm_client = importlib.reload(llm_client)
 
         client = llm_client.GeminiClient()
         stream = client.stream("prompt")
