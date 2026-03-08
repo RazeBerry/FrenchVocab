@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from core.vocab import FrenchVocabBuilder
+from vocab_builder.core.vocab import FrenchVocabBuilder
 
 
 def test_word_entries_property_uses_repo_and_triggers_lazy_load() -> None:

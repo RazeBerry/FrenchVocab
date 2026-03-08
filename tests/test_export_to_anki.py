@@ -6,7 +6,7 @@ from pathlib import Path
 
 import FrenchVocab
 import genanki
-from languages.french import FRENCH_CONFIG
+from vocab_builder.languages.french import FRENCH_CONFIG
 
 
 class _StubUI:

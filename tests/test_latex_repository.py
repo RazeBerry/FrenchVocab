@@ -1,9 +1,9 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from core.vocab_repository import VocabRepository
-from languages import get_language_config
-from latex_repository import LatexRepository, parse_balanced_group
+from vocab_builder.core.vocab_repository import VocabRepository
+from vocab_builder.languages import get_language_config
+from vocab_builder.latex_repository import LatexRepository, parse_balanced_group
 
 
 def _repo(tmp_path: Path) -> VocabRepository:

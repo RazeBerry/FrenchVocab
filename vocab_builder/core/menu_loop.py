@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.protocols import VocabAppProtocol
+from vocab_builder.core.protocols import VocabAppProtocol
 
 
 def main_menu_loop(app: VocabAppProtocol) -> None:

@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 import FrenchVocab
-from core.llm_coordinator import InitState, LLMCoordinator
+from vocab_builder.core.llm_coordinator import InitState, LLMCoordinator
 
 
 class _FailingClient:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict
 
-from ai_prompts import GERMAN_PROMPT_TEMPLATE
+from vocab_builder.ai_prompts import GERMAN_PROMPT_TEMPLATE
 from .base import (
     LanguageConfig,
     TranslatorConfig,

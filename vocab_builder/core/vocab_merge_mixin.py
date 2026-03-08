@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Tuple
 
-from models import normalize_word_key
+from vocab_builder.models import normalize_word_key
 
 from .vocab_repository import EntryNotFoundError
 

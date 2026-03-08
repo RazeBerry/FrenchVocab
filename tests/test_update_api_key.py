@@ -12,8 +12,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.providers import manager as manager_module
-from core.providers.manager import (
+from vocab_builder.core.providers import manager as manager_module
+from vocab_builder.core.providers.manager import (
     ProviderManager,
     _get_provider_metadata,
 )
@@ -395,7 +395,7 @@ class TestUpdateKeyClientReplacement:
 
     def test_llm_coordinator_replaces_client_on_update(self, tmp_path, monkeypatch):
         """Verify LLMCoordinator creates new client after key update."""
-        from core.llm_coordinator import LLMCoordinator
+        from vocab_builder.core.llm_coordinator import LLMCoordinator
 
         ui = StubUI()
         new_key = "AIza" + "x" * 36
@@ -425,7 +425,7 @@ class TestUpdateKeyClientReplacement:
             clients_created.append((provider, api_key))
             return client
 
-        with patch("llm_client.ProviderFactory.create", side_effect=_track_create):
+        with patch("vocab_builder.llm_client.ProviderFactory.create", side_effect=_track_create):
             with patch.object(manager_module, "ProviderFactory") as mock_factory:
                 mock_factory.create.return_value = new_client
 
@@ -437,7 +437,7 @@ class TestUpdateKeyClientReplacement:
 
     def test_update_preserves_provider_metadata(self, tmp_path, monkeypatch):
         """Verify provider metadata is preserved after key update."""
-        from core.llm_coordinator import LLMCoordinator
+        from vocab_builder.core.llm_coordinator import LLMCoordinator
 
         ui = StubUI()
         new_key = "AIza" + "x" * 36
@@ -451,7 +451,7 @@ class TestUpdateKeyClientReplacement:
         coordinator._client = MagicMock()
         coordinator._api_available = True
 
-        with patch("llm_client.ProviderFactory.create", return_value=mock_client):
+        with patch("vocab_builder.llm_client.ProviderFactory.create", return_value=mock_client):
             with patch.object(manager_module, "ProviderFactory") as mock_factory:
                 mock_factory.create.return_value = mock_client
 
@@ -470,7 +470,7 @@ class TestUpdateKeyTranslatorReinit:
 
     def test_on_success_callback_is_invoked(self, tmp_path, monkeypatch):
         """Verify that on_success callback is called after successful update."""
-        from core.llm_coordinator import LLMCoordinator
+        from vocab_builder.core.llm_coordinator import LLMCoordinator
 
         ui = StubUI()
         new_key = "AIza" + "x" * 36
@@ -489,7 +489,7 @@ class TestUpdateKeyTranslatorReinit:
         def _callback():
             callback_invoked.append(True)
 
-        with patch("llm_client.ProviderFactory.create", return_value=mock_client):
+        with patch("vocab_builder.llm_client.ProviderFactory.create", return_value=mock_client):
             with patch.object(manager_module, "ProviderFactory") as mock_factory:
                 mock_factory.create.return_value = mock_client
 
@@ -499,7 +499,7 @@ class TestUpdateKeyTranslatorReinit:
 
     def test_on_success_not_called_on_failure(self, tmp_path, monkeypatch):
         """Verify that on_success callback is NOT called when update fails."""
-        from core.llm_coordinator import LLMCoordinator
+        from vocab_builder.core.llm_coordinator import LLMCoordinator
 
         ui = StubUI(confirm_responses=[False])
         wrong_key = "sk-wrong-prefix" + "x" * 30
@@ -529,7 +529,7 @@ class TestUpdateKeyEdgeCases:
 
     def test_update_key_with_no_provider_configured(self, tmp_path):
         """Verify error when no provider is configured."""
-        from core.llm_coordinator import LLMCoordinator
+        from vocab_builder.core.llm_coordinator import LLMCoordinator
 
         ui = StubUI()
         coordinator = LLMCoordinator(ui=ui, project_root=tmp_path)

@@ -14,11 +14,11 @@ from rich.table import Table
 from rich.text import Text
 from rich import box
 
-from languages import TranslatorConfig
-from llm_client import LLMClient
-from ui_helper import UIHelper, read_line
-from core.history_logger import TranslationLogger
-from latex_repository import parse_balanced_group
+from vocab_builder.languages import TranslatorConfig
+from vocab_builder.llm_client import LLMClient
+from vocab_builder.ui_helper import UIHelper, read_line
+from vocab_builder.core.history_logger import TranslationLogger
+from vocab_builder.latex_repository import parse_balanced_group
 
 
 class TranslatorCLI:
@@ -400,7 +400,7 @@ class TranslatorCLI:
 
             updated = content[:insert_pos] + f"{latex_entry}\n\n" + content[insert_pos:]
 
-            from core.file_safety import atomic_write_text
+            from vocab_builder.core.file_safety import atomic_write_text
             atomic_write_text(self.latex_file, updated, create_backup=True)
 
             self.ui.success(f"Added entry to {self.latex_file}")

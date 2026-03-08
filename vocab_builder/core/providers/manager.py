@@ -19,8 +19,8 @@ except Exception:  # pragma: no cover - keyring may be absent in some environmen
         """Fallback keyring error when keyring is unavailable."""
 
 
-from llm_client import ProviderFactory
-from ui_helper import UIHelper
+from vocab_builder.llm_client import ProviderFactory
+from vocab_builder.ui_helper import UIHelper
 
 
 def get_password(service: str, name: str) -> Optional[str]:

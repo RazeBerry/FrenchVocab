@@ -184,10 +184,10 @@ def _install_keyring_stub() -> None:
 
 
 def _install_llm_client_stub() -> None:
-    if "llm_client" in sys.modules:
+    if "vocab_builder.llm_client" in sys.modules:
         return
 
-    ll = types.ModuleType("llm_client")
+    ll = types.ModuleType("vocab_builder.llm_client")
 
     class _LLMClient:
         def stream(self, _prompt: str, *, thinking_level: str = "low"):
@@ -214,6 +214,8 @@ def _install_llm_client_stub() -> None:
     ll.LLMClient = _LLMClient
     ll.GeminiClient = _GeminiClient
     ll.ProviderFactory = _ProviderFactory
+    sys.modules["vocab_builder.llm_client"] = ll
+    # Legacy alias for backward compatibility
     sys.modules["llm_client"] = ll
 
 

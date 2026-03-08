@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from core.providers.manager import _get_provider_metadata
+from vocab_builder.core.providers.manager import _get_provider_metadata
 
 
 def _load_actual_llm_client():
-    module_path = Path(__file__).resolve().parent.parent / "llm_client.py"
+    module_path = Path(__file__).resolve().parent.parent / "vocab_builder" / "llm_client.py"
     spec = importlib.util.spec_from_file_location("llm_client_actual_provider_tests", module_path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

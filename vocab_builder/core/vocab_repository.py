@@ -13,11 +13,11 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from core.file_safety import atomic_write_text
-from latex_repository import LatexRepository, find_entry_bounds, iter_entry_groups, parse_all_entries
-from models import normalize_word_key
-from languages import LanguageConfig, get_language_config
-from ui_helper import UIHelper
+from vocab_builder.core.file_safety import atomic_write_text
+from vocab_builder.latex_repository import LatexRepository, find_entry_bounds, iter_entry_groups, parse_all_entries
+from vocab_builder.models import normalize_word_key
+from vocab_builder.languages import LanguageConfig, get_language_config
+from vocab_builder.ui_helper import UIHelper
 
 _LATEX_ESCAPE_MAPPING = {
     '&': r'\&',

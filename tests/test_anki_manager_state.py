@@ -2,8 +2,8 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from core.anki_manager import AnkiExportManager
-from languages import get_language_config
+from vocab_builder.core.anki_manager import AnkiExportManager
+from vocab_builder.languages import get_language_config
 
 
 class _StubUI:
@@ -61,7 +61,7 @@ def test_save_exported_words_does_not_fallback_to_plain_write(tmp_path):
     manager.exported_words = {"salut"}
     manager.exported_deck_version = "v2"
 
-    with patch("core.anki_manager.atomic_write_text", side_effect=OSError("disk full")):
+    with patch("vocab_builder.core.anki_manager.atomic_write_text", side_effect=OSError("disk full")):
         result = manager.save_exported_words()
 
     assert result is False

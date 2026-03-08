@@ -59,9 +59,9 @@ def _suppress_stdin_echo():
         yield
 
 if TYPE_CHECKING:
-    from llm_client import LLMClient
-    from ui_helper import UIHelper
-    from core.providers.manager import ProviderManager, ProviderMetadata, ProviderResolution
+    from vocab_builder.llm_client import LLMClient
+    from vocab_builder.ui_helper import UIHelper
+    from vocab_builder.core.providers.manager import ProviderManager, ProviderMetadata, ProviderResolution
 
 
 class LLMCoordinator:
@@ -96,7 +96,7 @@ class LLMCoordinator:
         """
         self._ui = ui
         if provider_manager is None:
-            from core.providers.manager import ProviderManager as _ProviderManager
+            from vocab_builder.core.providers.manager import ProviderManager as _ProviderManager
 
             root = Path(project_root) if project_root is not None else Path.cwd()
             provider_manager = _ProviderManager(ui, root)
@@ -304,7 +304,7 @@ class LLMCoordinator:
     @staticmethod
     def _classify_provider_error(provider_name: str, exc: Exception) -> Optional[Tuple[str, str]]:
         try:
-            from llm_client import classify_provider_error  # type: ignore[attr-defined]
+            from vocab_builder.llm_client import classify_provider_error  # type: ignore[attr-defined]
         except (ImportError, AttributeError):
             return None
         return classify_provider_error(provider_name, exc)
@@ -342,7 +342,7 @@ class LLMCoordinator:
         Returns:
             True if client was successfully created
         """
-        from llm_client import ProviderFactory
+        from vocab_builder.llm_client import ProviderFactory
 
         metadata = self._provider_metadata
         try:

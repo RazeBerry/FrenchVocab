@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 import FrenchVocab
-from models import normalize_word_key
+from vocab_builder.models import normalize_word_key
 
 
 GERMAN_ENTRY_TEMPLATE = r"""\entry{{{word}}}{{noun}}

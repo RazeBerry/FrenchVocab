@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from core.vocab_repository import VocabRepository
-from languages import get_language_config
+from vocab_builder.core.vocab_repository import VocabRepository
+from vocab_builder.languages import get_language_config
 
 
 def _repo(tmp_path: Path) -> VocabRepository:

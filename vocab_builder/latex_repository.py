@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Tuple, Optional
 
-from models import WordEntry
+from vocab_builder.models import WordEntry
 
 
 def parse_balanced_group(s: str, start: int) -> Tuple[str, int]:

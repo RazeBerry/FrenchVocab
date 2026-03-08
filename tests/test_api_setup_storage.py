@@ -2,8 +2,8 @@ import os
 import stat
 from pathlib import Path
 
-from core.providers import manager as manager_module
-from core.providers.manager import ProviderManager, _get_provider_metadata
+from vocab_builder.core.providers import manager as manager_module
+from vocab_builder.core.providers.manager import ProviderManager, _get_provider_metadata
 
 
 class _StubUI:

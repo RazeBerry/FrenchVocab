@@ -2,8 +2,8 @@ from pathlib import Path
 
 from rich.console import Console
 
-from core.translator import TranslatorCLI
-from languages import get_language_config
+from vocab_builder.core.translator import TranslatorCLI
+from vocab_builder.languages import get_language_config
 
 
 class _StubClient:

@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from core.file_safety import AtomicFileWriter, atomic_write_text
+from vocab_builder.core.file_safety import AtomicFileWriter, atomic_write_text
 
 
 class TestAtomicFileWriter(unittest.TestCase):
@@ -174,7 +174,7 @@ class TestAtomicWriterEdgeCases(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "durable.txt"
 
-            with patch("core.file_safety.os.fsync") as mock_fsync:
+            with patch("vocab_builder.core.file_safety.os.fsync") as mock_fsync:
                 atomic_write_text(path, "content", create_backup=False)
 
             self.assertGreaterEqual(mock_fsync.call_count, 2)

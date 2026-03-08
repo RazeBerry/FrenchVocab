@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Iterable, List, Sequence, Tuple
 
-from languages.base import AnkiConfig
+from vocab_builder.languages.base import AnkiConfig
 
 genanki: Any | None = None
 _HTML_BREAK_TOKEN = "__FRENCHVOCAB_ANKI_BR__"

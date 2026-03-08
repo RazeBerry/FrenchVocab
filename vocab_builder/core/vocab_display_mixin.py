@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from ui_helper import read_line
+from vocab_builder.ui_helper import read_line
 
 
 class VocabDisplayMixin:

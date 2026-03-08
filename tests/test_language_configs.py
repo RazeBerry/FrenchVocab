@@ -4,10 +4,10 @@ from pathlib import Path
 import pytest
 
 import FrenchVocab
-from cli.bootstrap import build_app
-from languages import available_language_codes, get_language_config
-from languages.anki_shared_styles import compute_template_hash
-from languages.anki_shared_styles import get_anki_css
+from vocab_builder.cli.bootstrap import build_app
+from vocab_builder.languages import available_language_codes, get_language_config
+from vocab_builder.languages.anki_shared_styles import compute_template_hash
+from vocab_builder.languages.anki_shared_styles import get_anki_css
 
 
 @pytest.mark.parametrize("language_code", ["fr", "de"])

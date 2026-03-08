@@ -5,11 +5,11 @@ import unicodedata
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from pathlib import Path
 from rich.console import Console
-from anki_exporter import latex_to_anki_format as latex_to_anki_html
-from ai_response_parser import parse_ai_response_text
+from vocab_builder.anki_exporter import latex_to_anki_format as latex_to_anki_html
+from vocab_builder.ai_response_parser import parse_ai_response_text
 import time
 import threading
-from languages import LanguageConfig, TranslatorConfig, default_language_code, get_language_config
+from vocab_builder.languages import LanguageConfig, TranslatorConfig, default_language_code, get_language_config
 from typing import TYPE_CHECKING
 
 from .history_logger import TranslationLogger
@@ -35,15 +35,15 @@ from .session_ui import (
     show_post_translation_menu,
     show_translation_menu,
 )
-from models import normalize_word_key
-from ui_helper import UIHelper, read_line
-from core.providers.manager import (
+from vocab_builder.models import normalize_word_key
+from vocab_builder.ui_helper import UIHelper, read_line
+from vocab_builder.core.providers.manager import (
     ProviderManager,
     ProviderMetadata,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - optional provider clients
-    from llm_client import GeminiClient  # noqa: F401
+    from vocab_builder.llm_client import GeminiClient  # noqa: F401
     from .translator import TranslatorCLI  # noqa: F401
     from .auto_translator import AutoTranslator  # noqa: F401
 
@@ -293,7 +293,7 @@ class FrenchVocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
         client: Optional["GeminiClient"],
         eager_provider: bool,
     ) -> tuple[float, float]:
-        from llm_client import ProviderFactory
+        from vocab_builder.llm_client import ProviderFactory
 
         self.eager_provider = eager_provider or (provider is not None)
         requested_provider = provider or ProviderFactory.default_provider()

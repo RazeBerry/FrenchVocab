@@ -18,14 +18,14 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
 
-from anki_exporter import AnkiExporter, AnkiExportEntry
-from core.file_safety import atomic_write_text
-from languages.anki_shared_styles import compute_template_hash
+from vocab_builder.anki_exporter import AnkiExporter, AnkiExportEntry
+from vocab_builder.core.file_safety import atomic_write_text
+from vocab_builder.languages.anki_shared_styles import compute_template_hash
 
 if TYPE_CHECKING:
-    from languages.base import LanguageConfig
-    from ui_helper import UIHelper
-    from core.vocab_repository import VocabRepository
+    from vocab_builder.languages.base import LanguageConfig
+    from vocab_builder.ui_helper import UIHelper
+    from vocab_builder.core.vocab_repository import VocabRepository
 
 
 class AnkiExportManager:
@@ -161,7 +161,7 @@ class AnkiExportManager:
 
     def _sync_anki_exporter_genanki_module(self) -> None:
         """Ensure the anki_exporter module uses the latest loaded genanki."""
-        import anki_exporter as anki_mod
+        import vocab_builder.anki_exporter as anki_mod
 
         latest_genanki = sys.modules.get("genanki")
         if latest_genanki is not None:

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-import cli.navigation as navigation
+import vocab_builder.cli.navigation as navigation
 
 
 class _Console:

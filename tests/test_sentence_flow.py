@@ -3,7 +3,7 @@ import tempfile
 import unittest
 
 import FrenchVocab
-from core import session_ui as session_ui_module
+from vocab_builder.core import session_ui as session_ui_module
 
 
 class _FakeLLMClient:
@@ -68,7 +68,7 @@ class TestSentenceFlow(unittest.TestCase):
 
     def test_get_word_input_escape_cancels(self):
         b = self._builder(client=_FakeLLMClient())
-        import core.vocab as vocab_module
+        import vocab_builder.core.vocab as vocab_module
         original_read_line = vocab_module.read_line
         try:
             vocab_module.read_line = lambda prompt="": "\x1b"

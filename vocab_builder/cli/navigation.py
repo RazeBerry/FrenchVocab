@@ -14,7 +14,7 @@ from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
 from rich import box
-from core.esc_config import read_esc_sequence_timeout
+from vocab_builder.core.esc_config import read_esc_sequence_timeout
 
 
 def _restore_cursor_on_exit() -> None:

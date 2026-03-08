@@ -6,7 +6,7 @@ does not depend on ``cli`` modules.
 
 from __future__ import annotations
 
-from core.menu_loop import (
+from vocab_builder.core.menu_loop import (
     _handle_main_choice,
     _handle_translation,
     _refresh_menu_counts,

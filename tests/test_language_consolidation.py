@@ -1,6 +1,6 @@
-from languages.base import make_text_validator
-from languages.french import FRENCH_CONFIG
-from languages.latex_templates import INITIAL_ENG_FR_TEX_CONTENT, INITIAL_FR_ENG_TEX_CONTENT
+from vocab_builder.languages.base import make_text_validator
+from vocab_builder.languages.french import FRENCH_CONFIG
+from vocab_builder.languages.latex_templates import INITIAL_ENG_FR_TEX_CONTENT, INITIAL_FR_ENG_TEX_CONTENT
 
 
 def test_make_text_validator_allows_typographic_apostrophes_in_words():

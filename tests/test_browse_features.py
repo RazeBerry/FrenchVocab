@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-import core.vocab_display_mixin as vocab_display_module
-from core.history_logger import TranslationLogger
-from core.vocab_display_mixin import VocabDisplayMixin
+import vocab_builder.core.vocab_display_mixin as vocab_display_module
+from vocab_builder.core.history_logger import TranslationLogger
+from vocab_builder.core.vocab_display_mixin import VocabDisplayMixin
 
 
 # --------------------------------------------------------------------------- #

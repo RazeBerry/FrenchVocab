@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict
 
-from ai_prompts import AI_PROMPT_TEMPLATE
+from vocab_builder.ai_prompts import AI_PROMPT_TEMPLATE
 from .latex_templates import (
     # Main vocabulary templates
     INITIAL_TEX_CONTENT,

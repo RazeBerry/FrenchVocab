@@ -1,6 +1,6 @@
 import unittest
 
-from languages.anki_shared_styles import BASE_ANKI_CARD_CSS, get_anki_css, compute_template_hash
+from vocab_builder.languages.anki_shared_styles import BASE_ANKI_CARD_CSS, get_anki_css, compute_template_hash
 
 
 class TestAnkiSharedStyles(unittest.TestCase):

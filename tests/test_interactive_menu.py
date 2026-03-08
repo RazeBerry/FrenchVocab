@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Test script to showcase the new interactive menu design."""
 
-from cli.navigation import _render_menu
+from vocab_builder.cli.navigation import _render_menu
 from rich.console import Console
 from rich.panel import Panel
 from rich import box

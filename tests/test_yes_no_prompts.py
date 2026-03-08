@@ -1,4 +1,4 @@
-import core.translator as translator_module
+import vocab_builder.core.translator as translator_module
 
 
 class _SilentConsole:

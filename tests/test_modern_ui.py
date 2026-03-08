@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Test script to showcase the new modern UI design."""
 
-from ui_helper import UIHelper
+from vocab_builder.ui_helper import UIHelper
 from rich.console import Console
 
 def test_modern_ui():

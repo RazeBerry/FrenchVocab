@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from core.history_logger import TranslationLogger
+from vocab_builder.core.history_logger import TranslationLogger
 
 
 def _read_jsonl(path: Path):

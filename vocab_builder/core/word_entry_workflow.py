@@ -8,9 +8,9 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
-from ai_response_parser import parse_ai_response_text
-from languages import LanguageConfig, TranslatorConfig
-from ui_helper import UIHelper, read_line
+from vocab_builder.ai_response_parser import parse_ai_response_text
+from vocab_builder.languages import LanguageConfig, TranslatorConfig
+from vocab_builder.ui_helper import UIHelper, read_line
 
 from .spelling_checker import SpellingChecker
 from .history_logger import TranslationLogger

@@ -5,7 +5,7 @@ from __future__ import annotations
 import unicodedata
 from typing import Any
 
-from languages import TranslatorConfig
+from vocab_builder.languages import TranslatorConfig
 
 
 _ZERO_WIDTH_CHARS = ("\u00AD", "\u200B", "\u200C", "\u200D", "\u2060", "\ufeff")

@@ -1,4 +1,4 @@
-from core.esc_config import read_esc_sequence_timeout
+from vocab_builder.core.esc_config import read_esc_sequence_timeout
 
 
 def test_read_esc_sequence_timeout_defaults_when_unset(monkeypatch):

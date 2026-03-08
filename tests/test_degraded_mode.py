@@ -3,7 +3,7 @@ import threading
 import os
 from types import SimpleNamespace
 
-from core.llm_coordinator import LLMCoordinator, InitState
+from vocab_builder.core.llm_coordinator import LLMCoordinator, InitState
 
 
 class _DummyClient:
@@ -165,7 +165,7 @@ def test_background_init_wait_timeout_does_not_block_forever(monkeypatch):
 
 
 def test_stale_generation_failure_does_not_clear_current_client(monkeypatch):
-    import llm_client
+    import vocab_builder.llm_client as llm_client
 
     coordinator = _make_minimal_coordinator("claude")
     existing_client = _DummyClient()
@@ -185,7 +185,7 @@ def test_stale_generation_failure_does_not_clear_current_client(monkeypatch):
 
 
 def test_initialize_client_degrades_cleanly_on_auth_failure(monkeypatch):
-    import llm_client
+    import vocab_builder.llm_client as llm_client
 
     coordinator = _make_minimal_coordinator("claude")
     coordinator._init_state = InitState.IN_PROGRESS

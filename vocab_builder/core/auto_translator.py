@@ -10,9 +10,9 @@ from typing import Callable, Dict, Optional
 from rich.console import Console
 from rich import box
 
-from languages import LanguageConfig
-from llm_client import LLMClient
-from ui_helper import UIHelper, read_line
+from vocab_builder.languages import LanguageConfig
+from vocab_builder.llm_client import LLMClient
+from vocab_builder.ui_helper import UIHelper, read_line
 from .translator import TranslatorCLI
 
 

@@ -8,7 +8,7 @@ import re
 import string
 from typing import Optional
 
-from ui_helper import UIHelper
+from vocab_builder.ui_helper import UIHelper
 
 
 class SpellingChecker:

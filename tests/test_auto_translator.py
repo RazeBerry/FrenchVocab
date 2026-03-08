@@ -1,11 +1,11 @@
-from languages.base import (
+from vocab_builder.languages.base import (
     LanguageConfig,
     TranslatorConfig,
     VocabTemplate,
     AnkiConfig,
     AnkiCardTemplate,
 )
-from core.auto_translator import AutoTranslator
+from vocab_builder.core.auto_translator import AutoTranslator
 from rich.console import Console
 
 
@@ -213,7 +213,7 @@ def test_sanity_check_rejects_same_language(monkeypatch):
 
     monkeypatch.setattr(translator, "_collect_multiline_input", lambda: "It is too early for me")
     # User declines the suspicious translation
-    import core.auto_translator as _at_mod
+    import vocab_builder.core.auto_translator as _at_mod
     monkeypatch.setattr(_at_mod, "read_line", lambda _prompt: "n")
     translator.run()
 

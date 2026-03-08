@@ -8,10 +8,10 @@ from rich.table import Table
 from rich import box
 from typing import List, Dict, Any, Optional, Tuple, Sequence
 from enum import Enum
-from core.esc_config import read_esc_sequence_timeout
+from vocab_builder.core.esc_config import read_esc_sequence_timeout
 
 try:
-    from diagnostics import esc_latency
+    from vocab_builder.diagnostics import esc_latency
 except ImportError:  # pragma: no cover - diagnostics are optional
     esc_latency = None  # type: ignore[assignment]
 
@@ -365,7 +365,7 @@ class UIHelper:
 
         Returns the key associated with the selected option.
         """
-        from cli.navigation import interactive_select
+        from vocab_builder.cli.navigation import interactive_select
 
         final_instructions = instructions or DEFAULT_MENU_INSTRUCTIONS
 
@@ -475,6 +475,6 @@ class UIHelper:
 
     def confirm(self, message: str, *, default: bool = True) -> bool:
         """Prompt user for a yes/no confirmation using visual selector."""
-        from cli.navigation import interactive_confirm
+        from vocab_builder.cli.navigation import interactive_confirm
 
         return interactive_confirm(self.console, message, default=default)

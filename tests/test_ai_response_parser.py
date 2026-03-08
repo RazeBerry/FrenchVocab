@@ -1,4 +1,4 @@
-import ai_response_parser as arp
+import vocab_builder.ai_response_parser as arp
 
 
 def test_parse_ai_response_text_normalizes_payload():

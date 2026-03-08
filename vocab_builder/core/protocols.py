@@ -9,10 +9,10 @@ This module defines structural typing contracts (Protocols) to:
 from typing import TYPE_CHECKING, Optional, Protocol
 
 if TYPE_CHECKING:  # pragma: no cover - for type hints only
-    from core.translator import TranslatorCLI
-    from core.auto_translator import AutoTranslator
-    from languages.base import LanguageConfig, TranslatorConfig
-    from ui_helper import UIHelper
+    from vocab_builder.core.translator import TranslatorCLI
+    from vocab_builder.core.auto_translator import AutoTranslator
+    from vocab_builder.languages.base import LanguageConfig, TranslatorConfig
+    from vocab_builder.ui_helper import UIHelper
 
 
 class VocabAppProtocol(Protocol):

@@ -6,7 +6,7 @@ from typing import Any, Optional, Tuple
 
 
 def resolve_welcome_provider_name(app: Any) -> str:
-    from core.llm_coordinator import InitState
+    from vocab_builder.core.llm_coordinator import InitState
 
     if app._llm.init_state == InitState.IN_PROGRESS:
         # Give background init a moment to settle so the welcome screen does not
@@ -69,7 +69,7 @@ def show_main_menu(app: Any) -> str:
 
     # Display status summary panel above menu for reduced cognitive load.
     # Use the state machine for clean, unambiguous status.
-    from core.llm_coordinator import InitState
+    from vocab_builder.core.llm_coordinator import InitState
 
     if app._llm.init_state == InitState.IN_PROGRESS:
         app._llm.await_init(timeout=0.2)

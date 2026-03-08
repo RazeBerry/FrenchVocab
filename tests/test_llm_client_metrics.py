@@ -101,7 +101,7 @@ def test_gemini_client_uses_structured_token_payload(tmp_path):
     os.environ["GEMINI_API_KEY"] = "AIza" + "x" * 36
     saved = _install_google_stub()
     try:
-        module_path = Path(__file__).resolve().parent.parent / "llm_client.py"
+        module_path = Path(__file__).resolve().parent.parent / "vocab_builder" / "llm_client.py"
         spec = importlib.util.spec_from_file_location("llm_client_actual", module_path)
         llm_client = importlib.util.module_from_spec(spec)
         assert spec.loader is not None
@@ -150,7 +150,7 @@ def test_gemini_client_reports_usage_metadata(tmp_path):
 
     saved = _install_google_stub(stream_factory=stream_factory)
     try:
-        module_path = Path(__file__).resolve().parent.parent / "llm_client.py"
+        module_path = Path(__file__).resolve().parent.parent / "vocab_builder" / "llm_client.py"
         spec = importlib.util.spec_from_file_location("llm_client_actual", module_path)
         llm_client = importlib.util.module_from_spec(spec)
         assert spec.loader is not None

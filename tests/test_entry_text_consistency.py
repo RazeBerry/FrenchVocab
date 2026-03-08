@@ -1,8 +1,8 @@
 from unittest.mock import MagicMock
 
-from core.vocab import FrenchVocabBuilder
-from core.word_entry_workflow import WordEntryWorkflow
-from languages import get_language_config
+from vocab_builder.core.vocab import FrenchVocabBuilder
+from vocab_builder.core.word_entry_workflow import WordEntryWorkflow
+from vocab_builder.languages import get_language_config
 
 
 def _workflow() -> WordEntryWorkflow:
