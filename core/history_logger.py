@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from collections import deque
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import os
 from pathlib import Path
 import threading
-from typing import Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Collection, Dict, Iterable, List, MutableMapping, Optional, Sequence, Tuple
 
 try:
     import fcntl
@@ -138,6 +139,54 @@ class TranslationLogger:
             "target_label": target_label,
         }
         self._append_record("translator", payload)
+
+    # --------------------------------------------------------------------- #
+    # Read helpers
+    # --------------------------------------------------------------------- #
+    def read_recent_vocab_entries(
+        self,
+        limit: Optional[int] = 15,
+        *,
+        actions: Optional[Collection[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Return the most recent vocab entries from the JSONL history.
+
+        Reads the history file, filters for ``flow == "vocab"`` records,
+        optionally filters by action, and returns the last *limit* entries in
+        reverse-chronological order. Pass ``limit=None`` to read the full vocab
+        history. Returns an empty list if the file is missing or unreadable.
+        """
+        if limit is not None and limit <= 0:
+            return []
+
+        path = self._record_path()
+        if not path.exists():
+            return []
+
+        allowed_actions = {str(action) for action in actions} if actions else None
+        try:
+            vocab_records: List[Dict[str, Any]] | deque[Dict[str, Any]]
+            if limit is None:
+                vocab_records = []
+            else:
+                vocab_records = deque(maxlen=limit)
+            with path.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if record.get("flow") != "vocab":
+                        continue
+                    if allowed_actions is not None and record.get("action", "new") not in allowed_actions:
+                        continue
+                    vocab_records.append(record)
+            return list(reversed(list(vocab_records)))
+        except OSError:
+            return []
 
     # --------------------------------------------------------------------- #
     # Internal helpers

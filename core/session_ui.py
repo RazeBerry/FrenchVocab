@@ -97,13 +97,12 @@ def show_main_menu(app: Any) -> str:
     app.ui.panel(status_text, title="Status", border_style="dim dark_orange")
 
     add_word_label = app._ui_text("menu.add_word", f"Add {language_name} word")
-    display_all_label = app._ui_text("menu.display_all", f"Display all {language_name} words")
 
     options = [
         ("add", add_word_label),
         ("translate", "Translate text"),
         ("anki_tools", "Anki tools"),
-        ("display_vocab", display_all_label),
+        ("browse", "Browse vocabulary"),
         ("settings", "Settings & Configuration"),
         ("exit", "[bold yellow]Exit[/bold yellow]"),
     ]

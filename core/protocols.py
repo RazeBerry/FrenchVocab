@@ -107,6 +107,10 @@ class VocabAppProtocol(Protocol):
         """Display all vocabulary entries to the user."""
         ...
 
+    def browse_vocabulary(self) -> None:
+        """Open the vocabulary browsing submenu."""
+        ...
+
     def show_settings_screen(self) -> None:
         """Display the settings/configuration screen."""
         ...

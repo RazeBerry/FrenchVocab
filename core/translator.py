@@ -148,7 +148,7 @@ class TranslatorCLI:
         )
         if parse_errors:
             summary += f" ({parse_errors} parsing errors)"
-        self.ui.info(summary)
+        self.ui.debug(summary)
 
     def _parse_entries_for_command(self, content: str, cmd: str) -> tuple:
         """Parse entries for a specific LaTeX command using balanced-brace parsing.

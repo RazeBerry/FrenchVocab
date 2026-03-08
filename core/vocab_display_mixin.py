@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from ui_helper import read_line
 
@@ -89,12 +89,110 @@ class VocabDisplayMixin:
     def _prompt_optional_search_query(self) -> str:
         return self.ui.prompt("Search vocabulary (press Enter to skip)", style="dim").strip()
 
-    def display_all_vocabulary(self):
-        """Displays all vocabulary entries present in the LaTeX file in a paginated table format.
+    @staticmethod
+    def _history_actions_for_additions() -> tuple[str, ...]:
+        return ("new", "force")
 
-        This function retrieves all vocabulary entries from the LaTeX file, formats them
-        into a Rich table, and displays them with pagination for better readability.
-        """
+    @staticmethod
+    def _parse_history_timestamp(timestamp_str: str):
+        from datetime import datetime, timezone
+
+        try:
+            timestamp = datetime.fromisoformat(timestamp_str)
+        except (TypeError, ValueError):
+            return None
+        if timestamp.tzinfo is None:
+            return timestamp.replace(tzinfo=timezone.utc)
+        return timestamp
+
+    def _resolve_existing_entry_key(self, word: str) -> Optional[str]:
+        word_key = str(word or "").lower()
+        if word_key in self.word_entries:
+            return word_key
+
+        normalized_entries = getattr(self, "normalized_entries", None)
+        if isinstance(normalized_entries, dict):
+            normalized_key = normalized_entries.get(self.normalize_word(word))
+            if normalized_key in self.word_entries:
+                return normalized_key
+
+        normalized_target = self.normalize_word(word)
+        for candidate in self.word_entries.keys():
+            if self.normalize_word(candidate) == normalized_target:
+                return candidate
+        return None
+
+    def _read_vocab_history(self, *, actions: Optional[tuple[str, ...]] = None) -> list[dict[str, Any]]:
+        history_logger = getattr(self, "history_logger", None)
+        if not history_logger:
+            return []
+        return history_logger.read_recent_vocab_entries(limit=None, actions=actions)
+
+    def _collect_recent_additions(self, limit: int) -> list[tuple[str, dict[str, Any]]]:
+        recent = self._read_vocab_history(actions=self._history_actions_for_additions())
+        seen: set[str] = set()
+        additions: list[tuple[str, dict[str, Any]]] = []
+
+        for record in recent:
+            entry_key = self._resolve_existing_entry_key(str(record.get("word", "")))
+            if entry_key is None or entry_key in seen:
+                continue
+            seen.add(entry_key)
+            additions.append((entry_key, record))
+            if len(additions) >= limit:
+                break
+
+        return additions
+
+    # --------------------------------------------------------------------- #
+    # Browse submenu
+    # --------------------------------------------------------------------- #
+
+    def browse_vocabulary(self) -> None:
+        """Open the vocabulary browsing submenu."""
+        self._ensure_entries_loaded()
+
+        while True:
+            word_count = len(self.word_entries)
+            options = [
+                ("view_all", f"View all entries ({word_count})"),
+                ("search", "Search vocabulary"),
+                ("recent", "Recently added"),
+                ("by_type", "Browse by word type"),
+                ("flashcard", "Random flashcard"),
+                ("stats", "Vocabulary stats"),
+                ("back", "Back to main menu"),
+            ]
+            try:
+                choice = self.ui.interactive_menu(
+                    "Browse Vocabulary",
+                    options,
+                    "[↑↓] Navigate • [Enter] Select • [Esc] Go back",
+                )
+            except KeyboardInterrupt:
+                return
+
+            if choice == "back":
+                return
+
+            handlers = {
+                "view_all": self.display_all_vocabulary,
+                "search": lambda: self.search_vocabulary(),
+                "recent": self.show_recently_added,
+                "by_type": self.browse_by_word_type,
+                "flashcard": self.random_flashcard,
+                "stats": self.show_vocab_stats,
+            }
+            handler = handlers.get(choice)
+            if handler:
+                handler()
+
+    # --------------------------------------------------------------------- #
+    # View all entries (existing)
+    # --------------------------------------------------------------------- #
+
+    def display_all_vocabulary(self):
+        """Displays all vocabulary entries in a table."""
         self._ensure_entries_loaded()
         if not self.word_entries:
             self.ui.warning("No vocabulary entries found in the LaTeX file.")
@@ -114,6 +212,10 @@ class VocabDisplayMixin:
         search_query = self._prompt_optional_search_query()
         if search_query:
             self.search_vocabulary(search_query)
+
+    # --------------------------------------------------------------------- #
+    # Search
+    # --------------------------------------------------------------------- #
 
     def _resolve_search_term(self, search_term: Optional[str]) -> str:
         if search_term is None:
@@ -204,3 +306,248 @@ class VocabDisplayMixin:
 
         self._maybe_view_full_entry_from_results()
 
+    # --------------------------------------------------------------------- #
+    # Recently added
+    # --------------------------------------------------------------------- #
+
+    @staticmethod
+    def _format_relative_time(timestamp_str: str) -> str:
+        from datetime import datetime, timezone
+
+        try:
+            ts = datetime.fromisoformat(timestamp_str)
+            now = datetime.now(timezone.utc)
+            delta = now - ts
+            seconds = int(delta.total_seconds())
+            if seconds < 60:
+                return "just now"
+            minutes = seconds // 60
+            if minutes < 60:
+                return f"{minutes}m ago"
+            hours = minutes // 60
+            if hours < 24:
+                return f"{hours}h ago"
+            days = hours // 24
+            if days == 1:
+                return "yesterday"
+            if days < 30:
+                return f"{days}d ago"
+            return f"{days // 30}mo ago"
+        except (ValueError, TypeError):
+            return "unknown"
+
+    def show_recently_added(self, limit: int = 15) -> None:
+        """Display the most recently added vocabulary entries."""
+        self._ensure_entries_loaded()
+        if not getattr(self, "history_logger", None):
+            self.ui.warning("History logging is not enabled.")
+            return
+
+        recent_additions = self._collect_recent_additions(limit)
+        if not recent_additions:
+            self.ui.info("No recent entries found in history.", accent="dim")
+            return
+
+        rows: list[list[str]] = []
+        entry_keys: list[str] = []
+        for entry_key, record in recent_additions:
+            entry = self.word_entries[entry_key]
+            action = str(record.get("action", "new"))
+            action_label = "variant" if action == "force" else "added"
+            rows.append([
+                str(len(rows) + 1),
+                entry["word"],
+                self._format_entry_type(entry.get("type", record.get("word_type", ""))),
+                action_label,
+                self._format_relative_time(str(record.get("timestamp", ""))),
+            ])
+            entry_keys.append(entry_key)
+
+        self.ui.render_table(
+            title=f"Recently Added ({len(rows)} entries)",
+            columns=["No.", "Word", "Type", "Action", "When"],
+            rows=rows,
+            column_styles=["cyan", "magenta", "green", "yellow", "dark_orange"],
+        )
+
+        # Offer detail view
+        self.ui.info("View full entry by number; Enter to go back.", accent="dim")
+        while True:
+            choice_num = self._prompt_definition_number()
+            if choice_num is None:
+                return
+            if choice_num < 0:
+                continue
+            if choice_num < 1 or choice_num > len(entry_keys):
+                self.ui.warning("Please enter a valid entry number.")
+                continue
+            self.display_existing_entry(entry_keys[choice_num - 1])
+
+    # --------------------------------------------------------------------- #
+    # Browse by word type
+    # --------------------------------------------------------------------- #
+
+    def _collect_type_counts(self) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        for entry in self.word_entries.values():
+            entry_type = self._format_entry_type(entry.get("type", "unknown"))
+            counts[entry_type] = counts.get(entry_type, 0) + 1
+        return counts
+
+    def browse_by_word_type(self) -> None:
+        """Show entries filtered by word type."""
+        self._ensure_entries_loaded()
+        if not self.word_entries:
+            self.ui.warning("No vocabulary entries found.")
+            return
+
+        type_counts = self._collect_type_counts()
+        sorted_types = sorted(type_counts.items(), key=lambda x: (-x[1], x[0]))
+
+        options = [
+            (word_type, f"{word_type.capitalize()} ({count})")
+            for word_type, count in sorted_types
+        ]
+        options.append(("back", "Back"))
+
+        try:
+            choice = self.ui.interactive_menu(
+                "Browse by Word Type",
+                options,
+                "[↑↓] Navigate • [Enter] Select • [Esc] Go back",
+            )
+        except KeyboardInterrupt:
+            return
+
+        if choice == "back":
+            return
+
+        # Filter entries by selected type
+        filtered: Dict[str, Dict] = {}
+        for word_key, entry in self.word_entries.items():
+            if self._format_entry_type(entry.get("type", "")) == choice:
+                filtered[word_key] = entry
+
+        if not filtered:
+            self.ui.warning(f"No entries of type '{choice}' found.")
+            return
+
+        rows: list[list[str]] = []
+        truncated: Dict[int, str] = {}
+        for index, (_word, entry) in enumerate(
+            sorted(filtered.items(), key=lambda x: self.normalize_word(x[0])), 1
+        ):
+            definitions = entry["definitions"]
+            preview, was_truncated = self._preview_definition_text(definitions)
+            if was_truncated:
+                truncated[index] = definitions
+            rows.append([
+                str(index),
+                entry["word"],
+                preview,
+            ])
+
+        self.ui.render_table(
+            title=f"{choice.capitalize()} ({len(filtered)} entries)",
+            columns=["No.", "Word", "Definitions"],
+            rows=rows,
+            column_styles=["cyan", "magenta", "white"],
+        )
+        self._show_truncated_definitions(truncated)
+
+    # --------------------------------------------------------------------- #
+    # Random flashcard
+    # --------------------------------------------------------------------- #
+
+    def random_flashcard(self) -> None:
+        """Show a random vocabulary entry as a flashcard."""
+        import random
+
+        self._ensure_entries_loaded()
+        if not self.word_entries:
+            self.ui.warning("No vocabulary entries available.")
+            return
+
+        keys = list(self.word_entries.keys())
+
+        while True:
+            word_key = random.choice(keys)
+            entry = self.word_entries[word_key]
+            word = entry["word"]
+
+            self.ui.panel(
+                f"[bold magenta]{word}[/bold magenta]",
+                title="Flashcard",
+                border_style="cyan",
+            )
+
+            try:
+                read_line("Press Enter to reveal definition... ")
+            except (EOFError, KeyboardInterrupt):
+                return
+
+            self.display_existing_entry(word_key)
+
+            try:
+                again = read_line("Another? (Enter = yes, Esc/n = done) ").strip()
+            except (EOFError, KeyboardInterrupt):
+                return
+            if again.lower() in ("n", "no") or "\x1b" in again:
+                return
+
+    # --------------------------------------------------------------------- #
+    # Vocabulary stats
+    # --------------------------------------------------------------------- #
+
+    def show_vocab_stats(self) -> None:
+        """Display a vocabulary statistics dashboard."""
+        self._ensure_entries_loaded()
+        total = len(self.word_entries)
+
+        # Type breakdown
+        type_counts = self._collect_type_counts()
+        sorted_types = sorted(type_counts.items(), key=lambda x: (-x[1], x[0]))
+        type_lines = "  ".join(
+            f"[bold]{t.capitalize()}:[/bold] {c}" for t, c in sorted_types
+        )
+
+        # Recent activity from history
+        last_added = ""
+        week_count = 0
+        recent_additions = self._read_vocab_history(actions=self._history_actions_for_additions())
+        if recent_additions:
+            last_record = recent_additions[0]
+            last_timestamp = self._parse_history_timestamp(str(last_record.get("timestamp", "")))
+            if last_timestamp is not None:
+                last_word = last_record.get("word", "?")
+                last_time = self._format_relative_time(str(last_record.get("timestamp", "")))
+                last_added = f'"{last_word}" ({last_time})'
+
+            from datetime import datetime, timezone, timedelta
+
+            cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+            for record in recent_additions:
+                timestamp = self._parse_history_timestamp(str(record.get("timestamp", "")))
+                if timestamp is not None and timestamp >= cutoff:
+                    week_count += 1
+
+        lines: List[str] = [
+            f"[bold]Total words:[/bold] {total}",
+            "",
+            f"[bold]By type:[/bold]  {type_lines}",
+        ]
+        if last_added:
+            lines.append("")
+            lines.append(f"[bold]Last added:[/bold] {last_added}")
+            lines.append(f"[bold]This week:[/bold]  +{week_count} entries")
+
+        language_name = getattr(self, "language_config", None)
+        title = "Vocabulary Stats"
+        if language_name:
+            title = f"{language_name.display_name} Vocabulary Stats"
+
+        self.ui.panel(
+            "\n".join(lines),
+            title=title,
+            border_style="dark_orange",
+        )
