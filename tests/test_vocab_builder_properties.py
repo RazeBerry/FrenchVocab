@@ -79,7 +79,7 @@ def test_keyring_get_password_best_effort_swallows_keyring_errors(monkeypatch) -
     monkeypatch.setattr(keyring, "get_password", _raise_keyring_error)
 
     value = VocabBuilder._keyring_get_password_best_effort(
-        "french_vocab_builder",
+        "vocab_builder",
         "gemini_api_key",
     )
 

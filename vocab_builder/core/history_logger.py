@@ -33,7 +33,8 @@ def _ensure_path(path: Path) -> Path:
 
 def default_history_base_dir() -> Path:
     """Default history location outside the repository working tree."""
-    return Path(os.path.expanduser("~/.frenchvocab/history"))
+    from vocab_builder.compat import config_home
+    return config_home() / "history"
 
 
 ErrorHandler = Optional[Callable[[str], None]]

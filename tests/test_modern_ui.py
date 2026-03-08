@@ -29,11 +29,11 @@ def test_modern_ui():
 
     console.print("\n[bold]3. Regular Panels with Rounded Borders:[/]\n")
     ui.panel(
-        "[bold #E67E50]Welcome to FrenchVocab![/]\n\n"
+        "[bold #E67E50]Welcome to VocabBuilder![/]\n\n"
         "Your vocabulary library contains [bold #51cf66]150 words[/].\n"
         "Using LLM provider: [bold #E67E50]Anthropic Claude[/]\n"
         "Active language: [bold #E67E50]French[/]\n\n"
-        "[italic dim]Version 2.0[/]",
+        "[italic dim]Version 3.0[/]",
         title="French Vocab Builder",
         border_style="dark_orange"
     )

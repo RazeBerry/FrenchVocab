@@ -284,7 +284,8 @@ class AnkiExportManager:
         all_exported_words: Set[str],
         word_entries: Dict[str, Any],
     ) -> None:
-        if not os.getenv("FRENCHVOCAB_DEBUG_EXPORT"):
+        from vocab_builder.compat import get_env
+        if not get_env("VOCABBUILDER_DEBUG_EXPORT"):
             return
         self._ui.debug(
             "[export_debug] "

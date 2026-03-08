@@ -331,7 +331,8 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
         load_config_start: float,
         load_config_end: float,
     ) -> None:
-        if os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("FRENCHVOCAB_FORCE_SYNC_LOAD"):
+        from vocab_builder.compat import get_env
+        if os.environ.get("PYTEST_CURRENT_TEST") or get_env("VOCABBUILDER_FORCE_SYNC_LOAD"):
             self._ensure_entries_loaded()
         else:
             self._start_warmup_tasks()
@@ -1028,8 +1029,9 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
         if not self._is_keyring_enabled():
             return "Environment variable"
 
+        from vocab_builder.compat import KEYRING_SERVICE
         stored_key = self._keyring_get_password_best_effort(
-            "french_vocab_builder",
+            KEYRING_SERVICE,
             metadata.keyring_name,
         )
         if stored_key and stored_key == env_value:

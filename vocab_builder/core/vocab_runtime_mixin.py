@@ -8,6 +8,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from vocab_builder.compat import get_env
+
 from .history_logger import TranslationLogger, default_history_base_dir
 
 
@@ -69,7 +71,7 @@ class VocabRuntimeMixin:
             self._apply_input_limits_from_config(limits)
 
     def _apply_env_max_chars_override(self) -> None:
-        env_chars = os.getenv("FRENCH_VOCAB_MAX_CHARS")
+        env_chars = get_env("VOCABBUILDER_MAX_CHARS")
         if not env_chars:
             return
         try:
@@ -80,7 +82,7 @@ class VocabRuntimeMixin:
             self.max_word_length = parsed
 
     def _apply_env_max_words_override(self) -> None:
-        env_words = os.getenv("FRENCH_VOCAB_MAX_WORDS")
+        env_words = get_env("VOCABBUILDER_MAX_WORDS")
         if env_words is None:
             return
         try:
@@ -93,7 +95,7 @@ class VocabRuntimeMixin:
             self.max_words = None
 
     def _apply_env_sentence_mode_override(self) -> None:
-        env_sentence = os.getenv("FRENCH_VOCAB_SENTENCE_MODE") or os.getenv("FRENCH_VOCAB_ALLOW_PUNCT")
+        env_sentence = get_env("VOCABBUILDER_SENTENCE_MODE") or get_env("VOCABBUILDER_ALLOW_PUNCT")
         if env_sentence is None:
             return
         self.allow_sentence_punctuation = str(env_sentence).strip().lower() in (
@@ -105,7 +107,7 @@ class VocabRuntimeMixin:
         )
 
     def _apply_env_bool_override(self, env_var: str, attr_name: str) -> None:
-        env_value = os.getenv(env_var)
+        env_value = get_env(env_var)
         if env_value is None:
             return
         parsed = self._parse_bool_flag(env_value)
@@ -117,7 +119,7 @@ class VocabRuntimeMixin:
         """Load UI/input and routing options from env or optional JSON config.
 
         Priority: defaults < config file < environment variables.
-        - Env vars: FRENCH_VOCAB_MAX_CHARS, FRENCH_VOCAB_MAX_WORDS
+        - Env vars: VOCABBUILDER_MAX_CHARS, VOCABBUILDER_MAX_WORDS
         - Config file (JSON): {"input_limits": {"max_chars": int, "max_words": int|null}}
         Any non-positive or null max_words disables the word-count limit.
         """
@@ -125,11 +127,11 @@ class VocabRuntimeMixin:
         self._apply_env_max_chars_override()
         self._apply_env_max_words_override()
         self._apply_env_sentence_mode_override()
-        self._apply_env_bool_override("FRENCH_VOCAB_ROUTE_SENTENCES", "route_sentences")
-        self._apply_env_bool_override("FRENCH_VOCAB_SENTENCE_EXAMPLES", "sentence_examples_in_vocab")
+        self._apply_env_bool_override("VOCABBUILDER_ROUTE_SENTENCES", "route_sentences")
+        self._apply_env_bool_override("VOCABBUILDER_SENTENCE_EXAMPLES", "sentence_examples_in_vocab")
 
     def _should_enable_auto_translator(self) -> bool:
-        env_value = os.getenv("FRENCH_VOCAB_AUTO_TRANSLATOR")
+        env_value = get_env("VOCABBUILDER_AUTO_TRANSLATOR")
         if env_value is not None:
             return str(env_value).strip().lower() in ("1", "true", "yes", "y", "on")
         return bool(getattr(self.language_config, "auto_prompt_template", None))
@@ -141,14 +143,14 @@ class VocabRuntimeMixin:
             config_section = raw_config
 
         enabled = bool(config_section.get("enabled", True))
-        env_disabled = os.getenv("FRENCH_VOCAB_HISTORY_DISABLED")
+        env_disabled = get_env("VOCABBUILDER_HISTORY_DISABLED")
         if env_disabled and env_disabled.strip().lower() in ("1", "true", "yes", "y", "on"):
             enabled = False
-        env_enabled = os.getenv("FRENCH_VOCAB_HISTORY_ENABLED")
+        env_enabled = get_env("VOCABBUILDER_HISTORY_ENABLED")
         if env_enabled and env_enabled.strip().lower() in ("1", "true", "yes", "y", "on"):
             enabled = True
 
-        base_dir_override = os.getenv("FRENCH_VOCAB_HISTORY_DIR")
+        base_dir_override = get_env("VOCABBUILDER_HISTORY_DIR")
         if base_dir_override:
             base_dir = Path(base_dir_override)
         else:
@@ -177,4 +179,3 @@ class VocabRuntimeMixin:
             # Fallback: print to stderr if UI fails
             print(f"WARNING: {message}", file=sys.stderr)
             print(f"(UI error: {e})", file=sys.stderr)
-

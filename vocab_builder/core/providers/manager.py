@@ -19,6 +19,7 @@ except Exception:  # pragma: no cover - keyring may be absent in some environmen
         """Fallback keyring error when keyring is unavailable."""
 
 
+from vocab_builder.compat import get_env, config_home, KEYRING_SERVICE
 from vocab_builder.llm_client import ProviderFactory
 from vocab_builder.ui_helper import UIHelper
 
@@ -114,7 +115,7 @@ class ProviderManager:
         self.project_root = Path(project_root)
         self._env_path = self._determine_env_path(self.project_root)
         # Allow skipping keyring probing for faster startup in CI/containers.
-        skip = os.environ.get("FRENCHVOCAB_SKIP_KEYRING", "")
+        skip = get_env("VOCABBUILDER_SKIP_KEYRING", "")
         self._keyring_enabled = str(skip).strip().lower() not in {"1", "true", "yes", "y"}
 
     # Public API ---------------------------------------------------------
@@ -126,13 +127,13 @@ class ProviderManager:
         """Choose a writable .env location, preferring project root, with fallbacks.
 
         Order of preference:
-        1) FRENCHVOCAB_CONFIG_DIR/.env (explicit override)
+        1) VOCABBUILDER_CONFIG_DIR/.env (explicit override)
         2) project_root/.env if writable
-        3) ~/.frenchvocab/.env
+        3) ~/.vocabbuilder/.env (falls back to ~/.frenchvocab/ if it exists)
         """
 
         # 1) Explicit override for tests or custom deployments
-        env_dir_override = os.environ.get("FRENCHVOCAB_CONFIG_DIR")
+        env_dir_override = get_env("VOCABBUILDER_CONFIG_DIR")
         if env_dir_override:
             env_dir = Path(env_dir_override).expanduser()
             try:
@@ -151,8 +152,8 @@ class ProviderManager:
             if os.access(project_parent, os.W_OK):
                 return project_env
 
-        # 3) User config dir (always attempt to create)
-        fallback_dir = Path.home() / ".frenchvocab"
+        # 3) User config dir (with legacy fallback)
+        fallback_dir = config_home()
         fallback_dir.mkdir(parents=True, exist_ok=True)
         return fallback_dir / ".env"
 
@@ -206,7 +207,7 @@ class ProviderManager:
 
         thread = threading.Thread(
             target=_worker,
-            name="frenchvocab-keyring-get",
+            name="vocabbuilder-keyring-get",
             daemon=True,
         )
         thread.start()
@@ -309,7 +310,7 @@ class ProviderManager:
         if self._keyring_enabled:
             try:
                 stored_key, keyring_timed_out = self._keyring_get_password(
-                    "french_vocab_builder",
+                    KEYRING_SERVICE,
                     metadata.keyring_name,
                     timeout_s=keyring_timeout_s,
                 )
@@ -319,7 +320,7 @@ class ProviderManager:
         if keyring_timed_out:
             self.ui.warning(
                 "Keychain lookup took too long; skipping it for now. "
-                "You can set FRENCHVOCAB_SKIP_KEYRING=1 to disable keychain lookups."
+                "You can set VOCABBUILDER_SKIP_KEYRING=1 to disable keychain lookups."
             )
 
         if stored_key:
@@ -334,7 +335,7 @@ class ProviderManager:
 
     def _run_setup_wizard(self, default_metadata: ProviderMetadata) -> Tuple[ProviderMetadata, str]:
         self.ui.panel(
-            "[bold cyan]🚀 Welcome to FrenchVocab![/bold cyan]\n\n"
+            "[bold cyan]🚀 Welcome to VocabBuilder![/bold cyan]\n\n"
             "To translate words, you need an AI provider.\n\n"
             "[bold]Choose your setup experience:[/bold]",
             title="First-Time Setup",
@@ -417,14 +418,14 @@ class ProviderManager:
             persistence_note = "[dim]Tip: We'll reuse this .env entry automatically next time.[/dim]"
         else:
             storage_line = "🔐 Storage: [bold]Current session only[/bold]"
-            persistence_note = "[yellow]You'll be prompted for the key again the next time you launch FrenchVocab.[/yellow]"
+            persistence_note = "[yellow]You'll be prompted for the key again the next time you launch VocabBuilder.[/yellow]"
             self.ui.warning(
                 "Key stored for this session only. Run the setup again next time to restore AI features."
             )
 
         self.ui.panel(
             "[bold green]✅ All Set![/bold green]\n\n"
-            "Your FrenchVocab is ready to use!\n\n"
+            "VocabBuilder is ready to use!\n\n"
             "🎯 Provider: [bold]Google Gemini[/bold]\n"
             f"{storage_line}\n"
             "📚 You can now add vocabulary and translate!\n\n"
@@ -599,7 +600,7 @@ class ProviderManager:
             )
             return "session environment"
         try:
-            set_password("french_vocab_builder", metadata.keyring_name, api_key)
+            set_password(KEYRING_SERVICE, metadata.keyring_name, api_key)
             self.ui.success("✓ API key securely saved to system keychain.")
             return "system keyring"
         except (KeyringError, RuntimeError, OSError, ImportError, ValueError) as exc:
@@ -626,7 +627,7 @@ class ProviderManager:
             choice = self.ui.interactive_menu(
                 "Where should we save this key?",
                 options,
-                "Choose how you want FrenchVocab to remember your key.",
+                "Choose how you want VocabBuilder to remember your key.",
                 show_keys=False,
             )
         except KeyboardInterrupt as exc:
@@ -639,7 +640,7 @@ class ProviderManager:
             choice = self._choose_storage_destination(metadata, keyring_available=keyring_available)
             if choice == "keyring":
                 try:
-                    set_password("french_vocab_builder", metadata.keyring_name, api_key)
+                    set_password(KEYRING_SERVICE, metadata.keyring_name, api_key)
                     self.ui.success("Saved API key to system keyring.")
                     return "system keyring"
                 except (KeyringError, RuntimeError, OSError, ImportError, ValueError):

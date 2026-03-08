@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import os
+from vocab_builder.compat import get_env
 
 
 def read_esc_sequence_timeout(default: float = 0.03) -> float:
     """Return a safe ESC sequence timeout from environment settings."""
-    raw = os.environ.get("FRENCHVOCAB_ESC_SEQUENCE_TIMEOUT")
+    raw = get_env("VOCABBUILDER_ESC_SEQUENCE_TIMEOUT")
     if raw is None:
         return default
 

@@ -31,12 +31,13 @@ _PROVIDER_DISCOVERY_ORDER: Tuple[Tuple[str, str, str], ...] = (
 
 
 def _candidate_env_paths() -> Tuple[Path, ...]:
+    from vocab_builder.compat import get_env, config_home
     candidates = []
-    config_dir = os.getenv("FRENCHVOCAB_CONFIG_DIR")
+    config_dir = get_env("VOCABBUILDER_CONFIG_DIR")
     if config_dir:
         candidates.append(Path(config_dir).expanduser() / ".env")
     candidates.append(Path(__file__).resolve().parent / ".env")
-    candidates.append(Path.home() / ".frenchvocab" / ".env")
+    candidates.append(config_home() / ".env")
 
     deduped = []
     seen = set()
@@ -571,7 +572,8 @@ class ProviderFactory:
                 return provider_name
 
         pytest_active = bool(os.getenv("PYTEST_CURRENT_TEST"))
-        allow_persistent_autodetect = bool(os.getenv("FRENCHVOCAB_TEST_PROVIDER_AUTODETECT"))
+        from vocab_builder.compat import get_env as _get_env
+        allow_persistent_autodetect = bool(_get_env("VOCABBUILDER_TEST_PROVIDER_AUTODETECT"))
         if pytest_active and not allow_persistent_autodetect:
             return "gemini"
 
@@ -583,7 +585,8 @@ class ProviderFactory:
                     return provider_name
 
         for provider_name, _, keyring_name in _PROVIDER_DISCOVERY_ORDER:
-            stored = _keyring_get_password_best_effort("french_vocab_builder", keyring_name)
+            from vocab_builder.compat import KEYRING_SERVICE as _KR_SVC
+            stored = _keyring_get_password_best_effort(_KR_SVC, keyring_name)
             if stored:
                 return provider_name
 

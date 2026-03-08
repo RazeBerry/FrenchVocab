@@ -1,10 +1,11 @@
 """
 Ad-hoc ESC latency tracer.
 
-When the environment variable ``FRENCHVOCAB_ESC_DEBUG`` is set to ``1``,
-``true``, or ``on`` this module records prompt lifecycle events to a log file.
-The destination defaults to ``~/.frenchvocab/esc_latency.log`` but can be
-overridden with ``FRENCHVOCAB_ESC_DEBUG_LOG``.
+When the environment variable ``VOCABBUILDER_ESC_DEBUG`` (or the legacy
+``FRENCHVOCAB_ESC_DEBUG``) is set to ``1``, ``true``, or ``on`` this module
+records prompt lifecycle events to a log file.  The destination defaults to
+``~/.vocabbuilder/esc_latency.log`` but can be overridden with
+``VOCABBUILDER_ESC_DEBUG_LOG``.
 """
 
 from __future__ import annotations
@@ -16,15 +17,16 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-_ENABLE_FLAG = os.environ.get("FRENCHVOCAB_ESC_DEBUG", "").strip().lower()
+from vocab_builder.compat import get_env, config_home
+
+_ENABLE_FLAG = (get_env("VOCABBUILDER_ESC_DEBUG") or "").strip().lower()
 _ENABLED = _ENABLE_FLAG in {"1", "true", "on", "yes"}
 
 def _default_log_path() -> Path:
-    custom = os.environ.get("FRENCHVOCAB_ESC_DEBUG_LOG")
+    custom = get_env("VOCABBUILDER_ESC_DEBUG_LOG")
     if custom:
         return Path(custom).expanduser()
-    root = Path.home() / ".frenchvocab"
-    return root / "esc_latency.log"
+    return config_home() / "esc_latency.log"
 
 _LOG_PATH = _default_log_path()
 _LOCK = threading.Lock()
