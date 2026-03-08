@@ -1,18 +1,18 @@
-# Bloat Reduction Refactor Plan
+# Bloat Reduction Refactor Plan (VocabBuilder)
 
 A staged approach to deflating the CLI codebase while preserving behavior across French and German workflows.
 
 ---
 
 ## Stage 1 — CLI Decomposition
-- **Goal**: Reduce `FrenchVocab.py` to a slim entry point by splitting concerns into focused modules.
+- **Goal**: Reduce the CLI entry point to a slim launcher by splitting concerns into focused modules.
 - **Actions**
-  - Move environment/bootstrap logic (arg parsing, provider selection, keyring) into `cli/bootstrap.py`.
-  - Extract Rich menu display and command routing into `cli/menu.py`.
-  - Shift vocabulary operations (load/save, duplicates, alphabetizing) into `core/vocab.py`.
-  - Leave `FrenchVocab.py` orchestrating: parse args → bootstrap → menu loop.
+  - Move environment/bootstrap logic (arg parsing, provider selection, keyring) into `vocab_builder/cli/bootstrap.py`.
+  - Extract Rich menu display and command routing into `vocab_builder/cli/menu.py`.
+  - Shift vocabulary operations (load/save, duplicates, alphabetizing) into `vocab_builder/core/vocab.py`.
+  - Leave the entry point (`vocabbuilder` / `vocab_builder/cli/main.py`, formerly `FrenchVocab.py`) orchestrating: parse args → bootstrap → menu loop.
 - **Regression Guards**
-  - Extend `tests/test_language_configs.py` to instantiate the builder for both `fr` and `de` via the new entry.
+  - Extend `tests/test_language_configs.py` to instantiate `VocabBuilder` for both `fr` and `de` via the new entry.
   - Add a smoke test ensuring default (French) and explicit German initializations still load templates and exported word tracking paths.
 
 ---
@@ -20,7 +20,7 @@ A staged approach to deflating the CLI codebase while preserving behavior across
 ## Stage 2 — Translator Unification
 - **Goal**: Eliminate duplicated translator classes (`eng_to_fr_translator.py`, `fr_to_eng_translator.py`) in favor of a single configurable pipeline.
 - **Actions**
-  - Introduce `core/translator.py` with a `TranslatorCLI` class handling multiline input, duplicate checks, confirmations, and LaTeX persistence.
+  - Introduce `vocab_builder/core/translator.py` with a `TranslatorCLI` class handling multiline input, duplicate checks, confirmations, and LaTeX persistence.
   - Feed the shared class with `TranslatorConfig` metadata from each language; wrappers (if any) simply pass the right config.
   - Remove legacy copy-pasted logic once tests are green.
 - **Regression Guards**
@@ -32,7 +32,7 @@ A staged approach to deflating the CLI codebase while preserving behavior across
 ## Stage 3 — Language-Specific Artifacts
 - **Goal**: Ensure German exports look German and stop relying on French templates.
 - **Actions**
-  - Create dedicated German LaTeX scaffolding (`languages/german_tex.py`) with accurate document titles, commands (e.g., `\engde`, `\deeng`), and labels.
+  - Create dedicated German LaTeX scaffolding (`vocab_builder/languages/german_tex.py`) with accurate document titles, commands (e.g., `\engde`, `\deeng`), and labels.
   - Audit prompt templates to replace residual `{french_text}` placeholders with neutral names.
   - Move or remove tracked `.tex/.pdf/.apkg` artifacts that should be generated output; keep fixtures under `tests/data/` instead.
 - **Regression Guards**
@@ -65,7 +65,7 @@ A staged approach to deflating the CLI codebase while preserving behavior across
 ---
 
 ## Risk & Mitigation Summary
-- **Risk**: Hidden dependencies inside `FrenchVocab.py`.
+- **Risk**: Hidden dependencies inside the entry point (formerly `FrenchVocab.py`, now `vocab_builder/cli/main.py`).
   - **Mitigation**: Refactor incrementally per stage; run full tests and perform manual CLI smoke tests after each commit.
 - **Risk**: Translator regression when unifying logic.
   - **Mitigation**: Keep wrappers during the transition and expand automated coverage before deleting old classes.
@@ -75,7 +75,7 @@ A staged approach to deflating the CLI codebase while preserving behavior across
 ---
 
 ## Completion Definition
-1. `FrenchVocab.py` under 400 lines, delegating to modular packages.
+1. CLI entry point (`vocab_builder/cli/main.py`, formerly `FrenchVocab.py`) under 400 lines, delegating to modular packages.
 2. Single translator implementation serving both languages with green tests.
 3. German exports and prompts free of French-specific text.
 4. `UIHelper` API surface documented and exercised by tests.

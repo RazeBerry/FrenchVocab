@@ -1,4 +1,4 @@
-# Major UX Issues - FrenchVocab Application
+# Major UX Issues - VocabBuilder Application (formerly FrenchVocab)
 
 **Generated:** 2025-11-05
 **Total Major Issues:** 22
@@ -8,14 +8,14 @@
 ## Navigation Issues (3)
 
 ### 1. ESC behavior not mentioned in translation menu instructions
-- **Location:** `core/vocab.py:1088-1093`
+- **Location:** `vocab_builder/core/vocab.py:1088-1093`
 - **Issue:** Translation menu doesn't mention ESC behavior in instructions
 - **Current:** "Choose which direction to translate."
 - **Should be:** "Choose which direction to translate. Esc returns."
 - **Impact:** User confusion about navigation options
 
 ### 2. Fallback (non-TTY) menu has no cancel mechanism
-- **Location:** `cli/navigation.py:112-148`
+- **Location:** `vocab_builder/cli/navigation.py:112-148`
 - **Issue:**
   - Fallback (non-TTY) mode displays numbered menu but has no way to cancel/go back
   - No ESC equivalent in non-interactive environments
@@ -36,14 +36,14 @@
 ## User Flow Issues (7)
 
 ### 4. Input length limits shown only after error
-- **Location:** `core/vocab.py:1185-1189`
+- **Location:** `vocab_builder/core/vocab.py:1185-1189`
 - **Issue:** Error messages show limits but user wasn't warned beforehand
 - **Current:** Shows error "Please limit to X words" after user already typed
 - **Should be:** Show limits in the prompt itself: `"Enter text (max 10 words, 100 chars)"`
 - **Impact:** Preventable user frustration, wasted effort
 
 ### 5. Confusing multi-line input flow
-- **Location:** `core/vocab.py:1146-1155`
+- **Location:** `vocab_builder/core/vocab.py:1146-1155`
 - **Issue:** Prompt text changes between first and subsequent lines, but logic is unclear
   - First prompt: "Empty line to submit (or 'q' to cancel)"
   - Continuation prompt: "Enter more text (or press Enter to finish)"
@@ -57,7 +57,7 @@
 - **Impact:** Poor form UX, unexpected errors
 
 ### 7. Poor error recovery when LLM unavailable
-- **Location:** `core/vocab.py:1635-1637`
+- **Location:** `vocab_builder/core/vocab.py:1635-1637`
 - **Issue:** When LLM is unavailable, user is just told to skip - no immediate retry option
 - **Current:** "Skipping new entry; AI features are currently disabled."
 - **Better UX:** Offer immediate retry or provider setup option
@@ -65,21 +65,21 @@
 
 ### 8. Inconsistent confirmation dialogs
 - **Location:**
-  - `ui_helper.py:301-319` - `ui.confirm()`
-  - `core/translator.py:267-290` - `_confirm_yes_no()`
+  - `vocab_builder/ui_helper.py:301-319` - `ui.confirm()`
+  - `vocab_builder/core/translator.py:267-290` - `_confirm_yes_no()`
 - **Issue:** Multiple confirmation patterns exist doing essentially the same thing
   - Use different yes/no tokens
   - Different implementations
 - **Impact:** Code duplication, potential inconsistency in behavior
 
 ### 9. Ambiguous spelling correction flow
-- **Location:** `core/vocab.py:2002-2019`
+- **Location:** `vocab_builder/core/vocab.py:2002-2019`
 - **Issue:** Shows spelling suggestion but says "Using suggested spelling for now; you can revert after the preview"
 - **Problem:** "after the preview" is vague - when exactly can they revert?
 - **Impact:** User confusion about when/how to revert
 
 ### 10. Spelling correction timing confusion
-- **Location:** `core/vocab.py:1775-1783`
+- **Location:** `vocab_builder/core/vocab.py:1775-1783`
 - **Issue:** User is asked about spelling correction AFTER seeing LaTeX entry
   - But the LaTeX entry was already generated with corrected spelling
 - **Impact:** Confusing workflow, feels backwards
@@ -89,7 +89,7 @@
 ## Error Handling Issues (8)
 
 ### 11. Validation error panels may truncate messages
-- **Location:** `core/providers/manager.py:558-569`
+- **Location:** `vocab_builder/core/providers/manager.py:558-569`
 - **Issue:** Validation failure panel uses `expand=False` but error messages can be very long
 - **Problem:** Users might miss important error details due to truncation
 - **Impact:** Debugging difficulties, incomplete error information
@@ -101,20 +101,20 @@
   - Some use plain text: `self.ui.error("...")`
   - No clear hierarchy for when to use which
 - **Examples:**
-  - Plain text: `core/vocab.py:1183-1184`
-  - Panel: `core/vocab.py:1706`
+  - Plain text: `vocab_builder/core/vocab.py:1183-1184`
+  - Panel: `vocab_builder/core/vocab.py:1706`
 - **Recommendation:** Critical errors should use panels for visibility
 - **Impact:** Inconsistent error hierarchy, some critical errors get lost
 
 ### 13. Missing error context
-- **Location:** `core/vocab.py:1214-1216`
+- **Location:** `vocab_builder/core/vocab.py:1214-1216`
 - **Issue:** Generic error message without context about what action triggered it
 - **Current:** "AI provider unavailable: {reason}"
 - **Better:** "Cannot add vocabulary entry: AI provider unavailable: {reason}"
 - **Impact:** User confusion about what they were trying to do
 
 ### 14. API key validation timeout not configurable
-- **Location:** `core/providers/manager.py:425`
+- **Location:** `vocab_builder/core/providers/manager.py:425`
 - **Issue:**
   - Hardcoded 5 second timeout
   - No way to retry with longer timeout if network is slow
@@ -130,18 +130,18 @@
 - **Impact:** User confusion about how to exit/cancel
 
 ### 16. Merge vs Force options not clearly explained
-- **Location:** `core/vocab.py:968-977`
+- **Location:** `vocab_builder/core/vocab.py:968-977`
 - **Issue:** Difference between "merge" and "force" options not clearly explained
   - Users might not understand what "variant entry" means
 - **Impact:** Wrong choice made, data integrity issues
 
 ### 17. No search preview/autocomplete
-- **Location:** `core/vocab.py:2332-2344`
+- **Location:** `vocab_builder/core/vocab.py:2332-2344`
 - **Issue:** Search happens all at once, no autocomplete or suggestions as user types
 - **Impact:** Could be much more user-friendly with progressive results
 
 ### 18. Verbose debug output shown to users
-- **Location:** `core/vocab.py:1983`
+- **Location:** `vocab_builder/core/vocab.py:1983`
 - **Issue:** Debug output shown to users: `self.ui.debug(f"Extracted corrected spelling: '{corrected_spelling}'")`
 - **Problem:** Debug methods should be hidden unless verbose mode
 - **Impact:** Clutters output, confusing to non-technical users
@@ -152,7 +152,7 @@
 
 ### 19. Mixed use of console.print() vs ui.* methods
 - **Location:**
-  - Direct console use: `core/translator.py:74-76`
+  - Direct console use: `vocab_builder/core/translator.py:74-76`
   - UI helper methods: Most other places
 - **Issue:** Some code uses `self.console.print()` directly, some uses `self.ui.*` methods
 - **Example:**
@@ -168,19 +168,19 @@
   - Some tables use `quick_table()`
   - Some create tables manually
   - Some use `dict_to_table()`
-  - Example: `core/translator.py:468-479`
+  - Example: `vocab_builder/core/translator.py:468-479`
 - **Impact:** Different styling across similar content
 
 ### 21. Inconsistent success message patterns
-- **Pattern 1:** Plain text - `core/translator.py:416`
+- **Pattern 1:** Plain text - `vocab_builder/core/translator.py:416`
   ```python
   self.console.print("[bold green]Translation saved successfully![/bold green]")
   ```
-- **Pattern 2:** With symbol - `core/providers/manager.py:452`
+- **Pattern 2:** With symbol - `vocab_builder/core/providers/manager.py:452`
   ```python
   self.ui.success("✓ Connection successful!")
   ```
-- **Pattern 3:** Panel - `core/vocab.py:958`
+- **Pattern 3:** Panel - `vocab_builder/core/vocab.py:958`
   ```python
   self.ui.panel("Skipping this word. Returning to main menu.", border_style="green")
   ```
@@ -196,7 +196,7 @@
 - **Impact:** Slight visual inconsistency
 
 ### 23. Information truncation without warning
-- **Location:** `core/vocab.py:2312-2316`
+- **Location:** `vocab_builder/core/vocab.py:2312-2316`
 - **Issue:** Truncates definitions to 60 chars without warning
   ```python
   if len(definitions) > 60:
@@ -207,12 +207,12 @@
 - **Impact:** Data loss in UI, users can't see full information
 
 ### 24. Magic numbers not defined as constants
-- **Location:** `core/vocab.py:2315`
+- **Location:** `vocab_builder/core/vocab.py:2315`
 - **Issue:** Hardcoded truncation length (60) should be a named constant
 - **Impact:** Maintainability issue
 
 ### 25. Redundant prompts
-- **Location:** `core/vocab.py:2329-2330`
+- **Location:** `vocab_builder/core/vocab.py:2329-2330`
 - **Issue:**
   ```python
   if self.ui.confirm("Would you like to search for a specific word?", default=False):
@@ -222,7 +222,7 @@
 - **Impact:** Unnecessary friction in workflow
 
 ### 26. Inconsistent capitalization in menu items
-- **Location:** `core/vocab.py:1051-1056`
+- **Location:** `vocab_builder/core/vocab.py:1051-1056`
 - **Issue:**
   - Some menu items capitalize every word
   - Some use sentence case

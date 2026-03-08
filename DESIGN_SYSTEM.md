@@ -1,8 +1,8 @@
-# FrenchVocab Design System
+# VocabBuilder Design System
 
 ## 🎨 Anthropic-Inspired Design Principles
 
-This document outlines the visual design system for FrenchVocab CLI, inspired by Anthropic's warm, approachable brand aesthetic.
+This document outlines the visual design system for VocabBuilder CLI (formerly FrenchVocab), inspired by Anthropic's warm, approachable brand aesthetic.
 
 ---
 
@@ -200,5 +200,6 @@ Panel(table, border_style="dark_orange", box=box.ROUNDED, expand=False)
 
 ---
 
-*Last updated: 2025-11-05*
+*Last updated: 2026-03-08*
 *Design inspired by Anthropic's brand guidelines*
+*Renamed from FrenchVocab to VocabBuilder*

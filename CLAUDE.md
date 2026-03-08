@@ -6,37 +6,40 @@
 - Run `pytest tests/test_agent_docs_sync.py` to validate alignment.
 
 ## Project Overview
-FrenchVocab is an AI-assisted CLI for building bilingual vocabulary lists, generating LaTeX documents, and exporting Anki decks. The current app supports French (`fr`) and German (`de`), has Rich-based keyboard navigation, and integrates with Google Gemini or Anthropic Claude.
+VocabBuilder is an AI-assisted CLI for building bilingual vocabulary lists, generating LaTeX documents, and exporting Anki decks. The current app supports French (`fr`) and German (`de`), has Rich-based keyboard navigation, and integrates with Google Gemini or Anthropic Claude. Install with `pip install vocab-builder` and run `vocabbuilder`.
 
 ## Project Structure and Module Organization
-- `FrenchVocab.py` is the entry point and delegates startup to `cli/bootstrap.py`.
-- `cli/` contains bootstrap flow, interactive menu/navigation helpers, and compatibility shims.
-- `core/` contains application workflows (vocab ingestion, translators, auto translator, Anki export, LLM/provider lifecycle, history logging, menu/session UI helpers).
-- `core/providers/manager.py` encapsulates provider selection, credential validation, and secure storage.
-- `languages/` contains language registry, validators, prompts, and LaTeX/Anki configuration (`french.py`, `german.py`, `german_tex.py`).
-- Root modules (`models.py`, `anki_exporter.py`, `latex_repository.py`, `llm_client.py`, `ui_helper.py`) provide shared infrastructure.
-- `diagnostics/` contains ESC latency tracing tools.
+- All source code lives under the `vocab_builder/` package.
+- `vocab_builder/cli/main.py` is the primary CLI entry point.
+- `vocab_builder/cli/` contains bootstrap flow, interactive menu/navigation helpers, and compatibility shims.
+- `vocab_builder/core/` contains application workflows (vocab ingestion, translators, auto translator, Anki export, LLM/provider lifecycle, history logging, menu/session UI helpers).
+- `vocab_builder/core/providers/manager.py` encapsulates provider selection, credential validation, and secure storage.
+- `vocab_builder/languages/` contains language registry, validators, prompts, and LaTeX/Anki configuration (`french.py`, `german.py`, `german_tex.py`).
+- `vocab_builder/` root modules (`models.py`, `anki_exporter.py`, `latex_repository.py`, `llm_client.py`, `ui_helper.py`) provide shared infrastructure.
+- `vocab_builder/compat.py` provides backward-compatible helpers for env vars, config paths, and keyring migration.
+- `vocab_builder/diagnostics/` contains ESC latency tracing tools.
+- `FrenchVocab.py` is a deprecated shim that delegates to `vocab_builder.cli.main`.
 - `scripts/` contains utility and demo scripts.
 - `tests/` is a pytest suite (`test_*.py`) for architecture boundaries, onboarding, translators, language config, exporters, and UI behavior.
 
 ## Build, Test, and Development Commands
 ```bash
-# Install dependencies (Python 3.11)
-pip install -r requirements.txt
+# Install (editable / development)
+pip install -e .
 
 # Run the CLI
-python FrenchVocab.py --help
-python FrenchVocab.py --language fr
-python FrenchVocab.py --language de
-python FrenchVocab.py --language fr --provider gemini
-python FrenchVocab.py --language fr --provider claude
-python FrenchVocab.py --language fr --latex-file ./FrenchVocab.custom.tex
-python FrenchVocab.py --language fr --eager-llm
+vocabbuilder --help
+vocabbuilder --language fr
+vocabbuilder --language de
+vocabbuilder --language fr --provider gemini
+vocabbuilder --language fr --provider claude
+vocabbuilder --language fr --latex-file ./FrenchVocab.custom.tex
+vocabbuilder --language fr --eager-llm
+python -m vocab_builder --help
 
 # Diagnostics and demos
-python FrenchVocab.py --esc-debug
-python FrenchVocab.py --esc-debug --esc-debug-log /tmp/esc_latency.log
-python -m cli.menu
+vocabbuilder --esc-debug
+vocabbuilder --esc-debug --esc-debug-log /tmp/esc_latency.log
 python scripts/demo_guided_onboarding.py
 
 # Tests
@@ -49,12 +52,13 @@ pytest -k "anki"
 ## Architecture
 
 ### Entry Point and Bootstrap
-- `FrenchVocab.py` parses CLI args (`--language`, `--provider`, `--latex-file`, `--verbose`, `--esc-debug`, `--esc-debug-log`, `--eager-llm`).
-- `cli/bootstrap.py` builds language-specific `FrenchVocabBuilder` instances and language selection flow.
-- `core/menu_loop.py` drives menu orchestration; `cli/menu.py` remains a compatibility shim.
+- `vocab_builder/cli/main.py` parses CLI args (`--language`, `--provider`, `--latex-file`, `--verbose`, `--esc-debug`, `--esc-debug-log`, `--eager-llm`).
+- `vocab_builder/cli/bootstrap.py` builds language-specific `VocabBuilder` instances and language selection flow.
+- `vocab_builder/core/menu_loop.py` drives menu orchestration; `vocab_builder/cli/menu.py` remains a compatibility shim.
+- `pyproject.toml` defines the `vocabbuilder` console script entry point.
 
-### Core Application (`core/`)
-- `vocab.py` contains `FrenchVocabBuilder`, the main controller.
+### Core Application (`vocab_builder/core/`)
+- `vocab.py` contains `VocabBuilder`, the main controller.
 - `vocab_repository.py` handles LaTeX parsing, persistence, entry indexing, and counts.
 - `word_entry_workflow.py` orchestrates end-to-end word capture and save behavior, including explicit saved/routed/skipped outcomes so failed routing or merge paths never masquerade as successful saves.
 - `translator.py` and `auto_translator.py` handle directional and intelligent translation flows.
@@ -67,26 +71,27 @@ pytest -k "anki"
 - `protocols.py` defines structural typing contracts used by menu/workflow modules.
 
 ### Provider and Credential System
-- `core/providers/manager.py` owns provider metadata, setup wizard flows, and storage destinations.
+- `vocab_builder/core/providers/manager.py` owns provider metadata, setup wizard flows, and storage destinations.
 - Credential resolution is: environment variable first (including values loaded from `.env`), then keyring fallback, then interactive setup.
-- `.env` path resolution order is: `FRENCHVOCAB_CONFIG_DIR/.env`, then writable project `.env`, then `~/.frenchvocab/.env`.
+- `.env` path resolution order is: `VOCABBUILDER_CONFIG_DIR/.env`, then writable project `.env`, then `~/.vocabbuilder/.env` (falls back to `~/.frenchvocab/.env` for legacy installs).
 - Plaintext `.env` fallback writes are atomic, best-effort permission-hardened, and do not retain a stale backup after a successful key rotation.
-- Keyring service name is `french_vocab_builder`.
+- Keyring service name is `vocab_builder` (silently migrates from legacy `french_vocab_builder`).
 
-### Language System (`languages/`)
+### Language System (`vocab_builder/languages/`)
 - `base.py` defines `LanguageConfig`, `TranslatorConfig`, `VocabTemplate`, and `AnkiConfig`.
 - `__init__.py` lazily registers/loads language configs and resolves aliases with `get_language_config(code)`.
 - `french.py` and `german.py` define prompts, validators, translator configs, and Anki metadata.
 - `german_tex.py` contains dedicated German LaTeX templates.
 - `latex_templates.py`, `anki_shared_styles.py`, and `anki_themes.py` provide shared assets.
 
-### Shared Modules (root level)
+### Shared Modules (`vocab_builder/`)
 - `models.py` defines `WordEntry` and normalization helpers.
 - `anki_exporter.py` contains Anki deck export utilities.
 - `latex_repository.py` contains low-level LaTeX entry parsing helpers.
 - `llm_client.py` defines provider clients and provider factory.
 - `ai_prompts.py` and `ai_response_parser.py` contain prompt/response parsing logic.
 - `ui_helper.py` centralizes Rich panels, prompts, status messages, and interactive wrappers.
+- `compat.py` handles backward-compatible env var, config dir, and keyring service name migration.
 - Keep UI messaging declarative via `UIHelper` methods and avoid bare `print()` in new code.
 
 ## Coding Style and Naming Conventions
@@ -98,8 +103,8 @@ pytest -k "anki"
 ## Key Patterns
 
 ### Adding a New Language
-1. Create `languages/<lang>.py` with a `LanguageConfig` (copy `french.py` or `german.py`).
-2. Register it through `languages/__init__.py`.
+1. Create `vocab_builder/languages/<lang>.py` with a `LanguageConfig` (copy `french.py` or `german.py`).
+2. Register it through `vocab_builder/languages/__init__.py`.
 3. Add language-specific vocab and translator templates (new `*_tex.py` module if needed).
 4. Provide Anki config/templates and optional auto-translator prompt tokens.
 
@@ -129,26 +134,28 @@ choice = self.ui.interactive_menu(
 4. Launch guided/advanced interactive setup when credentials are still unavailable.
 
 ## Environment Variables
+All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENCH_VOCAB_*` names are still recognized via `vocab_builder/compat.py` with deprecation warnings.
+
 - `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`: Provider API credentials.
-- `FRENCHVOCAB_CONFIG_DIR`: Override directory used for `.env` storage/loading.
-- `FRENCHVOCAB_SKIP_KEYRING=1`: Disable keyring lookups/storage.
-- `FRENCHVOCAB_FORCE_SYNC_LOAD=1`: Force synchronous loading (useful in tests).
-- `FRENCHVOCAB_ESC_SEQUENCE_TIMEOUT`: ESC key sequence timeout in seconds (default `0.03`).
-- `FRENCHVOCAB_ESC_DEBUG=1`: Enable ESC latency tracing.
-- `FRENCHVOCAB_ESC_DEBUG_LOG`: Custom log path for ESC latency tracing.
-- `FRENCHVOCAB_DEBUG_EXPORT=1`: Print export debug details during Anki generation.
-- `FRENCH_VOCAB_AUTO_TRANSLATOR`: Enable/disable intelligent translator option.
-- `FRENCH_VOCAB_MAX_CHARS`: Override maximum input length.
-- `FRENCH_VOCAB_MAX_WORDS`: Override max words allowed per input.
-- `FRENCH_VOCAB_SENTENCE_MODE` / `FRENCH_VOCAB_ALLOW_PUNCT`: Toggle punctuation/sentence acceptance.
-- `FRENCH_VOCAB_ROUTE_SENTENCES`: Toggle sentence routing behavior.
-- `FRENCH_VOCAB_SENTENCE_EXAMPLES`: Toggle sentence examples in vocab entries.
-- `FRENCH_VOCAB_HISTORY_DISABLED` / `FRENCH_VOCAB_HISTORY_ENABLED`: Disable/enable translation history logging.
-- `FRENCH_VOCAB_HISTORY_DIR`: Override history log directory (default `~/.frenchvocab/history`).
+- `VOCABBUILDER_CONFIG_DIR`: Override directory used for `.env` storage/loading.
+- `VOCABBUILDER_SKIP_KEYRING=1`: Disable keyring lookups/storage.
+- `VOCABBUILDER_FORCE_SYNC_LOAD=1`: Force synchronous loading (useful in tests).
+- `VOCABBUILDER_ESC_SEQUENCE_TIMEOUT`: ESC key sequence timeout in seconds (default `0.03`).
+- `VOCABBUILDER_ESC_DEBUG=1`: Enable ESC latency tracing.
+- `VOCABBUILDER_ESC_DEBUG_LOG`: Custom log path for ESC latency tracing.
+- `VOCABBUILDER_DEBUG_EXPORT=1`: Print export debug details during Anki generation.
+- `VOCABBUILDER_AUTO_TRANSLATOR`: Enable/disable intelligent translator option.
+- `VOCABBUILDER_MAX_CHARS`: Override maximum input length.
+- `VOCABBUILDER_MAX_WORDS`: Override max words allowed per input.
+- `VOCABBUILDER_SENTENCE_MODE` / `VOCABBUILDER_ALLOW_PUNCT`: Toggle punctuation/sentence acceptance.
+- `VOCABBUILDER_ROUTE_SENTENCES`: Toggle sentence routing behavior.
+- `VOCABBUILDER_SENTENCE_EXAMPLES`: Toggle sentence examples in vocab entries.
+- `VOCABBUILDER_HISTORY_DISABLED` / `VOCABBUILDER_HISTORY_ENABLED`: Disable/enable translation history logging.
+- `VOCABBUILDER_HISTORY_DIR`: Override history log directory (default `~/.vocabbuilder/history`).
 - Boolean flags accept typical truthy values such as `1`, `true`, `yes`, `y`, and `on`.
 
 ## Testing Guidelines
-- Keep tests mirrored to modules (for example `core/vocab.py` -> `tests/test_sentence_flow.py`).
+- Keep tests mirrored to modules (for example `vocab_builder/core/vocab.py` -> `tests/test_sentence_flow.py`).
 - Name new files `test_<feature>.py` and test functions `test_<behavior>`.
 - Use stubs/fixtures (`tests/_stubs.py`) to avoid real API calls.
 - Run `pytest` before opening a pull request.

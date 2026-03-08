@@ -1,4 +1,4 @@
-# ESC Button Behavior Analysis
+# ESC Button Behavior Analysis (VocabBuilder)
 
 ## 🔍 Investigation Summary
 
@@ -10,7 +10,7 @@
 
 ## ✅ Current Implementation
 
-### Navigation System (`cli/navigation.py:89-90`)
+### Navigation System (`vocab_builder/cli/navigation.py:89-90`)
 
 When ESC is pressed in any interactive menu:
 ```python
@@ -24,7 +24,7 @@ The navigation system raises `KeyboardInterrupt`, which is then caught by each m
 
 ## 🎯 Contextual Behavior
 
-### 1. **Main Menu** (`core/vocab.py`)
+### 1. **Main Menu** (`vocab_builder/core/vocab.py`)
 
 ```python
 def show_menu(self):
@@ -44,7 +44,7 @@ def show_menu(self):
 
 ---
 
-### 2. **Translation Submenu** (`core/vocab.py`)
+### 2. **Translation Submenu** (`vocab_builder/core/vocab.py`)
 
 ```python
 def show_translation_menu(self) -> str:
@@ -65,7 +65,7 @@ def show_translation_menu(self) -> str:
 
 ---
 
-### 3. **Anki Tools Submenu** (`core/vocab.py`)
+### 3. **Anki Tools Submenu** (`vocab_builder/core/vocab.py`)
 
 ```python
 def show_anki_menu(self) -> str:
@@ -200,10 +200,10 @@ The current ESC behavior follows **standard CLI conventions**:
 
 | Component | File | Lines |
 |-----------|------|-------|
-| ESC key detection | `cli/navigation.py` | 89-90 |
-| Main menu handler | `core/vocab.py` | `show_menu()` |
-| Translation submenu | `core/vocab.py` | `show_translation_menu()` |
-| Anki submenu | `core/vocab.py` | `show_anki_menu()` |
+| ESC key detection | `vocab_builder/cli/navigation.py` | 89-90 |
+| Main menu handler | `vocab_builder/core/vocab.py` | `show_menu()` |
+| Translation submenu | `vocab_builder/core/vocab.py` | `show_translation_menu()` |
+| Anki submenu | `vocab_builder/core/vocab.py` | `show_anki_menu()` |
 
 ---
 

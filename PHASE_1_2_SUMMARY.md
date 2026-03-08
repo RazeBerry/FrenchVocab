@@ -1,4 +1,8 @@
-# Phase 1 & 2 Implementation Summary
+# Phase 1 & 2 Implementation Summary (VocabBuilder)
+
+> **Note:** This document was written when the project was named FrenchVocab. Module paths
+> have been updated to reflect the current `vocab_builder/` package layout. Some UI strings
+> shown in before/after examples preserve the original FrenchVocab-era text for historical accuracy.
 
 ## ✅ Changes Completed
 
@@ -132,9 +136,9 @@ Error initializing gemini client: Invalid API key
 ## 🔧 Technical Details
 
 ### Files Modified
-1. **cli/bootstrap.py** - Removed timing spam, cleaned imports
-2. **cli/menu.py** - Added translation submenu handler, settings handler
-3. **core/vocab.py** - Added:
+1. **vocab_builder/cli/bootstrap.py** - Removed timing spam, cleaned imports
+2. **vocab_builder/cli/menu.py** - Added translation submenu handler, settings handler
+3. **vocab_builder/core/vocab.py** - Added:
    - `show_translation_menu()` - Translation direction submenu
    - `show_settings_screen()` - Configuration status and actions
    - `_test_ai_connection()` - Connection testing
@@ -185,7 +189,7 @@ All emojis removed from:
 
 ## 🎉 Summary
 
-The FrenchVocab application now provides:
+The VocabBuilder application (formerly FrenchVocab) now provides:
 1. **Professional appearance** - No emojis, clean text-based menus
 2. **Better UX** - Consolidated menus, settings screen, graceful errors
 3. **Transparency** - Users always know their configuration status

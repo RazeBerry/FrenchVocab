@@ -1,4 +1,4 @@
-# Translator Unification & Direction-Agnostic Workflow
+# Translator Unification & Direction-Agnostic Workflow (VocabBuilder)
 
 ## 1. Objectives
 - Provide a single “intelligent translator” entry point that automatically detects whether the user input is in English or the target language, then produces the translation in the opposite direction.
@@ -7,8 +7,8 @@
 - Keep backwards compatibility so the legacy two-button menu can be retained or hidden via a feature flag during rollout.
 
 ## 2. Current Architecture Snapshot
-1. `TranslatorCLI` (core/translator.py) already encapsulates prompting, UI, LaTeX persistence, duplicate detection, and logging for a single direction.
-2. `FrenchVocabBuilder` (core/vocab.py) instantiates two TranslatorCLI objects using `LanguageConfig.eng_to_target` and `.target_to_eng` (languages/<lang>.py) and exposes them via the menu (`cli/menu.py`).
+1. `TranslatorCLI` (`vocab_builder/core/translator.py`) already encapsulates prompting, UI, LaTeX persistence, duplicate detection, and logging for a single direction.
+2. `VocabBuilder` (`vocab_builder/core/vocab.py`, formerly `FrenchVocabBuilder`) instantiates two TranslatorCLI objects using `LanguageConfig.eng_to_target` and `.target_to_eng` (`vocab_builder/languages/<lang>.py`) and exposes them via the menu (`vocab_builder/cli/menu.py`).
 3. Prompt templates are hard-coded per direction via `TranslatorConfig.prompt_template` with placeholders `{english_text}` vs `{french_text}`.
 4. History logging keys off `direction` to distinguish `eng_to_target` vs `target_to_eng`.
 
@@ -24,11 +24,11 @@
 ## 4. Detailed Implementation Plan
 
 ### Phase A – Prompt & Contract Design
-1. Draft language-specific auto-detect prompt templates (`languages/french.py`, `languages/german.py`) with:
+1. Draft language-specific auto-detect prompt templates (`vocab_builder/languages/french.py`, `vocab_builder/languages/german.py`) with:
    - Explicit instruction to output `Direction:` line (`english_to_french` or `french_to_english`).
    - `Translation:` block (the translated text).
    - Optional `Notes:` block.
-2. Create parser helpers in `core/translator_auto.py` (new module) to validate and extract `direction`, `translation`, and `notes`. Include pytest coverage for malformed responses.
+2. Create parser helpers in `vocab_builder/core/translator_auto.py` (new module) to validate and extract `direction`, `translation`, and `notes`. Include pytest coverage for malformed responses.
 3. Document the format in AGENTS/README style notes to guide future languages.
 
 ### Phase B – AutoTranslator Wrapper
@@ -44,9 +44,9 @@
 3. Ensure duplicate detection uses the appropriate translator’s normalization tables: AutoTranslator should call `target_translator.check_duplicate()` before writing.
 
 ### Phase C – Builder Integration
-1. Add feature flag (`FRENCH_VOCAB_AUTO_TRANSLATOR=1`) to toggle the new flow.
-2. Modify `FrenchVocabBuilder._init_translators()` to instantiate AutoTranslator when the flag is enabled and store it as `self.auto_translator`.
-3. Update `cli/menu.py`:
+1. Add feature flag (`VOCABBUILDER_AUTO_TRANSLATOR=1`, legacy: `FRENCH_VOCAB_AUTO_TRANSLATOR`) to toggle the new flow.
+2. Modify `VocabBuilder._init_translators()` to instantiate AutoTranslator when the flag is enabled and store it as `self.auto_translator`.
+3. Update `vocab_builder/cli/menu.py`:
    - When auto translator is available, show a new menu entry “Intelligent Translator (auto direction)”.
    - Optionally keep the legacy Eng→Target and Target→Eng entries (either hidden when auto mode is active or kept for advanced users).
 4. Update `ensure_llm_ready()` and degraded-mode logic so AutoTranslator presence mirrors the availability of the underlying translators.
@@ -62,12 +62,12 @@
    - Extend `tests/test_sentence_flow.py` to confirm sentence routing still works when the auto translator is enabled (should reuse the same internal translator for target→Eng).
    - Add regression tests ensuring legacy translators remain unaffected when the feature flag is off.
 2. Manual validation:
-   - Run `python FrenchVocab.py --language fr --provider gemini` with flag on/off, translate sample English and French sentences, verify LaTeX files updated correctly.
+   - Run `vocabbuilder --language fr --provider gemini` (formerly `python FrenchVocab.py`) with flag on/off, translate sample English and French sentences, verify LaTeX files updated correctly.
    - Inspect `data/history/fr_translations.jsonl` for new `auto_detected_direction` field.
 
 ## 5. Rollout Considerations
 1. Start with feature flag defaulting to off; document env var in README.
-2. Provide CLI setting (under Settings menu) to toggle auto translator at runtime (persistent via `vocab_builder_config.json` if available).
+2. Provide CLI setting (under Settings menu) to toggle auto translator at runtime (persistent via `vocabbuilder_config.json` if available).
 3. Monitor auto-detect accuracy by comparing the stored direction with a heuristic detector; log mismatches for debugging (optional).
 
 ## 6. Risks & Mitigations

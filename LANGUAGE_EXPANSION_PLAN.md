@@ -1,4 +1,4 @@
-# Multi-Language Refactor Plan
+# Multi-Language Refactor Plan (VocabBuilder)
 
 ## Stage 0 — Decision & Scope Lock
 - Align the team on shipping a single multi-language binary rather than forking a German-only variant.
@@ -7,8 +7,8 @@
 
 ## Stage 1 — Architecture & Configuration Layer
 - Introduce a `LanguageConfig` contract describing localized labels, Babel packages, prompt templates, deck metadata, and validation rules.
-- Refactor `FrenchVocabBuilder` init to accept a config and surface current language in UI/CLI.
-- Extract language-agnostic helpers into neutral modules; isolate French defaults inside a `french.py` config implementing the contract.
+- Refactor `VocabBuilder` init to accept a config and surface current language in UI/CLI.
+- Extract language-agnostic helpers into neutral modules; isolate French defaults inside a `vocab_builder/languages/french.py` config implementing the contract.
 - Add a feature flag / CLI option (`--language`) and ensure default behavior matches today’s French flow.
 
 ## Stage 2 — Prompt & Parser Generalization
