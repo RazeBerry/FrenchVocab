@@ -9,7 +9,7 @@ from rich.console import Console
 from vocab_builder.languages import available_language_codes, default_language_code, get_language_config
 
 if TYPE_CHECKING:  # pragma: no cover - avoid circular imports
-    from vocab_builder.core import FrenchVocabBuilder
+    from vocab_builder.core import VocabBuilder
 
 from .navigation import interactive_select
 
@@ -21,11 +21,11 @@ def build_app(
     provider: str | None = None,
     verbose: bool = False,
     eager_provider: bool = False,
-) -> FrenchVocabBuilder:
+) -> VocabBuilder:
     """Instantiate the vocabulary builder for a specific language."""
-    from vocab_builder.core import FrenchVocabBuilder  # Local import to avoid circular dependency
+    from vocab_builder.core import VocabBuilder  # Local import to avoid circular dependency
 
-    return FrenchVocabBuilder(
+    return VocabBuilder(
         latex_file=latex_file,
         provider=provider,
         verbose=verbose,

@@ -67,7 +67,7 @@ if TYPE_CHECKING:
 class LLMCoordinator:
     """Manages LLM provider lifecycle, queries, and usage tracking.
 
-    This class extracts LLM-related concerns from FrenchVocabBuilder to provide
+    This class extracts LLM-related concerns from VocabBuilder to provide
     a focused, testable component for AI provider management.
     """
 

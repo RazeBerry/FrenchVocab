@@ -1,4 +1,4 @@
-"""Merge helpers extracted from FrenchVocabBuilder."""
+"""Merge helpers extracted from VocabBuilder."""
 
 from __future__ import annotations
 

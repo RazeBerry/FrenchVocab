@@ -3,11 +3,11 @@ from types import SimpleNamespace
 
 import pytest
 
-from vocab_builder.core.vocab import FrenchVocabBuilder
+from vocab_builder.core.vocab import VocabBuilder
 
 
 def test_word_entries_property_uses_repo_and_triggers_lazy_load() -> None:
-    builder = object.__new__(FrenchVocabBuilder)
+    builder = object.__new__(VocabBuilder)
     called = {"count": 0}
 
     def _ensure_loaded() -> None:
@@ -30,7 +30,7 @@ def test_word_entries_property_uses_repo_and_triggers_lazy_load() -> None:
 
 
 def test_word_entries_and_normalized_entries_fallback_for_test_doubles() -> None:
-    builder = object.__new__(FrenchVocabBuilder)
+    builder = object.__new__(VocabBuilder)
     builder.word_entries = {"salut": {"word": "Salut"}}
     builder.normalized_entries = {"salut": "salut"}
 
@@ -39,7 +39,7 @@ def test_word_entries_and_normalized_entries_fallback_for_test_doubles() -> None
 
 
 def test_word_entries_raise_clear_error_when_uninitialized() -> None:
-    builder = object.__new__(FrenchVocabBuilder)
+    builder = object.__new__(VocabBuilder)
 
     with pytest.raises(RuntimeError):
         _ = builder.word_entries
@@ -56,7 +56,7 @@ def test_load_input_limits_ignores_malformed_config_before_llm_init(tmp_path) ->
         def debug(self, message: str) -> None:
             self.debug_messages.append(message)
 
-    builder = object.__new__(FrenchVocabBuilder)
+    builder = object.__new__(VocabBuilder)
     builder.ui = _StubUI()
     builder.config_file = str(tmp_path / "malformed-config.json")
     builder._config_data = {}
@@ -78,7 +78,7 @@ def test_keyring_get_password_best_effort_swallows_keyring_errors(monkeypatch) -
 
     monkeypatch.setattr(keyring, "get_password", _raise_keyring_error)
 
-    value = FrenchVocabBuilder._keyring_get_password_best_effort(
+    value = VocabBuilder._keyring_get_password_best_effort(
         "french_vocab_builder",
         "gemini_api_key",
     )

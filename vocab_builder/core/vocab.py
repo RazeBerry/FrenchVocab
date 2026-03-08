@@ -56,7 +56,7 @@ class _TestDoubleVocabRepoAdapter:
     interface that AnkiExportManager expects.
     """
 
-    def __init__(self, builder: "FrenchVocabBuilder"):
+    def __init__(self, builder: "VocabBuilder"):
         self._builder = builder
 
     @property
@@ -77,7 +77,7 @@ class _TestDoubleVocabRepoAdapter:
         return set(self.word_entries.keys())
 
 
-class FrenchVocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
+class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
     DEFAULT_LANGUAGE_CONFIG = get_language_config(None)
     DEFAULT_LANGUAGE_CODE = default_language_code()
     language_config: LanguageConfig = DEFAULT_LANGUAGE_CONFIG
@@ -96,7 +96,7 @@ class FrenchVocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
             return fallback
         raise RuntimeError(
             "Cannot access word_entries: VocabRepository is not initialized. "
-            "Construct FrenchVocabBuilder normally or set word_entries on test doubles."
+            "Construct VocabBuilder normally or set word_entries on test doubles."
         )
 
     @word_entries.setter
@@ -120,7 +120,7 @@ class FrenchVocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
             return fallback
         raise RuntimeError(
             "Cannot access normalized_entries: VocabRepository is not initialized. "
-            "Construct FrenchVocabBuilder normally or set normalized_entries on test doubles."
+            "Construct VocabBuilder normally or set normalized_entries on test doubles."
         )
 
     @normalized_entries.setter

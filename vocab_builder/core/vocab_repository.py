@@ -1,7 +1,7 @@
 """
 VocabRepository: LaTeX vocabulary persistence and entry management.
 
-Extracted from FrenchVocabBuilder to handle:
+Extracted from VocabBuilder to handle:
 - Loading/saving vocabulary entries from LaTeX files
 - Entry insertion, alphabetization, and updates
 - Duplicate detection via normalized lookups

@@ -20,7 +20,7 @@ class VocabAppProtocol(Protocol):
 
     This Protocol defines the minimal interface required by
     ``core.menu_loop.main_menu_loop()`` and related helpers.
-    FrenchVocabBuilder implements this protocol implicitly through structural
+    VocabBuilder implements this protocol implicitly through structural
     subtyping.
 
     Using a Protocol:

@@ -53,10 +53,10 @@ class TestRobustExamplesParsing(unittest.TestCase):
     def test_extract_translation_simple(self):
         """Test simple parentheses extraction."""
         # Import the actual function from vocab.py
-        from vocab_builder.core.vocab import FrenchVocabBuilder
+        from vocab_builder.core.vocab import VocabBuilder
 
         # Create a minimal builder to access the method
-        builder = object.__new__(FrenchVocabBuilder)
+        builder = object.__new__(VocabBuilder)
         builder.ui = self.ui
 
         result = builder._extract_translation_from_parens("Bonjour (Hello)")
@@ -64,8 +64,8 @@ class TestRobustExamplesParsing(unittest.TestCase):
 
     def test_extract_translation_nested_parens(self):
         """Test extraction with nested parentheses in translation."""
-        from vocab_builder.core.vocab import FrenchVocabBuilder
-        builder = object.__new__(FrenchVocabBuilder)
+        from vocab_builder.core.vocab import VocabBuilder
+        builder = object.__new__(VocabBuilder)
         builder.ui = self.ui
 
         # Nested parentheses - should extract outermost
@@ -76,8 +76,8 @@ class TestRobustExamplesParsing(unittest.TestCase):
 
     def test_extract_translation_parens_in_source(self):
         """Test extraction when source has parentheses."""
-        from vocab_builder.core.vocab import FrenchVocabBuilder
-        builder = object.__new__(FrenchVocabBuilder)
+        from vocab_builder.core.vocab import VocabBuilder
+        builder = object.__new__(VocabBuilder)
         builder.ui = self.ui
 
         result = builder._extract_translation_from_parens(
@@ -90,8 +90,8 @@ class TestRobustExamplesParsing(unittest.TestCase):
 
     def test_extract_translation_no_parens(self):
         """Test that text without parentheses returns None."""
-        from vocab_builder.core.vocab import FrenchVocabBuilder
-        builder = object.__new__(FrenchVocabBuilder)
+        from vocab_builder.core.vocab import VocabBuilder
+        builder = object.__new__(VocabBuilder)
         builder.ui = self.ui
 
         result = builder._extract_translation_from_parens("No parentheses here")
@@ -99,8 +99,8 @@ class TestRobustExamplesParsing(unittest.TestCase):
 
     def test_extract_translation_unbalanced_parens(self):
         """Test handling of unbalanced parentheses."""
-        from vocab_builder.core.vocab import FrenchVocabBuilder
-        builder = object.__new__(FrenchVocabBuilder)
+        from vocab_builder.core.vocab import VocabBuilder
+        builder = object.__new__(VocabBuilder)
         builder.ui = self.ui
 
         # Unbalanced - more closing than opening
@@ -109,8 +109,8 @@ class TestRobustExamplesParsing(unittest.TestCase):
 
     def test_parse_examples_string_multiple(self):
         """Test parsing multiple examples separated by semicolons."""
-        from vocab_builder.core.vocab import FrenchVocabBuilder
-        builder = object.__new__(FrenchVocabBuilder)
+        from vocab_builder.core.vocab import VocabBuilder
+        builder = object.__new__(VocabBuilder)
         builder.ui = self.ui
 
         examples_str = "Bonjour (Hello); Au revoir (Goodbye); Merci (Thanks)"
@@ -123,8 +123,8 @@ class TestRobustExamplesParsing(unittest.TestCase):
 
     def test_parse_examples_string_with_malformed_entry(self):
         """Test that malformed entries are preserved with warning."""
-        from vocab_builder.core.vocab import FrenchVocabBuilder
-        builder = object.__new__(FrenchVocabBuilder)
+        from vocab_builder.core.vocab import VocabBuilder
+        builder = object.__new__(VocabBuilder)
         builder.ui = self.ui
 
         examples_str = "Bonjour (Hello); Malformed without parens; Merci (Thanks)"
@@ -230,7 +230,7 @@ class TestMergeTransactionalBehavior(unittest.TestCase):
 
     def test_merge_failure_leaves_memory_unchanged(self):
         """Test that failed file update doesn't modify memory."""
-        from vocab_builder.core.vocab import FrenchVocabBuilder
+        from vocab_builder.core.vocab import VocabBuilder
 
         # Create initial file
         self.latex_file.write_text(r"""
@@ -244,7 +244,7 @@ class TestMergeTransactionalBehavior(unittest.TestCase):
 """)
 
         # Create builder with the test file
-        builder = object.__new__(FrenchVocabBuilder)
+        builder = object.__new__(VocabBuilder)
         builder.ui = self.ui
         builder.latex_file = self.latex_file
         builder.entry_command = "\\entry"
@@ -296,7 +296,7 @@ class TestMergeDeduplication(unittest.TestCase):
 
     def test_duplicate_definitions_not_added(self):
         """Test that duplicate definitions are not added during merge."""
-        from vocab_builder.core.vocab import FrenchVocabBuilder
+        from vocab_builder.core.vocab import VocabBuilder
 
         self.latex_file.write_text(r"""
 \entry{Café}{noun}
@@ -308,7 +308,7 @@ class TestMergeDeduplication(unittest.TestCase):
       }
 """)
 
-        builder = object.__new__(FrenchVocabBuilder)
+        builder = object.__new__(VocabBuilder)
         builder.ui = self.ui
         builder.latex_file = self.latex_file
         builder.entry_command = "\\entry"
@@ -348,7 +348,7 @@ class TestMergeDeduplication(unittest.TestCase):
 
     def test_accent_variations_deduplicated(self):
         """Test that definitions with accent variations are treated as duplicates."""
-        from vocab_builder.core.vocab import FrenchVocabBuilder
+        from vocab_builder.core.vocab import VocabBuilder
 
         self.latex_file.write_text(r"""
 \entry{Naïve}{adjective}
@@ -360,7 +360,7 @@ class TestMergeDeduplication(unittest.TestCase):
       }
 """)
 
-        builder = object.__new__(FrenchVocabBuilder)
+        builder = object.__new__(VocabBuilder)
         builder.ui = self.ui
         builder.latex_file = self.latex_file
         builder.entry_command = "\\entry"

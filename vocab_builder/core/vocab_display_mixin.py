@@ -1,4 +1,4 @@
-"""Vocabulary display and search helpers extracted from FrenchVocabBuilder."""
+"""Vocabulary display and search helpers extracted from VocabBuilder."""
 
 from __future__ import annotations
 

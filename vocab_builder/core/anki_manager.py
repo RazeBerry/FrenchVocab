@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 class AnkiExportManager:
     """Manages Anki deck exports and word tracking.
 
-    This class extracts Anki-related concerns from FrenchVocabBuilder to provide
+    This class extracts Anki-related concerns from VocabBuilder to provide
     a focused, testable component for deck generation and export management.
     """
 

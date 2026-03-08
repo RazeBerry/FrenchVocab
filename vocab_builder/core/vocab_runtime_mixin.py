@@ -1,4 +1,4 @@
-"""Runtime flag and history logger helpers for FrenchVocabBuilder."""
+"""Runtime flag and history logger helpers for VocabBuilder."""
 
 from __future__ import annotations
 

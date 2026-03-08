@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from vocab_builder.core.vocab import FrenchVocabBuilder
+from vocab_builder.core.vocab import VocabBuilder
 from vocab_builder.core.word_entry_workflow import WordEntryWorkflow
 from vocab_builder.languages import get_language_config
 
@@ -15,7 +15,7 @@ def _workflow() -> WordEntryWorkflow:
 
 
 def test_input_type_detection_is_consistent_between_builder_and_workflow() -> None:
-    builder = object.__new__(FrenchVocabBuilder)
+    builder = object.__new__(VocabBuilder)
     workflow = _workflow()
     candidate = "Ceci est une phrase."
 
@@ -25,11 +25,11 @@ def test_input_type_detection_is_consistent_between_builder_and_workflow() -> No
 def test_input_sanitization_is_consistent_between_builder_and_workflow() -> None:
     raw = "  C’est\u200b déjà  "
 
-    assert FrenchVocabBuilder._sanitize_word_input(raw) == WordEntryWorkflow._sanitize_input(raw) == "C'est déjà"
+    assert VocabBuilder._sanitize_word_input(raw) == WordEntryWorkflow._sanitize_input(raw) == "C'est déjà"
 
 
 def test_translator_titles_use_the_same_format() -> None:
-    builder = object.__new__(FrenchVocabBuilder)
+    builder = object.__new__(VocabBuilder)
     workflow = _workflow()
     config = get_language_config("fr").target_to_eng
 
