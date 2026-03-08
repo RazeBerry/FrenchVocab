@@ -1,4 +1,3 @@
-import os
 import sys
 
 from rich.console import Console
@@ -9,6 +8,7 @@ from rich.table import Table
 from rich import box
 from typing import List, Dict, Any, Optional, Tuple, Sequence
 from enum import Enum
+from core.esc_config import read_esc_sequence_timeout
 
 try:
     from diagnostics import esc_latency
@@ -16,7 +16,7 @@ except ImportError:  # pragma: no cover - diagnostics are optional
     esc_latency = None  # type: ignore[assignment]
 
 _ESCAPE_SENTINEL = "\x1b"
-_ESC_SEQUENCE_TIMEOUT = float(os.environ.get("FRENCHVOCAB_ESC_SEQUENCE_TIMEOUT", "0.03") or "0.03")
+_ESC_SEQUENCE_TIMEOUT = read_esc_sequence_timeout()
 
 def _configure_timeout(app) -> None:
     """Force prompt_toolkit to dispatch ESC immediately."""

@@ -5,7 +5,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import threading
 from typing import Any, Callable, Dict, Iterable, List, MutableMapping, Optional, Sequence, Tuple
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - Windows
+    fcntl = None  # type: ignore[assignment]
 
 
 def _timestamp() -> str:
@@ -30,6 +36,8 @@ def default_history_base_dir() -> Path:
 
 
 ErrorHandler = Optional[Callable[[str], None]]
+_PATH_LOCKS: Dict[Path, threading.Lock] = {}
+_PATH_LOCKS_GUARD = threading.Lock()
 
 
 @dataclass
@@ -148,9 +156,37 @@ class TranslationLogger:
         }
         try:
             path = _ensure_path(self._record_path())
-            with path.open("a", encoding="utf-8") as handle:
-                json.dump(record, handle, ensure_ascii=False)
-                handle.write("\n")
+            line = json.dumps(record, ensure_ascii=False) + "\n"
+            with _path_lock(path):
+                with path.open("a", encoding="utf-8") as handle:
+                    _lock_handle(handle)
+                    try:
+                        handle.write(line)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    finally:
+                        _unlock_handle(handle)
         except Exception as exc:  # pragma: no cover - defensive path
             if self.on_error:
                 self.on_error(f"Failed to write translation history: {exc}")
+
+
+def _path_lock(path: Path) -> threading.Lock:
+    with _PATH_LOCKS_GUARD:
+        lock = _PATH_LOCKS.get(path)
+        if lock is None:
+            lock = threading.Lock()
+            _PATH_LOCKS[path] = lock
+        return lock
+
+
+def _lock_handle(handle: Any) -> None:
+    if fcntl is None:
+        return
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+
+
+def _unlock_handle(handle: Any) -> None:
+    if fcntl is None:
+        return
+    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)

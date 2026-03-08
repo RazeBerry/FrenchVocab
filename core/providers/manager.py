@@ -1,6 +1,6 @@
 import getpass
 import os
-import shutil
+import tempfile
 import threading
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
@@ -84,6 +84,11 @@ _PROVIDER_REGISTRY: Dict[str, ProviderMetadata] = {
 }
 
 
+def available_provider_ids() -> Tuple[str, ...]:
+    """Return the supported provider identifiers in a stable order."""
+    return tuple(sorted(_PROVIDER_REGISTRY.keys()))
+
+
 def _get_provider_metadata(provider: Optional[str]) -> ProviderMetadata:
     if not provider:
         return _PROVIDER_REGISTRY["gemini"]
@@ -102,6 +107,7 @@ class ProviderManager:
     """Encapsulates provider configuration, credential storage, and validation."""
 
     _SILENT_KEYRING_TIMEOUT_S = 1.0
+    _PLAINTEXT_SECRET_FILE_MODE = 0o600
 
     def __init__(self, ui: UIHelper, project_root: Path):
         self.ui = ui
@@ -596,7 +602,7 @@ class ProviderManager:
             set_password("french_vocab_builder", metadata.keyring_name, api_key)
             self.ui.success("✓ API key securely saved to system keychain.")
             return "system keyring"
-        except (KeyringError, RuntimeError, OSError) as exc:
+        except (KeyringError, RuntimeError, OSError, ImportError, ValueError) as exc:
             self.ui.warning(
                 f"Could not access system keychain: {exc}\n"
                 "Falling back to .env file storage."
@@ -636,7 +642,7 @@ class ProviderManager:
                     set_password("french_vocab_builder", metadata.keyring_name, api_key)
                     self.ui.success("Saved API key to system keyring.")
                     return "system keyring"
-                except (KeyringError, RuntimeError, OSError):
+                except (KeyringError, RuntimeError, OSError, ImportError, ValueError):
                     self.ui.warning(
                         "Keyring is not available right now. Choose another storage option."
                     )
@@ -669,10 +675,10 @@ class ProviderManager:
             return None
 
         new_lines = self._upsert_env_var(lines, metadata.env_var, api_key)
-        self._backup_env_file_best_effort(env_path)
 
         if not self._atomic_write_env_lines(env_path, new_lines):
             return None
+        self._remove_env_backup_best_effort(env_path)
 
         self.ui.success(f"Saved key to {env_path}.")
         self.ui.info("Future runs will automatically reuse this key from the project .env file.")
@@ -716,23 +722,48 @@ class ProviderManager:
             new_lines.append(f"{key_var}={api_key}")
         return new_lines
 
-    def _backup_env_file_best_effort(self, env_path: Path) -> None:
-        if not env_path.exists():
-            return
-        backup_path = env_path.with_suffix(".env.bak")
-        try:
+    @staticmethod
+    def _legacy_backup_paths(env_path: Path) -> Tuple[Path, ...]:
+        candidates = [env_path.parent / f"{env_path.name}.bak"]
+        legacy_suffix_path = env_path.with_suffix(".env.bak")
+        if legacy_suffix_path not in candidates:
+            candidates.append(legacy_suffix_path)
+        return tuple(candidates)
+
+    def _remove_env_backup_best_effort(self, env_path: Path) -> None:
+        for backup_path in self._legacy_backup_paths(env_path):
+            if not backup_path.exists():
+                continue
             try:
-                os.link(env_path, backup_path)
-            except OSError:
-                shutil.copy2(env_path, backup_path)
+                backup_path.unlink()
+            except OSError as exc:
+                self.ui.warning(f"Could not remove stale .env backup {backup_path}: {exc}")
+
+    def _restrict_env_file_permissions_best_effort(self, path: Path) -> None:
+        if os.name == "nt":
+            return
+        try:
+            os.chmod(path, self._PLAINTEXT_SECRET_FILE_MODE)
         except OSError as exc:
-            self.ui.warning(f"Could not create .env backup: {exc}")
+            self.ui.warning(f"Could not tighten permissions on {path}: {exc}")
 
     def _atomic_write_env_lines(self, env_path: Path, lines: List[str]) -> bool:
-        temp_path = env_path.with_suffix(".env.tmp")
+        fd, temp_name = tempfile.mkstemp(
+            prefix=f".{env_path.name}.",
+            suffix=".tmp",
+            dir=env_path.parent,
+            text=True,
+        )
+        temp_path = Path(temp_name)
         try:
-            temp_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            if hasattr(os, "fchmod") and os.name != "nt":
+                os.fchmod(fd, self._PLAINTEXT_SECRET_FILE_MODE)
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write("\n".join(lines) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
             os.replace(temp_path, env_path)
+            self._restrict_env_file_permissions_best_effort(env_path)
             return True
         except OSError as exc:
             self.ui.error(f"Failed to write .env file: {exc}")
@@ -763,4 +794,5 @@ __all__ = [
     "ProviderMetadata",
     "ProviderResolution",
     "ValidationFeedback",
+    "available_provider_ids",
 ]

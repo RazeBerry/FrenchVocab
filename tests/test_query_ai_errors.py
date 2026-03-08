@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 import FrenchVocab
-from core.llm_coordinator import LLMCoordinator
+from core.llm_coordinator import InitState, LLMCoordinator
 
 
 class _FailingClient:
@@ -91,3 +91,34 @@ def test_query_ai_surfaces_provider_error_label():
     assert 'Claude' in message or 'claude' in message.lower()  # provider label should be visible
     assert 'boom' in message  # surface original exception details
     assert ui.metrics == {'ttft': -1, 'tps': -1, 'tokens_out': -1}
+
+
+def test_handle_ai_exception_degrades_cleanly_on_quota_failure(monkeypatch):
+    ui = _CaptureUI()
+    ui.interactive_menu = lambda *_args, **_kwargs: "skip"
+
+    import threading
+    coordinator = object.__new__(LLMCoordinator)
+    coordinator._ui = ui
+    coordinator._client = _FailingClient()
+    coordinator._state_lock = threading.Lock()
+    coordinator._init_event = threading.Event()
+    coordinator._init_generation = 1
+    coordinator._init_state = InitState.READY
+    coordinator._api_error_reason = None
+    coordinator._provider_metadata = _MockProviderMetadata()
+    coordinator._session_usage = {}
+    coordinator._session_requests = 0
+    coordinator._on_degraded_mode = None
+    coordinator._on_client_ready = None
+
+    monkeypatch.setattr(
+        LLMCoordinator,
+        "_classify_provider_error",
+        staticmethod(lambda _provider, _exc: ("quota", "Anthropic Claude quota is exhausted or unavailable.")),
+    )
+    handled = coordinator.handle_ai_exception(RuntimeError("quota exceeded"), "Claude")
+
+    assert handled is True
+    assert coordinator.api_available is False
+    assert "quota" in (coordinator.api_error_reason or "").lower()

@@ -1,10 +1,11 @@
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
+from pathlib import Path
 from time import perf_counter
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 
 class _SuppressGenAIWarnings(logging.Filter):
@@ -21,6 +22,123 @@ class _SuppressGenAIWarnings(logging.Filter):
 
 for _logger_name in ("google.genai", "google_genai.types"):
     logging.getLogger(_logger_name).addFilter(_SuppressGenAIWarnings())
+
+
+_PROVIDER_DISCOVERY_ORDER: Tuple[Tuple[str, str, str], ...] = (
+    ("gemini", "GEMINI_API_KEY", "gemini_api_key"),
+    ("claude", "ANTHROPIC_API_KEY", "anthropic_api_key"),
+)
+
+
+def _candidate_env_paths() -> Tuple[Path, ...]:
+    candidates = []
+    config_dir = os.getenv("FRENCHVOCAB_CONFIG_DIR")
+    if config_dir:
+        candidates.append(Path(config_dir).expanduser() / ".env")
+    candidates.append(Path(__file__).resolve().parent / ".env")
+    candidates.append(Path.home() / ".frenchvocab" / ".env")
+
+    deduped = []
+    seen = set()
+    for candidate in candidates:
+        key = str(candidate)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+    return tuple(deduped)
+
+
+def _read_env_file_value(path: Path, env_var: str) -> Optional[str]:
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+    for raw_line in content.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("export "):
+            stripped = stripped[7:].lstrip()
+        if "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        if key.strip() != env_var:
+            continue
+        cleaned = value.strip().strip("'\"")
+        if cleaned:
+            return cleaned
+    return None
+
+
+def _keyring_get_password_best_effort(service: str, name: str) -> Optional[str]:
+    try:
+        import keyring  # type: ignore[import]
+    except ImportError:
+        return None
+
+    try:
+        return keyring.get_password(service, name)
+    except Exception:
+        return None
+
+
+def _display_provider_name(provider_name: str) -> str:
+    mapping = {
+        "gemini": "Google Gemini",
+        "claude": "Anthropic Claude",
+    }
+    return mapping.get(provider_name.lower(), provider_name)
+
+
+def classify_provider_error(provider_name: str, exc: Exception) -> Optional[Tuple[str, str]]:
+    """Return (category, user-facing reason) for known provider failures."""
+    provider_key = (provider_name or "").strip().lower()
+    message = str(exc) or exc.__class__.__name__
+    lower = message.lower()
+    display_name = _display_provider_name(provider_key)
+
+    if provider_key == "gemini":
+        if GeminiClient._is_region_block_error(exc):
+            return "region_blocked", "Gemini is blocked in this region (FAILED_PRECONDITION)."
+        if GeminiClient._is_leaked_key_error(exc):
+            return "auth", GeminiClient._LEAKED_KEY_MESSAGE
+
+    auth_markers = (
+        "invalid api key",
+        "api key not valid",
+        "authentication",
+        "unauthorized",
+        "unauthenticated",
+        "forbidden",
+        "permission denied",
+        "permission_denied",
+        "invalid x-api-key",
+        "api key rejected",
+        "revoked",
+    )
+    quota_markers = (
+        "insufficient_quota",
+        "quota exceeded",
+        "quota has been exceeded",
+        "resource exhausted",
+        "quota",
+    )
+    billing_markers = (
+        "billing",
+        "payment required",
+        "insufficient funds",
+        "credit balance",
+    )
+
+    if any(marker in lower for marker in auth_markers):
+        return "auth", f"{display_name} credentials were rejected or revoked."
+    if any(marker in lower for marker in billing_markers):
+        return "billing", f"{display_name} billing is preventing requests."
+    if any(marker in lower for marker in quota_markers):
+        return "quota", f"{display_name} quota is exhausted or unavailable."
+    return None
 
 
 class LLMClient(ABC):
@@ -415,7 +533,7 @@ class ClaudeClient(LLMClient):
 
 class ProviderFactory:
     """Factory to create different LLM client implementations."""
-    
+
     @staticmethod
     def create(provider_name: str, api_key: Optional[str] = None) -> LLMClient:
         """
@@ -439,13 +557,34 @@ class ProviderFactory:
             return ClaudeClient(api_key)
         else:
             raise ValueError(f"Unknown provider: {provider_name}")
-            
+
+    @staticmethod
+    def available_providers() -> Tuple[str, ...]:
+        """Return the supported provider identifiers in priority order."""
+        return tuple(provider for provider, _, _ in _PROVIDER_DISCOVERY_ORDER)
+
     @staticmethod
     def default_provider() -> str:
         """Return the default provider name based on environment."""
-        if os.getenv("GEMINI_API_KEY"):
+        for provider_name, env_var, _ in _PROVIDER_DISCOVERY_ORDER:
+            if os.getenv(env_var):
+                return provider_name
+
+        pytest_active = bool(os.getenv("PYTEST_CURRENT_TEST"))
+        allow_persistent_autodetect = bool(os.getenv("FRENCHVOCAB_TEST_PROVIDER_AUTODETECT"))
+        if pytest_active and not allow_persistent_autodetect:
             return "gemini"
-        elif os.getenv("ANTHROPIC_API_KEY"):
-            return "claude"
-        else:
-            return "gemini"  # Default to Gemini 
+
+        for path in _candidate_env_paths():
+            if not path.exists():
+                continue
+            for provider_name, env_var, _ in _PROVIDER_DISCOVERY_ORDER:
+                if _read_env_file_value(path, env_var):
+                    return provider_name
+
+        for provider_name, _, keyring_name in _PROVIDER_DISCOVERY_ORDER:
+            stored = _keyring_get_password_best_effort("french_vocab_builder", keyring_name)
+            if stored:
+                return provider_name
+
+        return "gemini"

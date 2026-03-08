@@ -3,6 +3,7 @@ import tempfile
 import unittest
 
 import FrenchVocab
+from core import session_ui as session_ui_module
 
 
 class _FakeLLMClient:
@@ -152,6 +153,88 @@ class TestSentenceFlow(unittest.TestCase):
         b.handle_new_word_entry()
         self.assertEqual(calls['n'], 1)
 
+    def test_routed_sentence_does_not_show_vocab_quick_actions(self):
+        fake_client = _FakeLLMClient()
+        b = self._builder(client=fake_client)
+        b.route_sentences = True
+
+        class _Spy:
+            entry_count = 0
+
+            def translate_and_save(self, text, provided_translation=None):
+                return True
+
+        b.fr_to_eng_translator = _Spy()
+        b.get_word_input = lambda: "Ceci est une phrase."
+        b.ui.interactive_menu = lambda *args, **kwargs: "menu"
+        b._show_word_entry_quick_actions = lambda: (_ for _ in ()).throw(
+            AssertionError("vocabulary quick actions should not open after sentence routing")
+        )
+
+        b.handle_new_word_entry()
+
+    def test_failed_sentence_routing_falls_back_to_vocab_flow(self):
+        fake_client = _FakeLLMClient()
+        b = self._builder(client=fake_client)
+        b.route_sentences = True
+        b.sentence_examples_in_vocab = False
+
+        class _Spy:
+            entry_count = 0
+
+            def translate_and_save(self, text, provided_translation=None):
+                return False
+
+        b.fr_to_eng_translator = _Spy()
+        b.query_ai = lambda _text: "stub"
+        b.parse_ai_response = lambda _resp: (
+            ["sentence"],
+            ["translated sentence"],
+            [("FR ex", "EN ex")],
+        )
+        b.check_duplicate = lambda _word: None
+        b.is_valid_latex_entry = lambda _entry: True
+        b.display_parsed_info = lambda *args, **kwargs: None
+        b.display_latex_entry = lambda *args, **kwargs: None
+        b.ui.confirm = lambda *args, **kwargs: True
+        b.ui.interactive_menu = lambda *args, **kwargs: "menu"
+
+        captured = {}
+
+        def _capture_insert(entry, word):
+            captured["entry"] = entry
+
+        b.insert_entry_alphabetically = _capture_insert
+        b.get_word_input = lambda: "Ceci est une phrase."
+
+        b.handle_new_word_entry()
+
+        self.assertIn("\\entry{Ceci est une phrase.}{sentence}", captured.get("entry", ""))
+
+    def test_post_translation_menu_returns_add_without_recursing(self):
+        calls = {"add": 0}
+
+        class _App:
+            auto_translator = None
+            eng_to_fr_translator = None
+            fr_to_eng_translator = None
+
+            class _UI:
+                @staticmethod
+                def interactive_menu(*_args, **_kwargs):
+                    return "add"
+
+            ui = _UI()
+
+            @staticmethod
+            def handle_new_word_entry():
+                calls["add"] += 1
+
+        action = session_ui_module.show_post_translation_menu(_App())
+
+        self.assertEqual(action, "add")
+        self.assertEqual(calls["add"], 0)
+
     def test_sentence_examples_omitted_when_not_routing(self):
         # Disable routing, ensure examples removed for sentences
         fake_client = _FakeLLMClient()
@@ -216,6 +299,63 @@ class TestSentenceFlow(unittest.TestCase):
 
         self.assertFalse(insert_called['value'])
         self.assertEqual(added_count['value'], 0)
+
+    def test_failed_insert_does_not_update_memory_or_show_success(self):
+        fake_client = _FakeLLMClient()
+        b = self._builder(client=fake_client)
+
+        b.get_word_input = lambda: "bonjour"
+        b.query_ai = lambda _word: "stubbed"
+        b.check_spelling = lambda word, _resp: word
+        b.parse_ai_response = lambda _resp: (
+            ['noun'],
+            ['hello'],
+            [('FR sample', 'EN sample')],
+        )
+        b.check_duplicate = lambda _w: None
+        b.is_valid_latex_entry = lambda _entry: True
+        b.display_parsed_info = lambda *args, **kwargs: None
+        b.display_latex_entry = lambda *args, **kwargs: None
+        b.ui.confirm = lambda *args, **kwargs: True
+        b.insert_entry_alphabetically = lambda *_args, **_kwargs: False
+
+        added_count = {'value': 0}
+        b.add_word_to_entries = lambda *args, **kwargs: added_count.__setitem__('value', added_count['value'] + 1)
+
+        success_messages = []
+        b.ui.success = lambda message, *args, **kwargs: success_messages.append(message)
+        b._show_word_entry_quick_actions = lambda: (_ for _ in ()).throw(
+            AssertionError("quick actions should not open when saving fails")
+        )
+
+        b.handle_new_word_entry()
+
+        self.assertEqual(added_count['value'], 0)
+        self.assertFalse(any("Entry saved successfully!" in msg for msg in success_messages))
+
+    def test_failed_duplicate_merge_does_not_continue_as_success(self):
+        fake_client = _FakeLLMClient()
+        b = self._builder(client=fake_client)
+
+        b.get_word_input = lambda: "bonjour"
+        b.query_ai = lambda _word: "stubbed"
+        b.check_spelling = lambda word, _resp: word
+        b.parse_ai_response = lambda _resp: (
+            ['noun'],
+            ['hello'],
+            [('FR sample', 'EN sample')],
+        )
+        b.check_duplicate = lambda _w: "bonjour"
+        b.is_valid_latex_entry = lambda _entry: True
+        b.display_parsed_info = lambda *args, **kwargs: None
+        b.display_latex_entry = lambda *args, **kwargs: None
+        b.ui.interactive_menu = lambda *args, **kwargs: "merge"
+        b._vocab_repo.merge_into_existing = lambda *_args, **_kwargs: False
+        b._show_word_entry_quick_actions = lambda: (_ for _ in ()).throw(
+            AssertionError("quick actions should not open after a failed merge")
+        )
+
+        b.handle_new_word_entry()
 
     def test_revert_to_original_spelling_still_saves(self):
         fake_client = _FakeLLMClient()

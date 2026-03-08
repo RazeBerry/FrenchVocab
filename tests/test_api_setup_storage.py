@@ -1,4 +1,5 @@
 import os
+import stat
 from pathlib import Path
 
 from core.providers import manager as manager_module
@@ -79,6 +80,23 @@ def test_store_api_key_keyring_failure_falls_back(tmp_path, monkeypatch):
     assert (tmp_path / ".env").exists()
 
 
+def test_store_api_key_missing_keyring_module_falls_back_to_env_file(tmp_path, monkeypatch):
+    manager, ui = _make_manager(tmp_path, choices=["keyring", "env_file"])
+    metadata = _get_provider_metadata("gemini")
+
+    def _missing_keyring(*_args, **_kwargs):
+        raise ModuleNotFoundError("No module named 'keyring'")
+
+    monkeypatch.setattr(manager_module, "set_password", _missing_keyring)
+
+    result = manager._store_api_key(metadata, "AIza" + "m" * 36)
+
+    assert result.startswith(".env")
+    assert (tmp_path / ".env").exists()
+    warnings = "\n".join(ui.messages["warning"])
+    assert "Keyring is not available" in warnings
+
+
 def test_prepare_provider_reads_env_file(tmp_path, monkeypatch):
     manager, ui = _make_manager(tmp_path)
     metadata = _get_provider_metadata("gemini")
@@ -130,3 +148,22 @@ def test_store_api_key_respects_config_dir_env(tmp_path, monkeypatch):
     assert env_path.exists()
     assert "GEMINI_API_KEY=AIza" in env_path.read_text(encoding="utf-8")
     assert storage.startswith(".env")
+
+
+def test_write_env_file_hardens_permissions_and_removes_stale_backup(tmp_path):
+    manager, _ = _make_manager(tmp_path)
+    metadata = _get_provider_metadata("gemini")
+    env_path = tmp_path / ".env"
+    backup_path = tmp_path / ".env.bak"
+
+    env_path.write_text("GEMINI_API_KEY=old\n", encoding="utf-8")
+    backup_path.write_text("GEMINI_API_KEY=older\n", encoding="utf-8")
+
+    storage = manager._write_env_file(metadata, "AIza" + "p" * 36)
+
+    assert storage is not None
+    assert env_path.exists()
+    assert not backup_path.exists()
+    if os.name != "nt":
+        mode = stat.S_IMODE(env_path.stat().st_mode)
+        assert mode == 0o600

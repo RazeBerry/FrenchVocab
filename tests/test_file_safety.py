@@ -4,6 +4,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from core.file_safety import AtomicFileWriter, atomic_write_text
 
@@ -167,6 +168,16 @@ class TestAtomicWriterEdgeCases(unittest.TestCase):
             atomic_write_text(path, large_content)
 
             self.assertEqual(path.read_text(), large_content)
+
+    def test_atomic_write_fsyncs_file_and_directory(self):
+        """Test that successful writes fsync both the temp file and parent directory."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "durable.txt"
+
+            with patch("core.file_safety.os.fsync") as mock_fsync:
+                atomic_write_text(path, "content", create_backup=False)
+
+            self.assertGreaterEqual(mock_fsync.call_count, 2)
 
 
 if __name__ == "__main__":

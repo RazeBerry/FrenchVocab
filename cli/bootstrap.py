@@ -6,7 +6,7 @@ from typing import Iterable, List, Tuple, TYPE_CHECKING
 
 from rich.console import Console
 
-from languages import available_language_codes, get_language_config
+from languages import available_language_codes, default_language_code, get_language_config
 
 if TYPE_CHECKING:  # pragma: no cover - avoid circular imports
     from core import FrenchVocabBuilder
@@ -69,6 +69,7 @@ def _prompt_for_language(console: Console) -> str:
         "Select Language",
         rendered,
         "Use ↑ and ↓ to choose a language. Press Enter to launch. Esc cancels.",
+        default_key=default_language_code(),
     )
 
 

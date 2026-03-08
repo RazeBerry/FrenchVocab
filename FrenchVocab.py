@@ -39,11 +39,13 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--language",
         "-l",
+        type=str.lower,
         help="Language code to launch immediately (e.g., 'fr', 'de').",
     )
     parser.add_argument(
         "--provider",
         "-p",
+        type=str.lower,
         help="LLM provider identifier to prefer for this session (e.g., 'gemini', 'claude').",
     )
     parser.add_argument(
@@ -72,6 +74,16 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _validate_args(args: argparse.Namespace) -> None:
+    from core.providers.manager import _get_provider_metadata
+    from languages import get_language_config
+
+    if args.language:
+        args.language = get_language_config(args.language).code
+    if args.provider:
+        args.provider = _get_provider_metadata(args.provider).identifier
+
+
 def _apply_esc_debug_flags(args: argparse.Namespace) -> None:
     if args.esc_debug:
         os.environ.setdefault("FRENCHVOCAB_ESC_DEBUG", "1")
@@ -80,23 +92,27 @@ def _apply_esc_debug_flags(args: argparse.Namespace) -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> None:
-    args = _parse_args(argv)
-    _apply_esc_debug_flags(args)
+    try:
+        args = _parse_args(argv)
+        _apply_esc_debug_flags(args)
+        _validate_args(args)
 
-    build_app, run_cli = _load_bootstrap()
-    builder_kwargs = {
-        "latex_file": args.latex_file,
-        "provider": args.provider,
-        "verbose": args.verbose,
-        "eager_provider": args.eager_llm,
-    }
+        build_app, run_cli = _load_bootstrap()
+        builder_kwargs = {
+            "latex_file": args.latex_file,
+            "provider": args.provider,
+            "verbose": args.verbose,
+            "eager_provider": args.eager_llm,
+        }
 
-    if args.language:
-        builder = build_app(args.language, **builder_kwargs)
-        builder.run()
-        return
+        if args.language:
+            builder = build_app(args.language, **builder_kwargs)
+            builder.run()
+            return
 
-    run_cli(argv=argv, **builder_kwargs)
+        run_cli(argv=argv, **builder_kwargs)
+    except ValueError as exc:
+        raise SystemExit(f"Error: {exc}") from None
 
 
 if __name__ == "__main__":

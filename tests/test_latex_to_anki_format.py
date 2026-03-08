@@ -47,6 +47,13 @@ class TestLatexToAnki(unittest.TestCase):
         self.assertEqual(items, ['Example with outer inner emphasis'])
         self.assertNotIn('}', out)
 
+    def test_latex_to_anki_escapes_html(self):
+        text = "\\item <script>alert(1)</script> & \\textbf{bold}"
+        out = FrenchVocab.FrenchVocabBuilder.latex_to_anki_format(self.builder, text)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", out)
+        self.assertIn("&amp;", out)
+        self.assertNotIn("<script>", out)
+
 
 if __name__ == '__main__':
     unittest.main()

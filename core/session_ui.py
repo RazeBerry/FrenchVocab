@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 
 
 def resolve_welcome_provider_name(app: Any) -> str:
@@ -159,8 +159,8 @@ def show_translation_menu(app: Any) -> str:
         return "back"
 
 
-def show_post_translation_menu(app: Any) -> None:
-    """Show quick action menu after successful sentence translation."""
+def show_post_translation_menu(app: Any) -> Optional[str]:
+    """Show quick actions after successful sentence translation."""
     try:
         quick_action = app.ui.interactive_menu(
             "What's next?",
@@ -183,8 +183,9 @@ def show_post_translation_menu(app: Any) -> None:
             elif translation_choice == "target_to_eng" and app.fr_to_eng_translator:
                 if app.ensure_llm_ready():
                     app.fr_to_eng_translator.run()
-        elif quick_action == "add":
-            app.handle_new_word_entry()
+            return "translate"
+        if quick_action == "add":
+            return "add"
+        return quick_action
     except KeyboardInterrupt:
-        # User pressed Esc - return to main menu.
-        return
+        return None

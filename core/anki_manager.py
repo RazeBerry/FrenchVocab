@@ -13,11 +13,13 @@ import os
 import re
 import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
 
 from anki_exporter import AnkiExporter, AnkiExportEntry
+from core.file_safety import atomic_write_text
 from languages.anki_shared_styles import compute_template_hash
 
 if TYPE_CHECKING:
@@ -109,38 +111,28 @@ class AnkiExportManager:
             try:
                 with path.open('r', encoding='utf-8') as f:
                     data = json.load(f)
-            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-                self._ui.warning(
-                    f"Exported words file is corrupted ({exc}); starting fresh. "
-                    f"The corrupt file has been preserved as {path}.corrupt"
-                )
-                try:
-                    shutil.copy2(path, str(path) + ".corrupt")
-                except OSError:
-                    pass
+            except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
+                self._preserve_invalid_export_state(path, exc)
                 return set(), None, None
             if isinstance(data, dict):
-                words = set(data.get("words", []))
-                version = data.get("deck_version")
-                metadata = data.get("last_export")
-                if metadata is not None and not isinstance(metadata, dict):
-                    metadata = None
-                return words, version, metadata
+                return self._parse_exported_words_dict(data, path)
             if isinstance(data, list):
-                return set(data), None, None
+                return self._parse_legacy_exported_words_list(data, path)
+            self._preserve_invalid_export_state(path, "unexpected JSON payload type")
         return set(), None, None
 
     def load_exported_words(self) -> Tuple[Set[str], Optional[str], Optional[Dict[str, Any]]]:
         """Public method to reload exported words from file."""
         return self._load_exported_words()
 
-    def save_exported_words(self) -> None:
+    def save_exported_words(self) -> bool:
         """Save exported words to the tracking file using atomic write."""
         path = self._exported_words_file
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-        except FileExistsError:
-            pass
+        except OSError as exc:
+            self._ui.error(f"Failed to prepare exported words directory: {exc}", with_panel=True)
+            return False
         payload = {
             "words": sorted(self._exported_words),
             "deck_version": self._exported_deck_version,
@@ -149,12 +141,15 @@ class AnkiExportManager:
             payload["last_export"] = self._last_export_metadata
         content = json.dumps(payload, ensure_ascii=False, indent=2)
         try:
-            from core.file_safety import atomic_write_text
             atomic_write_text(path, content, create_backup=False)
-        except OSError:
-            # Fallback to direct write if atomic write fails
-            with path.open('w', encoding='utf-8') as f:
-                f.write(content)
+        except OSError as exc:
+            self._ui.error(
+                f"Failed to save exported words state atomically: {exc}\n"
+                f"Tracker path: {path}",
+                with_panel=True,
+            )
+            return False
+        return True
 
     def get_all_exported_words(self) -> Set[str]:
         """Return a copy of all exported words."""
@@ -359,14 +354,22 @@ class AnkiExportManager:
         import genanki  # type: ignore[import]
 
         package = genanki.Package(deck)
-        temp_path = destination_path.with_suffix(".apkg.tmp")
+        temp_path: Optional[Path] = None
 
         try:
+            temp_fd, temp_name = tempfile.mkstemp(
+                dir=export_directory,
+                prefix=f".{destination_path.name}.",
+                suffix=".tmp",
+            )
+            os.close(temp_fd)
+            temp_path = Path(temp_name)
             package.write_to_file(str(temp_path))
 
-            # Only perform atomic replace if the temp file was actually created
-            # (some test doubles / mocked writers may not create real files)
-            if temp_path.exists():
+            # Test doubles sometimes ignore the temp path entirely, leaving the
+            # pre-created tempfile empty. Treat that as "no temp package".
+            has_temp_package = temp_path.exists() and temp_path.stat().st_size > 0
+            if has_temp_package:
                 if destination_path.exists():
                     backup_path = destination_path.with_suffix(".apkg.bak")
                     try:
@@ -405,7 +408,7 @@ class AnkiExportManager:
             else:
                 self._ui.error(f"Failed to write Anki deck: {exc}", with_panel=True)
         finally:
-            if temp_path.exists():
+            if temp_path is not None and temp_path.exists():
                 try:
                     temp_path.unlink()
                 except OSError:
@@ -442,8 +445,65 @@ class AnkiExportManager:
             "total_words": len(all_exported_words),
             "new_words": len(newly_added_words_normalized),
         }
-        self.save_exported_words()
+        if not self.save_exported_words():
+            self._ui.warning(
+                "The Anki deck was written, but the exported-words tracker could not be updated."
+            )
         return newly_added_words_normalized, newly_added_display
+
+    def _parse_exported_words_dict(
+        self,
+        data: Dict[str, Any],
+        path: Path,
+    ) -> Tuple[Set[str], Optional[str], Optional[Dict[str, Any]]]:
+        words_raw = data.get("words", [])
+        words = self._coerce_string_set(words_raw)
+        if words is None:
+            self._preserve_invalid_export_state(path, f"invalid words field: {type(words_raw).__name__}")
+            return set(), None, None
+
+        version = data.get("deck_version")
+        if version is not None and not isinstance(version, str):
+            version = str(version)
+
+        metadata_raw = data.get("last_export")
+        metadata = metadata_raw if isinstance(metadata_raw, dict) else None
+        return words, version, metadata
+
+    def _parse_legacy_exported_words_list(
+        self,
+        data: List[Any],
+        path: Path,
+    ) -> Tuple[Set[str], Optional[str], Optional[Dict[str, Any]]]:
+        words = self._coerce_string_set(data)
+        if words is None:
+            self._preserve_invalid_export_state(path, "legacy export state contains non-string entries")
+            return set(), None, None
+        return words, None, None
+
+    @staticmethod
+    def _coerce_string_set(value: Any) -> Optional[Set[str]]:
+        if value is None or isinstance(value, (str, bytes, dict)):
+            return None
+        try:
+            items = list(value)
+        except TypeError:
+            return None
+        if any(not isinstance(item, str) for item in items):
+            return None
+        return {item for item in items if item}
+
+    def _preserve_invalid_export_state(self, path: Path, reason: Any) -> None:
+        self._ui.warning(
+            f"Exported words file is invalid ({reason}); starting fresh. "
+            f"The existing state has been preserved as {path}.corrupt when possible."
+        )
+        if not path.exists() or not path.is_file():
+            return
+        try:
+            shutil.copy2(path, str(path) + ".corrupt")
+        except OSError:
+            pass
 
     @staticmethod
     def _build_export_feedback(

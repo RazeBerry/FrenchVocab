@@ -1,6 +1,4 @@
-import json
 import os
-import re
 import shutil
 import string
 import unicodedata
@@ -14,12 +12,20 @@ import threading
 from languages import LanguageConfig, TranslatorConfig, default_language_code, get_language_config
 from typing import TYPE_CHECKING
 
-from .history_logger import TranslationLogger, default_history_base_dir
-from .vocab_repository import VocabRepository, EntryNotFoundError
+from .history_logger import TranslationLogger
+from .vocab_repository import VocabRepository
 from .llm_coordinator import LLMCoordinator
 from .anki_manager import AnkiExportManager
 from .spelling_checker import SpellingChecker
-from .word_entry_workflow import WordEntryWorkflow, WorkflowCallbacks, WorkflowOptions
+from .vocab_display_mixin import VocabDisplayMixin
+from .vocab_merge_mixin import VocabMergeMixin
+from .vocab_runtime_mixin import VocabRuntimeMixin
+from .word_entry_workflow import (
+    WordEntryWorkflow,
+    WorkflowCallbacks,
+    WorkflowOptions,
+    WorkflowOutcome,
+)
 from .text_utils import detect_input_type as classify_input_type, sanitize_user_text, translator_title
 from .menu_loop import main_menu_loop
 from .session_ui import (
@@ -71,7 +77,7 @@ class _TestDoubleVocabRepoAdapter:
         return set(self.word_entries.keys())
 
 
-class FrenchVocabBuilder:
+class FrenchVocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
     DEFAULT_LANGUAGE_CONFIG = get_language_config(None)
     DEFAULT_LANGUAGE_CODE = default_language_code()
     language_config: LanguageConfig = DEFAULT_LANGUAGE_CONFIG
@@ -404,17 +410,7 @@ class FrenchVocabBuilder:
     @provider.setter
     def provider(self, value: str) -> None:
         """Set the provider identifier (updates coordinator metadata)."""
-        # For backward compatibility in tests - update metadata identifier
-        if hasattr(self._llm, '_provider_metadata'):
-            # Create a modified metadata with the new identifier
-            from core.providers.manager import ProviderMetadata
-            old_meta = self._llm._provider_metadata
-            self._llm._provider_metadata = ProviderMetadata(
-                identifier=value,
-                display_name=old_meta.display_name,
-                env_var=old_meta.env_var,
-                keyring_name=old_meta.keyring_name,
-            )
+        self._llm.provider_metadata = self.provider_manager.get_metadata(value)
 
     @property
     def provider_metadata(self) -> ProviderMetadata:
@@ -545,6 +541,7 @@ class FrenchVocabBuilder:
             direction="eng_to_target",
             logger=self.history_logger,
             usage_callback=self._record_usage,
+            on_query_exception=self._handle_ai_exception,
         )
         self.fr_to_eng_translator = TranslatorCLI(
             console=self.console,
@@ -554,6 +551,7 @@ class FrenchVocabBuilder:
             direction="target_to_eng",
             logger=self.history_logger,
             usage_callback=self._record_usage,
+            on_query_exception=self._handle_ai_exception,
         )
         self._init_auto_translator()
 
@@ -583,6 +581,7 @@ class FrenchVocabBuilder:
             prompt_template=prompt,
             prompt_variable=prompt_variable,
             usage_callback=self._record_usage,
+            on_query_exception=self._handle_ai_exception,
             verbose=self.verbose,
         )
 
@@ -668,173 +667,6 @@ class FrenchVocabBuilder:
         except IOError as e:
             self.ui.error(f"Error creating initial LaTeX file: {e}", with_panel=True)
             raise
-
-    @staticmethod
-    def _parse_bool_flag(value: object) -> Optional[bool]:
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            return value.strip().lower() in ("1", "true", "yes", "y", "on")
-        return None
-
-    @staticmethod
-    def _parse_positive_int(value: object) -> Optional[int]:
-        try:
-            parsed = int(value)
-        except (ValueError, TypeError):
-            return None
-        return parsed if parsed > 0 else None
-
-    def _apply_config_bool_override(self, limits: Dict[str, Any], key: str, attr_name: str) -> None:
-        if key not in limits:
-            return
-        parsed = self._parse_bool_flag(limits.get(key))
-        if parsed is None:
-            return
-        setattr(self, attr_name, parsed)
-
-    def _apply_input_limits_from_config(self, limits: Dict[str, Any]) -> None:
-        max_chars = self._parse_positive_int(limits.get("max_chars"))
-        if max_chars is not None:
-            self.max_word_length = max_chars
-
-        if "max_words" in limits:
-            self.max_words = self._parse_positive_int(limits.get("max_words"))
-
-        self._apply_config_bool_override(limits, "sentence_mode", "allow_sentence_punctuation")
-        self._apply_config_bool_override(limits, "route_sentences", "route_sentences")
-        self._apply_config_bool_override(limits, "sentence_examples", "sentence_examples_in_vocab")
-
-    def _load_input_limits_from_config_file(self) -> None:
-        try:
-            cfg_path = Path(__file__).parent / str(self.config_file)
-            if not cfg_path.exists():
-                return
-            with cfg_path.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
-            if self.verbose:
-                self.ui.debug(f"Skipping config load from {self.config_file}: {exc}")
-            return
-
-        self._config_data = data if isinstance(data, dict) else {}
-        if not isinstance(data, dict):
-            return
-
-        limits = data.get("input_limits", {})
-        if isinstance(limits, dict):
-            self._apply_input_limits_from_config(limits)
-
-    def _apply_env_max_chars_override(self) -> None:
-        env_chars = os.getenv("FRENCH_VOCAB_MAX_CHARS")
-        if not env_chars:
-            return
-        try:
-            parsed = int(env_chars)
-        except (ValueError, TypeError):
-            return
-        if parsed > 0:
-            self.max_word_length = parsed
-
-    def _apply_env_max_words_override(self) -> None:
-        env_words = os.getenv("FRENCH_VOCAB_MAX_WORDS")
-        if env_words is None:
-            return
-        try:
-            parsed = int(env_words)
-        except (ValueError, TypeError):
-            return
-        if parsed > 0:
-            self.max_words = parsed
-        else:
-            self.max_words = None
-
-    def _apply_env_sentence_mode_override(self) -> None:
-        env_sentence = os.getenv("FRENCH_VOCAB_SENTENCE_MODE") or os.getenv("FRENCH_VOCAB_ALLOW_PUNCT")
-        if env_sentence is None:
-            return
-        self.allow_sentence_punctuation = str(env_sentence).strip().lower() in (
-            "1",
-            "true",
-            "yes",
-            "y",
-            "on",
-        )
-
-    def _apply_env_bool_override(self, env_var: str, attr_name: str) -> None:
-        env_value = os.getenv(env_var)
-        if env_value is None:
-            return
-        parsed = self._parse_bool_flag(env_value)
-        if parsed is None:
-            return
-        setattr(self, attr_name, parsed)
-
-    def _load_input_limits(self) -> None:
-        """Load UI/input and routing options from env or optional JSON config.
-
-        Priority: defaults < config file < environment variables.
-        - Env vars: FRENCH_VOCAB_MAX_CHARS, FRENCH_VOCAB_MAX_WORDS
-        - Config file (JSON): {"input_limits": {"max_chars": int, "max_words": int|null}}
-        Any non-positive or null max_words disables the word-count limit.
-        """
-        self._load_input_limits_from_config_file()
-        self._apply_env_max_chars_override()
-        self._apply_env_max_words_override()
-        self._apply_env_sentence_mode_override()
-        self._apply_env_bool_override("FRENCH_VOCAB_ROUTE_SENTENCES", "route_sentences")
-        self._apply_env_bool_override("FRENCH_VOCAB_SENTENCE_EXAMPLES", "sentence_examples_in_vocab")
-
-    def _should_enable_auto_translator(self) -> bool:
-        env_value = os.getenv("FRENCH_VOCAB_AUTO_TRANSLATOR")
-        if env_value is not None:
-            return str(env_value).strip().lower() in ("1", "true", "yes", "y", "on")
-        return bool(getattr(self.language_config, "auto_prompt_template", None))
-
-    def _create_history_logger(self) -> TranslationLogger:
-        config_section: Dict[str, Any] = {}
-        raw_config = self._config_data.get("history_logging") if isinstance(self._config_data, dict) else None
-        if isinstance(raw_config, dict):
-            config_section = raw_config
-
-        enabled = bool(config_section.get("enabled", True))
-        env_disabled = os.getenv("FRENCH_VOCAB_HISTORY_DISABLED")
-        if env_disabled and env_disabled.strip().lower() in ("1", "true", "yes", "y", "on"):
-            enabled = False
-        env_enabled = os.getenv("FRENCH_VOCAB_HISTORY_ENABLED")
-        if env_enabled and env_enabled.strip().lower() in ("1", "true", "yes", "y", "on"):
-            enabled = True
-
-        base_dir_override = os.getenv("FRENCH_VOCAB_HISTORY_DIR")
-        if base_dir_override:
-            base_dir = Path(base_dir_override)
-        else:
-            configured_dir = config_section.get("directory")
-            if configured_dir:
-                base_dir = Path(configured_dir)
-                if not base_dir.is_absolute():
-                    base_dir = (self.project_root / base_dir).resolve()
-            else:
-                base_dir = default_history_base_dir()
-
-        file_pattern = config_section.get("file_pattern", "{language}_translations.jsonl")
-
-        return TranslationLogger(
-            language_code=self.language_code,
-            base_dir=base_dir,
-            enabled=enabled,
-            file_pattern=file_pattern,
-            on_error=self._history_log_error,
-        )
-
-    def _history_log_error(self, message: str) -> None:
-        try:
-            self.ui.warning(message)
-        except (RuntimeError, OSError, AttributeError) as e:
-            # Fallback: print to stderr if UI fails
-            import sys
-            print(f"WARNING: {message}", file=sys.stderr)
-            print(f"(UI error: {e})", file=sys.stderr)
 
     def _provider_label(self) -> str:
         """Human-readable provider label (delegated to LLMCoordinator)."""
@@ -1124,9 +956,9 @@ class FrenchVocabBuilder:
         """Format word information into a LaTeX entry. Delegates to VocabRepository."""
         return VocabRepository.format_latex_entry(word, word_type, definitions, examples, entry_command)
 
-    def insert_entry_alphabetically(self, new_entry: str, new_word: str) -> None:
+    def insert_entry_alphabetically(self, new_entry: str, new_word: str) -> bool:
         """Insert a new LaTeX entry at the appropriate position."""
-        self._vocab_repo.insert_entry_alphabetically(new_entry, new_word)
+        return self._vocab_repo.insert_entry_alphabetically(new_entry, new_word)
 
     def alphabetize_entries(self, *, silent: bool = False) -> None:
         """Alphabetize the entries in the LaTeX file."""
@@ -1367,12 +1199,17 @@ class FrenchVocabBuilder:
             )
 
             # Run the workflow
-            saved = workflow.run(self.ensure_llm_ready)
+            outcome = workflow.run(self.ensure_llm_ready)
 
             # Sync duplicate_resolution state back
             self.duplicate_resolution = workflow.duplicate_resolution
 
-            if not saved:
+            if outcome == WorkflowOutcome.ROUTED:
+                if workflow.post_translation_action == "add":
+                    continue
+                return
+
+            if outcome != WorkflowOutcome.SAVED:
                 return
 
             # Quick action menu - iterative instead of recursive
@@ -1405,182 +1242,8 @@ class FrenchVocabBuilder:
         except KeyboardInterrupt:
             return None
 
-    def _show_post_translation_menu(self) -> None:
-        show_post_translation_menu(self)
-
-    def _merge_into_existing_via_repo(
-        self,
-        key: str,
-        existing_word: str,
-        new_type: str,
-        new_defs: List[str],
-        new_examples: List[Tuple[str, str]],
-    ) -> bool:
-        success = self._vocab_repo.merge_into_existing(existing_word, new_type, new_defs, new_examples)
-        if not success:
-            return False
-
-        updated_entry = self.word_entries.get(key, {})
-        self._log_merge_history(
-            existing_word=updated_entry.get("word", existing_word),
-            final_type=updated_entry.get("type", new_type),
-            merged_definitions=updated_entry.get("definitions_list", new_defs),
-            merged_examples=updated_entry.get("examples_list", []),
-            added_definitions=new_defs,
-            added_examples=new_examples,
-        )
-        return True
-
-    def _fallback_existing_definitions(self, entry: Dict[str, Any]) -> List[str]:
-        definitions_list = entry.get("definitions_list") or []
-        if definitions_list:
-            return list(definitions_list)
-        definitions_raw = entry.get("definitions", "")
-        return [d.strip() for d in definitions_raw.split("; ") if d.strip()]
-
-    def _fallback_existing_examples(self, entry: Dict[str, Any]) -> List[Tuple[str, str]]:
-        examples_list = entry.get("examples_list") or []
-        if examples_list:
-            return list(examples_list)
-        examples_raw = entry.get("examples")
-        if examples_raw:
-            return self._parse_examples_string(examples_raw)
-        return []
-
-    @staticmethod
-    def _norm_text_for_merge(text: str) -> str:
-        normalized = re.sub(r"\s+", " ", text).strip().lower()
-        return normalize_word_key(normalized)
-
-    def _norm_pair_for_merge(self, pair: Tuple[str, str]) -> Tuple[str, str]:
-        return (self._norm_text_for_merge(pair[0]), self._norm_text_for_merge(pair[1]))
-
-    def _dedup_merge_definitions(
-        self,
-        existing_defs: List[str],
-        new_defs: List[str],
-    ) -> tuple[List[str], List[str]]:
-        merged_map: Dict[str, str] = {}
-        for definition in existing_defs:
-            norm_key = self._norm_text_for_merge(definition)
-            if norm_key:
-                merged_map[norm_key] = definition
-
-        added: List[str] = []
-        for definition in new_defs:
-            norm_key = self._norm_text_for_merge(definition)
-            if not norm_key:
-                continue
-            if norm_key in merged_map:
-                continue
-            merged_map[norm_key] = definition
-            added.append(definition)
-
-        return list(merged_map.values()), added
-
-    def _dedup_merge_examples(
-        self,
-        existing_examples: List[Tuple[str, str]],
-        new_examples: List[Tuple[str, str]],
-    ) -> tuple[List[Tuple[str, str]], List[Tuple[str, str]]]:
-        merged_map: Dict[Tuple[str, str], Tuple[str, str]] = {}
-        for pair in existing_examples:
-            merged_map[self._norm_pair_for_merge(pair)] = pair
-
-        added: List[Tuple[str, str]] = []
-        for pair in new_examples:
-            norm_key = self._norm_pair_for_merge(pair)
-            if norm_key in merged_map:
-                continue
-            merged_map[norm_key] = pair
-            added.append(pair)
-
-        return list(merged_map.values()), added
-
-    def _update_entry_in_file_checked(self, word: str, latex_block: str) -> bool:
-        try:
-            self.update_entry_in_file(word, latex_block)
-        except EntryNotFoundError as exc:
-            self.ui.error(f"Merge failed: {exc}", with_panel=True)
-            return False
-        except IOError as exc:
-            self.ui.error(f"Merge failed - file I/O error: {exc}", with_panel=True)
-            return False
-        return True
-
-    @staticmethod
-    def _update_entry_memory_after_merge(
-        entry: Dict[str, Any],
-        final_type: str,
-        merged_defs: List[str],
-        merged_exs: List[Tuple[str, str]],
-    ) -> None:
-        entry["type"] = final_type
-        entry["definitions_list"] = merged_defs
-        entry["examples_list"] = merged_exs
-        entry["definitions"] = "; ".join(merged_defs)
-        entry["examples"] = "; ".join([f"{f} ({e})" for f, e in merged_exs])
-
-    def _merge_into_existing_fallback(
-        self,
-        entry: Dict[str, Any],
-        existing_word: str,
-        new_type: str,
-        new_defs: List[str],
-        new_examples: List[Tuple[str, str]],
-    ) -> bool:
-        defs_existing = self._fallback_existing_definitions(entry)
-        exs_existing = self._fallback_existing_examples(entry)
-
-        merged_defs, added_defs = self._dedup_merge_definitions(defs_existing, new_defs)
-        merged_exs, added_examples = self._dedup_merge_examples(exs_existing, new_examples)
-
-        final_type = entry.get("type") or new_type
-        latex_block = self.format_latex_entry(
-            entry["word"],
-            final_type,
-            merged_defs,
-            merged_exs,
-            entry_command=self.entry_command,
-        )
-
-        if not self._update_entry_in_file_checked(entry["word"], latex_block):
-            return False
-
-        self._update_entry_memory_after_merge(entry, final_type, merged_defs, merged_exs)
-        self._log_merge_history(
-            existing_word=entry["word"],
-            final_type=final_type,
-            merged_definitions=merged_defs,
-            merged_examples=merged_exs,
-            added_definitions=added_defs,
-            added_examples=added_examples,
-        )
-        return True
-
-    def merge_into_existing(self, existing_word: str, new_type: str, new_defs: List[str], new_examples: List[Tuple[str, str]]) -> bool:
-        """Merge new definitions/examples into an existing entry.
-
-        Delegates core merge logic to VocabRepository while handling history logging.
-        Falls back to inline implementation for test doubles without _vocab_repo.
-
-        Returns:
-            True if merge was successful, False otherwise.
-        """
-        # Get entry state before merge for history logging
-        self._ensure_entries_loaded()
-        key = existing_word.lower()
-        entry = self.word_entries.get(key)
-        if not entry:
-            self.ui.error(f"Cannot merge: existing entry for '{existing_word}' not found.")
-            return False
-
-        # Delegate to repository if available
-        if hasattr(self, "_vocab_repo"):
-            return self._merge_into_existing_via_repo(key, existing_word, new_type, new_defs, new_examples)
-
-        # Fallback for test doubles without _vocab_repo
-        return self._merge_into_existing_fallback(entry, existing_word, new_type, new_defs, new_examples)
+    def _show_post_translation_menu(self) -> Optional[str]:
+        return show_post_translation_menu(self)
 
     def _parse_examples_string(self, examples_str: str) -> List[Tuple[str, str]]:
         """Parse examples string into (source, translation) tuples.
@@ -1706,199 +1369,3 @@ class FrenchVocabBuilder:
     def reconcile_menu_option(self):
         """Reconcile menu option (delegated to AnkiExportManager)."""
         self._ensure_anki_manager().reconcile_menu_option()
-
-    @staticmethod
-    def _format_entry_type(entry_type: Any) -> str:
-        if isinstance(entry_type, str):
-            return entry_type
-        if isinstance(entry_type, list):
-            return ", ".join(entry_type)
-        return str(entry_type)
-
-    def _preview_definition_text(self, definitions: str) -> tuple[str, bool]:
-        if len(definitions) <= self.DEFINITION_PREVIEW_LIMIT:
-            return definitions, False
-        return definitions[: self.DEFINITION_PREVIEW_LIMIT - 3] + "...", True
-
-    def _build_all_vocab_table_rows(self) -> tuple[list[list[str]], Dict[int, str]]:
-        sorted_entries = sorted(self.word_entries.items(), key=lambda x: self.normalize_word(x[0]))
-        rows: list[list[str]] = []
-        truncated_definitions: Dict[int, str] = {}
-
-        for index, (_word, entry) in enumerate(sorted_entries, 1):
-            definitions = entry["definitions"]
-            preview, was_truncated = self._preview_definition_text(definitions)
-            if was_truncated:
-                truncated_definitions[index] = definitions
-
-            rows.append(
-                [
-                    str(index),
-                    entry["word"],
-                    self._format_entry_type(entry["type"]),
-                    preview,
-                ]
-            )
-
-        return rows, truncated_definitions
-
-    def _prompt_definition_number(self) -> Optional[int]:
-        try:
-            choice = read_line("Show full definitions for # (Enter/Esc to finish): ").strip()
-        except (EOFError, KeyboardInterrupt):
-            return None
-
-        if "\x1b" in choice:
-            return None
-        if not choice or choice == "0":
-            return None
-        if not choice.isdigit():
-            self.ui.warning("Enter a number or press Enter to finish.")
-            return -1
-        return int(choice)
-
-    def _show_truncated_definitions(self, truncated_definitions: Dict[int, str]) -> None:
-        if not truncated_definitions:
-            return
-
-        self.ui.info(
-            "Some definitions are abbreviated. View any by number; Enter to continue.",
-            accent="dim",
-        )
-
-        while True:
-            entry_number = self._prompt_definition_number()
-            if entry_number is None:
-                return
-            if entry_number < 0:
-                continue
-
-            full_text = truncated_definitions.get(entry_number)
-            if full_text is None:
-                self.ui.warning("Please enter a valid entry number.")
-                continue
-
-            self.ui.panel(
-                full_text,
-                title=f"Definitions for entry {entry_number}",
-                border_style="dark_orange",
-                expand=True,
-            )
-
-    def _prompt_optional_search_query(self) -> str:
-        return self.ui.prompt("Search vocabulary (press Enter to skip)", style="dim").strip()
-
-    def display_all_vocabulary(self):
-        """Displays all vocabulary entries present in the LaTeX file in a paginated table format.
-        
-        This function retrieves all vocabulary entries from the LaTeX file, formats them
-        into a Rich table, and displays them with pagination for better readability.
-        """
-        self._ensure_entries_loaded()
-        if not self.word_entries:
-            self.ui.warning("No vocabulary entries found in the LaTeX file.")
-            return
-
-        headers = ["No.", "Word", "Type", "Definitions"]
-        rows, truncated_definitions = self._build_all_vocab_table_rows()
-        self.ui.render_table(
-            title=f"All Vocabulary Entries ({len(self.word_entries)} words)",
-            columns=headers,
-            rows=rows,
-            column_styles=["cyan", "magenta", "green", "white"],
-        )
-
-        self._show_truncated_definitions(truncated_definitions)
-
-        search_query = self._prompt_optional_search_query()
-        if search_query:
-            self.search_vocabulary(search_query)
-
-    def _resolve_search_term(self, search_term: Optional[str]) -> str:
-        if search_term is None:
-            search_term = self.ui.prompt("Enter search term").strip()
-        return search_term.strip().lower()
-
-    @staticmethod
-    def _entry_matches_search_term(search_term: str, word_key: str, entry: Dict[str, Any]) -> bool:
-        if search_term in word_key.lower():
-            return True
-        if search_term in str(entry.get("definitions", "")).lower():
-            return True
-
-        entry_type = entry.get("type", "")
-        if isinstance(entry_type, str):
-            return search_term in entry_type.lower()
-        if isinstance(entry_type, list):
-            for t in entry_type:
-                if search_term in str(t).lower():
-                    return True
-        return False
-
-    def _collect_search_results(self, search_term: str) -> Dict[str, Any]:
-        results: Dict[str, Any] = {}
-        for word, entry in self.word_entries.items():
-            if self._entry_matches_search_term(search_term, word, entry):
-                results[word] = entry
-        return results
-
-    def _build_search_results_rows(self, results: Dict[str, Any]) -> list[list[str]]:
-        rows: list[list[str]] = []
-        for _word, entry in sorted(results.items(), key=lambda x: self.normalize_word(x[0])):
-            preview, _ = self._preview_definition_text(entry["definitions"])
-            rows.append(
-                [
-                    entry["word"],
-                    self._format_entry_type(entry["type"]),
-                    preview,
-                ]
-            )
-        return rows
-
-    def _maybe_view_full_entry_from_results(self) -> None:
-        if not self.ui.confirm(
-            "Would you like to see the full entry for any of these words?",
-            default=False,
-        ):
-            return
-
-        word_to_view = self.ui.prompt("Enter the word to view").strip()
-        if not word_to_view:
-            return
-
-        word_key = word_to_view.lower()
-        if word_key in self.word_entries:
-            self.display_existing_entry(word_key)
-            return
-
-        normalized_target = self.normalize_word(word_to_view)
-        for candidate in self.word_entries.keys():
-            if self.normalize_word(candidate) == normalized_target:
-                self.display_existing_entry(candidate)
-                return
-
-        self.ui.error(f"Word '{word_to_view}' not found.")
-
-    def search_vocabulary(self, search_term: Optional[str] = None):
-        """Allows searching for specific vocabulary entries by keyword."""
-        self._ensure_entries_loaded()
-        search_term = self._resolve_search_term(search_term)
-        if not search_term:
-            self.ui.info("Search skipped.", accent="dim")
-            return
-
-        results = self._collect_search_results(search_term)
-        if not results:
-            self.ui.warning(f"No results found for '{search_term}'.")
-            return
-
-        headers = ["Word", "Type", "Definitions"]
-        rows = self._build_search_results_rows(results)
-        self.ui.render_table(
-            title=f"Search Results for '{search_term}' ({len(results)} matches)",
-            columns=headers,
-            rows=rows,
-            column_styles=["magenta", "green", "white"],
-        )
-
-        self._maybe_view_full_entry_from_results()

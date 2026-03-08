@@ -71,6 +71,9 @@ class LLMCoordinator:
     a focused, testable component for AI provider management.
     """
 
+    _BACKGROUND_INIT_WAIT_TIMEOUT_S = 5.0
+    _CREDENTIAL_VERIFY_TIMEOUT_S = 5.0
+
     def __init__(
         self,
         ui: "UIHelper",
@@ -106,6 +109,7 @@ class LLMCoordinator:
         self._state_lock = threading.Lock()
         self._client: Optional["LLMClient"] = client
         self._api_error_reason: Optional[str] = None
+        self._init_generation: int = 0
 
         # Initialization state machine (single source of truth)
         self._init_state: InitState = InitState.READY if client else InitState.NOT_STARTED
@@ -165,6 +169,7 @@ class LLMCoordinator:
                 self._init_event.set()
             else:
                 self._init_state = InitState.FAILED
+                self._init_event.set()
 
     @property
     def init_state(self) -> InitState:
@@ -242,14 +247,69 @@ class LLMCoordinator:
     # Provider Resolution
     # -------------------------------------------------------------------------
 
-    def _apply_provider_resolution(self, resolution: "ProviderResolution") -> None:
+    def _apply_provider_resolution(
+        self,
+        resolution: "ProviderResolution",
+        *,
+        generation: Optional[int] = None,
+    ) -> bool:
         """Persist provider metadata and API key details after successful setup."""
-        self._provider_metadata = resolution.metadata
-        os.environ[resolution.metadata.env_var] = resolution.api_key
         with self._state_lock:
+            if generation is not None and generation != getattr(self, "_init_generation", 0):
+                return False
+            os.environ[resolution.metadata.env_var] = resolution.api_key
+            self._provider_metadata = resolution.metadata
             self._api_error_reason = None
+            return True
 
-    def _prepare_provider(self) -> bool:
+    def _start_init_attempt(self, reason: str) -> int:
+        with self._state_lock:
+            self._init_generation = getattr(self, "_init_generation", 0) + 1
+            generation = self._init_generation
+            self._init_state = InitState.IN_PROGRESS
+            self._api_error_reason = reason
+            self._init_event.clear()
+            return generation
+
+    def _generation_is_current(self, generation: int) -> bool:
+        with self._state_lock:
+            return generation == getattr(self, "_init_generation", 0)
+
+    def _invalidate_background_init(self, reason: str) -> bool:
+        with self._state_lock:
+            if self._init_state != InitState.IN_PROGRESS:
+                return False
+            self._init_generation = getattr(self, "_init_generation", 0) + 1
+            self._init_state = InitState.FAILED
+            self._api_error_reason = reason
+            self._init_event.set()
+            return True
+
+    def _mark_generation_unavailable(
+        self,
+        generation: int,
+        *,
+        state: InitState,
+        reason: str,
+    ) -> bool:
+        with self._state_lock:
+            if generation != getattr(self, "_init_generation", 0):
+                return False
+            self._client = None
+            self._init_state = state
+            self._api_error_reason = reason
+            self._init_event.set()
+            return True
+
+    @staticmethod
+    def _classify_provider_error(provider_name: str, exc: Exception) -> Optional[Tuple[str, str]]:
+        try:
+            from llm_client import classify_provider_error  # type: ignore[attr-defined]
+        except (ImportError, AttributeError):
+            return None
+        return classify_provider_error(provider_name, exc)
+
+    def _prepare_provider(self, *, generation: Optional[int] = None) -> bool:
         """Ensure provider credentials are ready; return False when setup is skipped."""
         try:
             resolution = self._provider_manager.prepare_provider(self._provider_metadata)
@@ -260,8 +320,7 @@ class LLMCoordinator:
             self._ui.error(message, with_panel=True)
             return False
 
-        self._apply_provider_resolution(resolution)
-        return True
+        return self._apply_provider_resolution(resolution, generation=generation)
 
     # -------------------------------------------------------------------------
     # Client Initialization
@@ -272,6 +331,7 @@ class LLMCoordinator:
         *,
         announce: bool = True,
         on_success: Optional[Callable[[], None]] = None,
+        generation: Optional[int] = None,
     ) -> bool:
         """Create the LLM client for the active provider.
 
@@ -284,19 +344,31 @@ class LLMCoordinator:
         """
         from llm_client import ProviderFactory
 
+        metadata = self._provider_metadata
         try:
-            new_client = ProviderFactory.create(self._provider_metadata.identifier)
+            new_client = ProviderFactory.create(metadata.identifier)
+            verifier = getattr(new_client, "verify_credentials", None)
+            if callable(verifier):
+                verifier(timeout=self._CREDENTIAL_VERIFY_TIMEOUT_S)
         except Exception as exc:
-            self._enter_degraded_mode(f"Error initializing {self._provider_metadata.identifier} client: {exc}")
+            classified = self._classify_provider_error(metadata.identifier, exc)
+            message = (
+                classified[1]
+                if classified is not None
+                else f"Error initializing {metadata.identifier} client: {exc}"
+            )
+            self._enter_degraded_mode(message, generation=generation)
             return False
 
         with self._state_lock:
+            if generation is not None and generation != self._init_generation:
+                return False
             self._client = new_client
             self._init_state = InitState.READY
             self._api_error_reason = None
             self._init_event.set()
         if announce:
-            self._ui.success(f"{self._provider_metadata.identifier.capitalize()} client initialized successfully!")
+            self._ui.success(f"{metadata.identifier.capitalize()} client initialized successfully!")
         if on_success:
             on_success()
         # Also invoke the persistent client-ready callback if registered
@@ -309,30 +381,36 @@ class LLMCoordinator:
         with self._state_lock:
             if self._init_state != InitState.NOT_STARTED:
                 return  # Already started or completed
-            self._init_state = InitState.IN_PROGRESS
-            self._api_error_reason = "LLM initialization in background."
+        generation = self._start_init_attempt("LLM initialization in background.")
+        metadata = self._provider_metadata
 
         def _worker():
             try:
-                resolution = self._provider_manager.resolve_provider_silently(self._provider_metadata)
+                resolution = self._provider_manager.resolve_provider_silently(metadata)
                 if not resolution:
-                    # No credentials; switch to deferred state
-                    with self._state_lock:
-                        self._init_state = InitState.DEFERRED
-                        self._api_error_reason = "No credentials found. Configure provider on first AI use."
+                    self._mark_generation_unavailable(
+                        generation,
+                        state=InitState.DEFERRED,
+                        reason="No credentials found. Configure provider on first AI use.",
+                    )
                     return
 
-                self._apply_provider_resolution(resolution)
+                if not self._generation_is_current(generation):
+                    return
+                if not self._apply_provider_resolution(resolution, generation=generation):
+                    return
                 # _initialize_client sets state to READY on success
-                self._initialize_client(announce=False)
+                self._initialize_client(announce=False, generation=generation)
             except Exception as exc:  # pragma: no cover - defensive
-                with self._state_lock:
-                    self._init_state = InitState.FAILED
-                    self._api_error_reason = str(exc)
+                self._mark_generation_unavailable(
+                    generation,
+                    state=InitState.FAILED,
+                    reason=str(exc) or "Background provider initialization failed.",
+                )
             finally:
-                # Signal completion regardless of outcome
-                self._init_event.set()
-                self._llm_thread = None
+                with self._state_lock:
+                    if self._llm_thread is threading.current_thread():
+                        self._llm_thread = None
 
         self._llm_thread = threading.Thread(target=_worker, name="llm-init", daemon=True)
         self._llm_thread.start()
@@ -353,10 +431,12 @@ class LLMCoordinator:
     # Degraded Mode
     # -------------------------------------------------------------------------
 
-    def _enter_degraded_mode(self, reason: str) -> None:
+    def _enter_degraded_mode(self, reason: str, *, generation: Optional[int] = None) -> bool:
         """Disable AI-dependent features while keeping the rest of the app usable."""
         clean_reason = (reason or "").strip() or "No AI provider configured."
         with self._state_lock:
+            if generation is not None and generation != self._init_generation:
+                return False
             self._client = None
             self._init_state = InitState.FAILED
             self._api_error_reason = clean_reason
@@ -368,6 +448,7 @@ class LLMCoordinator:
         # Notify owner to clear dependent state (e.g., translators)
         if self._on_degraded_mode:
             self._on_degraded_mode(clean_reason)
+        return True
 
     def set_degraded_mode_callback(self, callback: Optional[Callable[[str], None]]) -> None:
         """Register a callback to invoke when entering degraded mode.
@@ -426,7 +507,12 @@ class LLMCoordinator:
         if self.init_state != InitState.IN_PROGRESS:
             return False
 
-        self._init_event.wait()  # Block until init signals completion
+        completed = self._init_event.wait(timeout=self._BACKGROUND_INIT_WAIT_TIMEOUT_S)
+        if not completed and self.init_state == InitState.IN_PROGRESS:
+            self._invalidate_background_init(
+                "Background provider initialization timed out. Retry setup to continue."
+            )
+            return False
         return self.init_state == InitState.READY
 
     def _prompt_readiness_action(self) -> str:
@@ -476,10 +562,17 @@ class LLMCoordinator:
         Returns:
             True if reconfiguration was successful
         """
+        self._invalidate_background_init("Provider setup was interrupted by manual reconfiguration.")
         self._ui.info("Re-running provider setup...")
-        if not self._prepare_provider():
+        generation = self._start_init_attempt("Re-running provider setup.")
+        if not self._prepare_provider(generation=generation):
+            self._mark_generation_unavailable(
+                generation,
+                state=InitState.FAILED,
+                reason=self.api_error_reason or "Provider setup failed.",
+            )
             return False
-        return self._initialize_client(on_success=on_success)
+        return self._initialize_client(on_success=on_success, generation=generation)
 
     # -------------------------------------------------------------------------
     # Provider Switching
@@ -497,6 +590,7 @@ class LLMCoordinator:
         Returns:
             True if provider was changed successfully
         """
+        self._invalidate_background_init("Provider change superseded background initialization.")
         current = self._provider_metadata
 
         try:
@@ -508,8 +602,14 @@ class LLMCoordinator:
         if not resolution:
             return False
 
-        self._apply_provider_resolution(resolution)
-        return self._initialize_client(announce=True, on_success=on_success)
+        generation = self._start_init_attempt("Changing AI provider.")
+        if not self._apply_provider_resolution(resolution, generation=generation):
+            return False
+        return self._initialize_client(
+            announce=True,
+            on_success=on_success,
+            generation=generation,
+        )
 
     def update_api_key_interactive(
         self,
@@ -523,6 +623,7 @@ class LLMCoordinator:
         Returns:
             True if key was updated successfully
         """
+        self._invalidate_background_init("API key update superseded background initialization.")
         if not self._provider_metadata:
             self._ui.error("No provider configured.")
             return False
@@ -531,8 +632,14 @@ class LLMCoordinator:
         if not resolution:
             return False
 
-        self._apply_provider_resolution(resolution)
-        return self._initialize_client(announce=True, on_success=on_success)
+        generation = self._start_init_attempt("Updating API key.")
+        if not self._apply_provider_resolution(resolution, generation=generation):
+            return False
+        return self._initialize_client(
+            announce=True,
+            on_success=on_success,
+            generation=generation,
+        )
 
     # -------------------------------------------------------------------------
     # AI Query
@@ -590,6 +697,13 @@ class LLMCoordinator:
                 if on_exception:
                     handled = on_exception(e, label)
                 if not handled:
+                    classified = self._classify_provider_error(self.provider, e)
+                    if classified is not None:
+                        _, reason = classified
+                        self._enter_degraded_mode(reason)
+                        self._ui.error(f"{label} is unavailable: {reason}")
+                        handled = True
+                if not handled:
                     self._ui.error(f"Error during {label} stream: {e}")
                 # Ensure generator cleanup runs
                 generator.close()
@@ -630,45 +744,55 @@ class LLMCoordinator:
         Returns:
             True if the error was handled and no further generic message should be shown
         """
-        message = str(exc) or exc.__class__.__name__
-        lower = message.lower()
+        classified = self._classify_provider_error(self.provider, exc)
+        if classified is None:
+            return False
 
-        region_blocked = ("location is not supported" in lower) or (
-            "failed_precondition" in lower and "location" in lower
-        )
+        category, reason = classified
+        self._enter_degraded_mode(reason)
 
-        if region_blocked:
-            self._enter_degraded_mode("Gemini is blocked in this region (FAILED_PRECONDITION).")
+        if category == "region_blocked":
             self._ui.error(
                 "Google Gemini rejected the request because your current region is not supported.\n"
                 "Switch to another provider (Anthropic Claude is recommended) or retry from a supported location.",
                 with_panel=True,
             )
-
             options = [
                 ("switch", "Switch provider (Claude recommended)"),
                 ("settings", "Open AI settings"),
                 ("skip", "Return to main menu"),
             ]
+            title = "Gemini is region-locked here. How should we proceed?"
+            instructions = "Choose 'switch' to continue without Gemini."
+        else:
+            self._ui.error(
+                f"{provider_label} is unavailable: {reason}\n"
+                "Update the API key, switch providers, or retry setup after fixing the account issue.",
+                with_panel=True,
+            )
+            options = [
+                ("retry", "Retry provider setup now"),
+                ("switch", "Switch provider"),
+                ("settings", "Open AI settings"),
+                ("skip", "Return to main menu"),
+            ]
+            title = f"{provider_label} needs attention. How should we proceed?"
+            instructions = "Choose 'retry' after fixing credentials, billing, or quota."
 
-            try:
-                choice = self._ui.interactive_menu(
-                    "Gemini is region-locked here. How should we proceed?",
-                    options,
-                    "Choose 'switch' to continue without Gemini.",
-                )
-            except KeyboardInterrupt:
-                return True
-
-            if choice == "switch":
-                self.change_provider_interactive(on_success=on_switch_success)
-            elif choice == "settings":
-                if on_settings:
-                    on_settings()
-
+        try:
+            choice = self._ui.interactive_menu(title, options, instructions)
+        except KeyboardInterrupt:
             return True
 
-        return False
+        if choice == "retry":
+            self.reconfigure(on_success=on_switch_success)
+        elif choice == "switch":
+            self.change_provider_interactive(on_success=on_switch_success)
+        elif choice == "settings":
+            if on_settings:
+                on_settings()
+
+        return True
 
     # -------------------------------------------------------------------------
     # Usage Tracking

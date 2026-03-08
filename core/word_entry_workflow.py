@@ -5,6 +5,7 @@ including duplicate checking, AI querying, spelling correction, and persistence.
 """
 
 from dataclasses import dataclass, field
+from enum import Enum, auto
 from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
 from ai_response_parser import parse_ai_response_text
@@ -52,7 +53,7 @@ class WorkflowCallbacks:
     provider_label_fn: Callable[[], str] = field(default=lambda: "AI")
     on_settings: Optional[Callable[[], None]] = None
     on_entry_saved: Optional[Callable[[str], None]] = None
-    on_post_translation_menu: Optional[Callable[[], None]] = None
+    on_post_translation_menu: Optional[Callable[[], Optional[str]]] = None
     get_word_input_fn: Optional[Callable[[], str]] = None
     query_ai_fn: Optional[Callable[[str], str]] = None
     check_spelling_fn: Optional[Callable[[str, str], Optional[str]]] = None
@@ -61,8 +62,14 @@ class WorkflowCallbacks:
     display_parsed_info_fn: Optional[Callable[[str, Any, List[str], List[Tuple[str, str]]], None]] = None
     display_latex_entry_fn: Optional[Callable[[str], None]] = None
     is_valid_latex_entry_fn: Optional[Callable[[str], bool]] = None
-    insert_entry_alphabetically_fn: Optional[Callable[[str, str], None]] = None
+    insert_entry_alphabetically_fn: Optional[Callable[[str, str], bool]] = None
     add_word_to_entries_fn: Optional[Callable[[str, str, List[str], List[Tuple[str, str]]], None]] = None
+
+
+class WorkflowOutcome(Enum):
+    NO_SAVE = auto()
+    SAVED = auto()
+    ROUTED = auto()
 
 
 class WordEntryWorkflow:
@@ -120,34 +127,44 @@ class WordEntryWorkflow:
 
         # Per-run state
         self.duplicate_resolution: Optional[Dict[str, str]] = None
+        self.post_translation_action: Optional[str] = None
 
-    def run(self, ensure_llm_ready_fn: Callable[[], bool]) -> bool:
+    def run(self, ensure_llm_ready_fn: Callable[[], bool]) -> WorkflowOutcome:
         """Execute the full word entry workflow.
 
         Args:
             ensure_llm_ready_fn: Function to check/initialize LLM. Returns True if ready.
 
         Returns:
-            True if entry was saved, False otherwise.
+            Workflow result describing whether an entry was saved, routed, or skipped.
         """
+        self.post_translation_action = None
         prepared = self._prepare_entry(ensure_llm_ready_fn)
         if prepared is None:
-            return False
+            return WorkflowOutcome.NO_SAVE
 
         parsed = self._parse_entry(prepared.ai_response)
         if parsed is None:
-            return False
+            return WorkflowOutcome.NO_SAVE
 
         if self._maybe_route_sentence(prepared.original_word, parsed.word_type, parsed.primary_word_type):
-            return True
+            return WorkflowOutcome.ROUTED
 
         examples = self._maybe_drop_sentence_examples(parsed.primary_word_type, parsed.examples)
         self._display_parsed_entry(prepared.final_word, parsed.word_type, parsed.definitions, examples)
 
-        if self._maybe_merge_and_finish(prepared.final_word, parsed.primary_word_type, parsed.definitions, examples):
-            return True
+        merge_outcome = self._maybe_merge_and_finish(
+            prepared.final_word,
+            parsed.primary_word_type,
+            parsed.definitions,
+            examples,
+        )
+        if merge_outcome is not None:
+            return merge_outcome
 
-        return self._finalize_new_entry(prepared, parsed, examples)
+        if self._finalize_new_entry(prepared, parsed, examples):
+            return WorkflowOutcome.SAVED
+        return WorkflowOutcome.NO_SAVE
 
     def _prepare_entry(self, ensure_llm_ready_fn: Callable[[], bool]) -> Optional[_PreparedEntry]:
         if not self._ensure_llm_ready(ensure_llm_ready_fn):
@@ -235,7 +252,7 @@ class WordEntryWorkflow:
             self.duplicate_resolution = None
             return False
 
-        self._save_entry(
+        if not self._save_entry(
             insert_word=insert_word,
             original_word=prepared.original_word,
             word_type=parsed.primary_word_type,
@@ -245,7 +262,9 @@ class WordEntryWorkflow:
             history_action=history_action,
             history_existing_word=history_existing_word,
             corrected_word_value=corrected_word_value,
-        )
+        ):
+            self.duplicate_resolution = None
+            return False
 
         self.duplicate_resolution = None
 
@@ -400,15 +419,18 @@ class WordEntryWorkflow:
         primary_word_type: str,
         definitions: List[str],
         examples: List[Tuple[str, str]],
-    ) -> bool:
+    ) -> Optional[WorkflowOutcome]:
         if not self.duplicate_resolution or self.duplicate_resolution.get("mode") != "merge":
-            return False
+            return None
 
         target_key = self.duplicate_resolution.get("existing", final_word)
         if self._handle_merge(target_key, primary_word_type, definitions, examples):
             self.ui.success(f"Merged AI content into existing entry for '{target_key}'.")
+            self.duplicate_resolution = None
+            return WorkflowOutcome.SAVED
+        self.ui.warning(f"Merge for '{target_key}' failed. Nothing was saved.")
         self.duplicate_resolution = None
-        return True
+        return WorkflowOutcome.NO_SAVE
 
     def _resolve_history_context(self) -> Tuple[str, Optional[str]]:
         history_action = "new"
@@ -689,8 +711,9 @@ class WordEntryWorkflow:
         ok = self.fr_to_eng_translator.translate_and_save(original_word)
         if ok is False:
             self.ui.warning("Translation cancelled or failed.")
-        else:
-            self._show_post_translation_menu()
+            return False
+
+        self._show_post_translation_menu()
         return True
 
     def _translator_title(self, config: TranslatorConfig) -> str:
@@ -700,7 +723,7 @@ class WordEntryWorkflow:
     def _show_post_translation_menu(self) -> None:
         """Show quick actions after sentence routing."""
         if self._on_post_translation_menu:
-            self._on_post_translation_menu()
+            self.post_translation_action = self._on_post_translation_menu()
 
     def _handle_merge(
         self,
@@ -744,12 +767,15 @@ class WordEntryWorkflow:
         history_action: str,
         history_existing_word: Optional[str],
         corrected_word_value: Optional[str],
-    ) -> None:
+    ) -> bool:
         """Save the entry to repository and log to history."""
         if self._insert_entry_alphabetically_fn:
-            self._insert_entry_alphabetically_fn(latex_entry, insert_word)
+            written = self._insert_entry_alphabetically_fn(latex_entry, insert_word) is not False
         else:
-            self.vocab_repo.insert_entry_alphabetically(latex_entry, insert_word)
+            written = self.vocab_repo.insert_entry_alphabetically(latex_entry, insert_word)
+
+        if not written:
+            return False
 
         if self._add_word_to_entries_fn:
             self._add_word_to_entries_fn(insert_word, word_type, definitions, examples)
@@ -784,3 +810,4 @@ class WordEntryWorkflow:
                 )
             except Exception as exc:
                 self.ui.warning(f"History logging failed: {exc}")
+        return True

@@ -33,6 +33,7 @@ class TranslatorCLI:
         direction: str = "eng_to_target",
         logger: Optional[TranslationLogger] = None,
         usage_callback: Optional[Callable[[Dict[str, int]], None]] = None,
+        on_query_exception: Optional[Callable[[Exception, str], bool]] = None,
     ) -> None:
         self.console = console
         self.ui = UIHelper(console)
@@ -41,6 +42,7 @@ class TranslatorCLI:
         self.direction = direction
         self.logger = logger
         self.usage_callback = usage_callback
+        self.on_query_exception = on_query_exception
 
         self.prompt_template = config.prompt_template
         self.prompt_variable = config.prompt_variable
@@ -334,7 +336,12 @@ class TranslatorCLI:
             return translation
 
         except Exception as exc:  # pragma: no cover - defensive path
-            self.ui.error(f"An error occurred during AI query: {exc}")
+            handled = False
+            if self.on_query_exception:
+                provider_label = self._provider_label() or self.ui_title
+                handled = self.on_query_exception(exc, provider_label)
+            if not handled:
+                self.ui.error(f"An error occurred during AI query: {exc}")
             return None
         finally:
             if not metrics:
@@ -381,7 +388,7 @@ class TranslatorCLI:
         command = self.latex_commands[0] if self.latex_commands else "pair"
         return f"\\{command}{{{src}}}{{{tgt}}}"
 
-    def _add_entry_to_file(self, latex_entry: str) -> None:
+    def _add_entry_to_file(self, latex_entry: str) -> bool:
         try:
             with self.latex_file.open("r", encoding="utf-8") as file:
                 content = file.read()
@@ -389,7 +396,7 @@ class TranslatorCLI:
             insert_pos = content.rfind("\\end{itemize}")
             if insert_pos == -1:
                 self.ui.error("Error: could not find insertion point in LaTeX file.")
-                return
+                return False
 
             updated = content[:insert_pos] + f"{latex_entry}\n\n" + content[insert_pos:]
 
@@ -397,9 +404,11 @@ class TranslatorCLI:
             atomic_write_text(self.latex_file, updated, create_backup=True)
 
             self.ui.success(f"Added entry to {self.latex_file}")
+            return True
 
-        except IOError as exc:
+        except OSError as exc:
             self.ui.error(f"Error writing to {self.latex_file}: {exc}")
+            return False
 
     def _add_entry_to_memory(self, source_text: str, target_text: str, normalized_key: str) -> None:
         self._ensure_entries_loaded()
@@ -465,7 +474,8 @@ class TranslatorCLI:
 
         if self.confirm_translation(source_text, target_text):
             latex_entry = self._format_latex_entry(source_text, target_text)
-            self._add_entry_to_file(latex_entry)
+            if not self._add_entry_to_file(latex_entry):
+                return False
             self._add_entry_to_memory(source_text, target_text, normalized)
             self._log_saved_translation(source_text, target_text, normalized)
             self.ui.success("Translation saved successfully!")

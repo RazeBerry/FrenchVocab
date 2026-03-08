@@ -22,3 +22,13 @@ def test_core_modules_do_not_import_cli_modules():
                 violations.append(f"{path}:{lineno} imports {target}")
 
     assert not violations, "Core layer must not import CLI modules:\n" + "\n".join(violations)
+
+
+def test_core_directory_contains_no_tex_artifacts():
+    tex_files = sorted(Path("core").glob("*.tex"))
+    assert not tex_files, "core/ should not contain tracked .tex artifacts"
+
+
+def test_vocab_controller_file_size_budget():
+    line_count = len(Path("core/vocab.py").read_text(encoding="utf-8").splitlines())
+    assert line_count <= 1450, f"core/vocab.py is too large ({line_count} lines); extract responsibilities into helper modules"

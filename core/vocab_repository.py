@@ -89,6 +89,7 @@ class VocabRepository:
 
         # Caching for count_entries
         self._entry_count_snapshot: Optional[Tuple[float, int, int]] = None
+        self._reported_load_issues: Set[str] = set()
 
     def _get_entry_command(self) -> str:
         """Get the LaTeX entry command with backslash prefix."""
@@ -163,6 +164,7 @@ class VocabRepository:
         self.normalized_entries.clear()
 
         entries = self.repo.load_entries()
+        self._report_load_issues(self.repo.last_load_issues)
         key_collisions: Dict[str, List[str]] = {}
 
         for e in entries:
@@ -226,11 +228,8 @@ class VocabRepository:
         ):
             return self._entry_count_snapshot[2]
 
-        try:
-            with self.latex_file.open("r", encoding="utf-8") as file:
-                content = file.read()
-        except Exception as exc:
-            self.ui.error(f"Error reading file: {exc}", with_panel=True)
+        content = self._read_text_for_scan()
+        if content is None:
             return 0
 
         entry_cmd = self._get_entry_command()
@@ -255,8 +254,9 @@ class VocabRepository:
 
     def get_all_latex_entries(self) -> Set[str]:
         """Return a set of all words in the LaTeX file using balanced-brace parsing."""
-        with self.latex_file.open("r", encoding="utf-8") as file:
-            content = file.read()
+        content = self._read_text_for_scan()
+        if content is None:
+            return set()
         entry_cmd = self._get_entry_command()
         entries: Set[str] = set()
         for groups, _, _ in iter_entry_groups(content, entry_cmd, num_groups=1):
@@ -509,7 +509,7 @@ class VocabRepository:
             content = f.read()
 
         entry_cmd = self._get_entry_command()
-        bounds = find_entry_bounds(content, entry_cmd, word_capitalized)
+        bounds = find_entry_bounds(content, entry_cmd, word_capitalized, prefer_last=True)
 
         if bounds is None:
             raise EntryNotFoundError(
@@ -520,6 +520,26 @@ class VocabRepository:
         start, end = bounds
         new_content = content[:start] + new_block + content[end:]
         atomic_write_text(self.latex_file, new_content, create_backup=True)
+
+    def _report_load_issues(self, issues: List[str]) -> None:
+        for issue in issues:
+            if issue in self._reported_load_issues:
+                continue
+            self._reported_load_issues.add(issue)
+            self.ui.warning(issue)
+
+    def _read_text_for_scan(self) -> Optional[str]:
+        try:
+            content = self.latex_file.read_text(encoding="utf-8", errors="replace")
+        except Exception as exc:
+            self.ui.error(f"Error reading file: {exc}", with_panel=True)
+            return None
+
+        if "\ufffd" in content:
+            self._report_load_issues(
+                [f"Some characters in {self.latex_file} could not be decoded and were replaced."]
+            )
+        return content
 
     def is_valid_latex_entry(self, latex_entry: str) -> bool:
         """Check if the entry contains expected LaTeX structure."""

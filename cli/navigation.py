@@ -8,12 +8,13 @@ import select
 import signal
 import sys
 from contextlib import contextmanager
-from typing import IO, Any, Sequence, Tuple
+from typing import IO, Any, Optional, Sequence, Tuple
 
 from rich.align import Align
 from rich.console import Console
 from rich.panel import Panel
 from rich import box
+from core.esc_config import read_esc_sequence_timeout
 
 
 def _restore_cursor_on_exit() -> None:
@@ -62,8 +63,8 @@ except ImportError:  # pragma: no cover - used when Rich stubs are installed
 MenuOption = Tuple[str, str]
 
 _INSTRUCTION_DEFAULT = "Use ↑ and ↓ to navigate, press Enter to select, Esc to cancel."
-_ESC_INITIAL_TIMEOUT = 0.025  # fast path when ESC is pressed alone without clipping arrow keys
-_ESC_SEQUENCE_TIMEOUT = 0.05  # follow-up polling window once a sequence begins
+_ESC_SEQUENCE_TIMEOUT = read_esc_sequence_timeout()
+_ESC_INITIAL_TIMEOUT = min(0.025, _ESC_SEQUENCE_TIMEOUT)  # keep bare Esc snappy while honoring lower custom timeouts
 _MAX_ESCAPE_SEQUENCE_BYTES = 5
 
 
@@ -102,6 +103,7 @@ def interactive_select(
     instructions: str | None = None,
     *,
     show_keys: bool = False,
+    default_key: str | None = None,
 ) -> str:
     """Present an interactive menu and return the key of the selected option.
 
@@ -130,6 +132,7 @@ def interactive_select(
             options,
             instructions,
             show_keys=show_keys,
+            default_key=default_key,
         )
 
     # Flush any buffered input to prevent accidental double-Enter from
@@ -137,7 +140,7 @@ def interactive_select(
     _flush_stdin()
 
     instructions = instructions or _INSTRUCTION_DEFAULT
-    index = 0
+    index = _resolve_default_index(options, default_key)
 
     console.show_cursor(False)
     try:
@@ -181,6 +184,7 @@ def _fallback_interactive_select(
     instructions: str,
     *,
     show_keys: bool,
+    default_key: str | None,
 ) -> str:
     menu_options: list[MenuOption] = list(options)
     cancel_option = next(
@@ -217,19 +221,46 @@ def _fallback_interactive_select(
 
     while True:
         console_input = getattr(console, "input", None)
-        raw = console_input(prompt) if callable(console_input) else input(prompt)
+        try:
+            raw = console_input(prompt) if callable(console_input) else input(prompt)
+        except EOFError:
+            if cancel_key is not None:
+                return cancel_key
+            raise KeyboardInterrupt from None
         choice = raw.strip()
         if choice == "0":
             if cancel_key is not None:
                 return cancel_key
             raise KeyboardInterrupt
         if not choice and menu_options:
-            return menu_options[0][0]
+            return _resolve_default_option_key(menu_options, default_key) or menu_options[0][0]
         if choice.isdigit():
             idx = int(choice)
             if 1 <= idx <= len(menu_options):
                 return menu_options[idx - 1][0]
         console.print("[bold #ff6b6b]✗ Invalid selection. Please enter a valid option number.[/bold #ff6b6b]")
+
+
+def _resolve_default_option_key(
+    options: Sequence[MenuOption],
+    default_key: str | None,
+) -> Optional[str]:
+    if default_key is None:
+        return None
+    for key, _label in options:
+        if key == default_key:
+            return key
+    return None
+
+
+def _resolve_default_index(options: Sequence[MenuOption], default_key: str | None) -> int:
+    resolved_key = _resolve_default_option_key(options, default_key)
+    if resolved_key is None:
+        return 0
+    for index, (key, _label) in enumerate(options):
+        if key == resolved_key:
+            return index
+    return 0
 
 
 def _render_menu(
@@ -437,13 +468,13 @@ def interactive_confirm(
                     elif key == "enter":
                         return selected
                     elif key == "escape":
-                        return default
+                        return False
                     elif key in {"y", "Y"}:
                         return True
                     elif key in {"n", "N"}:
                         return False
                     elif key == "ctrl_c":
-                        raise KeyboardInterrupt
+                        return False
 
                     live.update(_confirm_renderable(console, message, selected, yes_label, no_label))
     finally:
@@ -496,7 +527,10 @@ def _fallback_confirm(
 
     while True:
         console_input = getattr(console, "input", None)
-        raw = console_input(f"{message} {suffix} ") if callable(console_input) else input(f"{message} {suffix} ")
+        try:
+            raw = console_input(f"{message} {suffix} ") if callable(console_input) else input(f"{message} {suffix} ")
+        except EOFError:
+            return False
         normalized = raw.strip().casefold() or default_choice
         if normalized in yes_tokens:
             return True

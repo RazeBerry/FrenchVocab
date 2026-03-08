@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import hashlib
 import re
 import struct
@@ -12,6 +13,7 @@ from typing import Any, Iterable, List, Sequence, Tuple
 from languages.base import AnkiConfig
 
 genanki: Any | None = None
+_HTML_BREAK_TOKEN = "__FRENCHVOCAB_ANKI_BR__"
 
 
 def _get_genanki():
@@ -142,7 +144,7 @@ def _normalize_latex_text(text: str) -> str:
     text = re.sub(r"\\item\s*", "", text)
 
     # Convert LaTeX line breaks ("\\") to HTML line breaks
-    text = re.sub(r"\\\\\s*", "<br>", text)
+    text = re.sub(r"\\\\\s*", _HTML_BREAK_TOKEN, text)
 
     return text
 
@@ -155,6 +157,10 @@ def _extract_nonempty_items(text: str) -> List[str]:
             continue
         items.append(cleaned)
     return items
+
+
+def _render_safe_html_item(item: str) -> str:
+    return html.escape(item, quote=True).replace(_HTML_BREAK_TOKEN, "<br>")
 
 
 # Public API -----------------------------------------------------------------
@@ -173,7 +179,7 @@ def latex_to_anki_format(text: str) -> str:
     if not items:
         return ""
 
-    list_items = "".join(f"<li>{item}</li>" for item in items)
+    list_items = "".join(f"<li>{_render_safe_html_item(item)}</li>" for item in items)
     formatted_text = f"<ul class=\"entry-list\">{list_items}</ul>"
     return formatted_text.strip()
 

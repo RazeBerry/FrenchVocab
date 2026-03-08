@@ -65,8 +65,10 @@ class AtomicFileWriter:
                 except OSError:
                     shutil.copy2(self.target_path, self._backup_path)
 
+            _fsync_file(self._temp_file)
             # Atomic replace (os.replace is atomic on POSIX)
             os.replace(self._temp_file, self.target_path)
+            _fsync_directory(self.target_path.parent)
         except Exception:
             # If backup/replace fails, clean up temp and re-raise
             self._cleanup_temp()
@@ -112,3 +114,27 @@ def atomic_write_text(
         return path.with_suffix(path.suffix + ".bak")
     return None
 
+
+def _fsync_file(path: Optional[Path]) -> None:
+    if path is None or not path.exists():
+        return
+
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _fsync_directory(path: Path) -> None:
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)

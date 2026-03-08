@@ -43,6 +43,7 @@ class AutoTranslator:
         prompt_template: Optional[str],
         prompt_variable: str = "source_text",
         usage_callback: UsageCallback = None,
+        on_query_exception: Optional[Callable[[Exception, str], bool]] = None,
         verbose: bool = False,
     ) -> None:
         self.console = console
@@ -54,6 +55,7 @@ class AutoTranslator:
         self.prompt_template = prompt_template
         self.prompt_variable = prompt_variable or "source_text"
         self.usage_callback = usage_callback
+        self.on_query_exception = on_query_exception
         self.verbose = verbose
 
         lang_code = (language_config.code or "").lower()
@@ -179,7 +181,18 @@ class AutoTranslator:
                 self.ui.info(f"[dim]Raw auto-translator response:[/dim]\n{response}")
             return response
         except Exception as exc:  # pragma: no cover - defensive path
-            self.ui.error(f"An error occurred during auto translation: {exc}")
+            handled = False
+            if self.on_query_exception and self.client is not None:
+                provider_label = self.client.__class__.__name__
+                model_label = getattr(self.client, "model_label", None)
+                if callable(model_label):
+                    try:
+                        provider_label = model_label()
+                    except Exception:
+                        provider_label = self.client.__class__.__name__
+                handled = self.on_query_exception(exc, provider_label)
+            if not handled:
+                self.ui.error(f"An error occurred during auto translation: {exc}")
             return None
         finally:
             usage = metrics.get("usage") if isinstance(metrics, dict) else None

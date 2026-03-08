@@ -21,6 +21,11 @@ def parse_balanced_group(s: str, start: int) -> Tuple[str, int]:
     out: List[str] = []
     while i < len(s):
         ch = s[i]
+        if ch == '\\' and i + 1 < len(s) and s[i + 1] in {'{', '}', '\\'}:
+            out.append(ch)
+            out.append(s[i + 1])
+            i += 2
+            continue
         if ch == '{':
             depth += 1
             # don't include outermost braces in out
@@ -62,7 +67,13 @@ def parse_entry_groups(s: str, start: int, num_groups: int = 4) -> Optional[Tupl
     return (groups, start, i)
 
 
-def find_entry_bounds(content: str, entry_cmd: str, word: str) -> Optional[Tuple[int, int]]:
+def find_entry_bounds(
+    content: str,
+    entry_cmd: str,
+    word: str,
+    *,
+    prefer_last: bool = False,
+) -> Optional[Tuple[int, int]]:
     """Find the start and end indices of an entry with the given word.
 
     Returns (start_index, end_index) where content[start:end] is the full entry,
@@ -71,6 +82,7 @@ def find_entry_bounds(content: str, entry_cmd: str, word: str) -> Optional[Tuple
     i = 0
     n = len(content)
     word_lower = word.lower().strip()
+    last_match: Optional[Tuple[int, int]] = None
     while i < n:
         j = content.find(entry_cmd, i)
         if j == -1:
@@ -88,9 +100,11 @@ def find_entry_bounds(content: str, entry_cmd: str, word: str) -> Optional[Tuple
         groups, _, entry_end = result
         entry_word = groups[0].strip().lower()
         if entry_word == word_lower:
-            return (entry_start, entry_end)
+            last_match = (entry_start, entry_end)
+            if not prefer_last:
+                return last_match
         i = entry_end
-    return None
+    return last_match
 
 
 def parse_all_entries(content: str, entry_cmd: str) -> List[Tuple[List[str], int, int]]:
@@ -144,6 +158,7 @@ class LatexRepository:
             entry_command = f"\\{entry_command}"
         self.entry_command = entry_command
         self._entry_command_len = len(entry_command)
+        self.last_load_issues: List[str] = []
 
     def _parse_balanced_group(self, s: str, start: int) -> Tuple[str, int]:
         """Parse a single {...} group starting at index `start` (which should point to '{').
@@ -213,9 +228,18 @@ class LatexRepository:
             return None
 
     def load_entries(self) -> List[WordEntry]:
+        self.last_load_issues = []
         if not self.latex_file.exists():
             return []
-        content = self.latex_file.read_text(encoding='utf-8')
+        try:
+            content = self.latex_file.read_text(encoding='utf-8', errors='replace')
+        except OSError as exc:
+            self.last_load_issues.append(f"Failed to read {self.latex_file}: {exc}")
+            return []
+        if '\ufffd' in content:
+            self.last_load_issues.append(
+                f"Some characters in {self.latex_file} could not be decoded and were replaced."
+            )
         entries: List[WordEntry] = []
         i = 0
         n = len(content)
