@@ -1,7 +1,0 @@
-anthropic~=0.84.0
-genanki~=0.13.1
-rich~=13.7.1
-keyring~=25.7.0
-google-genai>=0.2.0
-prompt_toolkit>=3.0,<4.0
-python-dotenv>=1.0.0
