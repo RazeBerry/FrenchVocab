@@ -50,7 +50,12 @@ class VocabRuntimeMixin:
         self._apply_config_bool_override(limits, "sentence_examples", "sentence_examples_in_vocab")
 
     def _load_input_limits_from_config_file(self) -> None:
-        candidate_paths = [Path(getattr(self, "project_root", config_home())) / str(self.config_file)]
+        candidate_paths = []
+        project_root = getattr(self, "project_root", None)
+        if project_root is not None:
+            candidate_paths.append(Path(project_root) / str(self.config_file))
+        else:
+            candidate_paths.append(config_home(warn_on_legacy=False) / str(self.config_file))
         for config_dir in config_homes_for_read():
             candidate_paths.append(config_dir / str(self.config_file))
 

@@ -1,12 +1,13 @@
 """Unit tests for core/file_safety.py atomic write utilities."""
 
+import random
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from vocab_builder.core.file_safety import AtomicFileWriter, atomic_write_text
+from vocab_builder.core.file_safety import AtomicFileWriter, atomic_copy_file, atomic_write_text, file_lock
 
 
 class TestAtomicFileWriter(unittest.TestCase):
@@ -24,6 +25,23 @@ class TestAtomicFileWriter(unittest.TestCase):
             backup = path.with_suffix(".txt.bak")
             self.assertTrue(backup.exists())
             self.assertEqual(backup.read_text(), "original content")
+
+    def test_atomic_write_creates_timestamped_backup_snapshots(self):
+        """Test that repeated writes keep more than the latest backup generation."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.txt"
+            path.write_text("original content")
+
+            atomic_write_text(path, "first update", create_backup=True)
+            atomic_write_text(path, "second update", create_backup=True)
+
+            latest_backup = path.with_suffix(".txt.bak")
+            self.assertEqual(latest_backup.read_text(), "first update")
+            snapshots = sorted(Path(td).glob("test.txt.*.bak"))
+            self.assertGreaterEqual(len(snapshots), 2)
+            snapshot_contents = {snapshot.read_text() for snapshot in snapshots}
+            self.assertIn("original content", snapshot_contents)
+            self.assertIn("first update", snapshot_contents)
 
     def test_atomic_write_no_backup_when_disabled(self):
         """Test that backup is not created when create_backup=False."""
@@ -123,6 +141,105 @@ class TestAtomicFileWriter(unittest.TestCase):
                 final.startswith("content-"),
                 f"File content corrupted: {final!r}"
             )
+
+    def test_file_lock_serializes_read_modify_write_transactions(self):
+        """Test that file_lock prevents lost updates across read-modify-write blocks."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "counter.txt"
+            path.write_text("0")
+
+            def increment():
+                with file_lock(path):
+                    current = int(path.read_text())
+                    path.write_text(str(current + 1))
+
+            threads = [threading.Thread(target=increment) for _ in range(20)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+            self.assertEqual(path.read_text(), "20")
+
+    def test_atomic_write_replace_failure_keeps_original(self):
+        """Test that final replace failures do not expose partial content."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.txt"
+            path.write_text("original content")
+            real_replace = __import__("os").replace
+
+            def fail_final_replace(src, dst):
+                if Path(dst) == path:
+                    raise OSError("simulated replace failure")
+                return real_replace(src, dst)
+
+            with patch("vocab_builder.core.file_safety.os.replace", side_effect=fail_final_replace):
+                with self.assertRaises(OSError):
+                    atomic_write_text(path, "new content", create_backup=True)
+
+            self.assertEqual(path.read_text(), "original content")
+            self.assertEqual(path.with_suffix(".txt.bak").read_text(), "original content")
+            temp_files = list(Path(td).glob(".*.tmp"))
+            self.assertEqual(temp_files, [])
+
+    def test_atomic_copy_file_failure_does_not_create_partial_destination(self):
+        """Test that failed copies only leave temp files that are cleaned up."""
+        with tempfile.TemporaryDirectory() as td:
+            source = Path(td) / "source.txt"
+            destination = Path(td) / "destination.txt"
+            source.write_text("safe backup content")
+
+            def fail_copy(_source, temp_destination):
+                Path(temp_destination).write_text("partial")
+                raise OSError("simulated copy failure")
+
+            with patch("vocab_builder.core.file_safety.shutil.copy2", side_effect=fail_copy):
+                with self.assertRaises(OSError):
+                    atomic_copy_file(source, destination)
+
+            self.assertFalse(destination.exists())
+            self.assertEqual(list(Path(td).glob(".*.tmp")), [])
+
+    def test_atomic_copy_file_failure_keeps_existing_destination(self):
+        """Test that failed copies never clobber an existing destination."""
+        with tempfile.TemporaryDirectory() as td:
+            source = Path(td) / "source.txt"
+            destination = Path(td) / "destination.txt"
+            source.write_text("new backup content")
+            destination.write_text("current destination")
+
+            def fail_copy(_source, temp_destination):
+                Path(temp_destination).write_text("partial")
+                raise OSError("simulated copy failure")
+
+            with patch("vocab_builder.core.file_safety.shutil.copy2", side_effect=fail_copy):
+                with self.assertRaises(OSError):
+                    atomic_copy_file(source, destination)
+
+            self.assertEqual(destination.read_text(), "current destination")
+            self.assertEqual(list(Path(td).glob(".*.tmp")), [])
+
+    def test_atomic_write_fuzz_preserves_previous_generations(self):
+        """Fuzz repeated overwrites and verify every prior version remains recoverable."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "fuzz.txt"
+            rng = random.Random(20260430)
+            versions = ["initial"]
+            path.write_text(versions[0])
+
+            for i in range(30):
+                alphabet = "abcXYZ012{}[] \n"
+                content = f"{i}:" + "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 80)))
+                versions.append(content)
+                atomic_write_text(path, content, create_backup=True)
+                self.assertEqual(path.read_text(), content)
+
+            self.assertEqual(path.with_suffix(".txt.bak").read_text(), versions[-2])
+            snapshot_contents = {
+                snapshot.read_text()
+                for snapshot in Path(td).glob("fuzz.txt.*.bak")
+            }
+            self.assertTrue(set(versions[:-1]).issubset(snapshot_contents))
 
 
 class TestAtomicWriterEdgeCases(unittest.TestCase):

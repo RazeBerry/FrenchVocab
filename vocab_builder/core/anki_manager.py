@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
 
 from vocab_builder.anki_exporter import AnkiExporter, AnkiExportEntry
-from vocab_builder.core.file_safety import atomic_write_text
+from vocab_builder.core.file_safety import atomic_write_text, create_backup_snapshot
 from vocab_builder.languages.anki_shared_styles import compute_template_hash
 
 if TYPE_CHECKING:
@@ -141,7 +141,7 @@ class AnkiExportManager:
             payload["last_export"] = self._last_export_metadata
         content = json.dumps(payload, ensure_ascii=False, indent=2)
         try:
-            atomic_write_text(path, content, create_backup=False)
+            atomic_write_text(path, content, create_backup=True)
         except OSError as exc:
             self._ui.error(
                 f"Failed to save exported words state atomically: {exc}\n"
@@ -372,12 +372,8 @@ class AnkiExportManager:
             has_temp_package = temp_path.exists() and temp_path.stat().st_size > 0
             if has_temp_package:
                 if destination_path.exists():
-                    backup_path = destination_path.with_suffix(".apkg.bak")
                     try:
-                        try:
-                            os.link(destination_path, backup_path)
-                        except OSError:
-                            shutil.copy2(destination_path, backup_path)
+                        create_backup_snapshot(destination_path, backup_suffix=".bak")
                     except OSError:
                         pass  # Best-effort backup
 
@@ -385,6 +381,11 @@ class AnkiExportManager:
             else:
                 # Non-file writers (commonly used in tests) should still receive
                 # the final destination path without test-only instrumentation.
+                if destination_path.exists():
+                    try:
+                        create_backup_snapshot(destination_path, backup_suffix=".bak")
+                    except OSError:
+                        pass  # Best-effort backup
                 package.write_to_file(str(destination_path))
             return package
 

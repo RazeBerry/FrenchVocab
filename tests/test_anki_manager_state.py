@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from unittest.mock import patch
 
+import genanki
+
 from vocab_builder.core.anki_manager import AnkiExportManager
 from vocab_builder.languages import get_language_config
 
@@ -77,3 +79,28 @@ def test_load_exported_words_handles_unreadable_path_shape(tmp_path):
 
     assert manager.exported_words == set()
     assert any("invalid" in message.lower() for message in ui.warnings)
+
+
+def test_package_fallback_backs_up_existing_deck_before_direct_write(tmp_path, monkeypatch):
+    destination = tmp_path / "Deck.apkg"
+    destination.write_text("old deck", encoding="utf-8")
+    manager = _manager(tmp_path / "exported_words.json")
+
+    class _Package:
+        def __init__(self, deck):
+            self.deck = deck
+
+        def write_to_file(self, path):
+            if Path(path) == destination:
+                Path(path).write_text("new deck", encoding="utf-8")
+
+    monkeypatch.setattr(genanki, "Package", _Package)
+
+    package = manager._write_package_atomic(object(), destination, tmp_path)
+
+    assert isinstance(package, _Package)
+    assert destination.read_text(encoding="utf-8") == "new deck"
+    assert destination.with_suffix(".apkg.bak").read_text(encoding="utf-8") == "old deck"
+    snapshots = list(tmp_path.glob("Deck.apkg.*.bak"))
+    assert len(snapshots) == 1
+    assert snapshots[0].read_text(encoding="utf-8") == "old deck"

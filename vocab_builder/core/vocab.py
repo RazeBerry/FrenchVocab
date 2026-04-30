@@ -1,5 +1,4 @@
 import os
-import shutil
 import string
 import unicodedata
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
@@ -41,6 +40,7 @@ from vocab_builder.core.providers.manager import (
     ProviderManager,
     ProviderMetadata,
 )
+from vocab_builder.core.file_safety import atomic_copy_file, file_lock
 
 if TYPE_CHECKING:  # pragma: no cover - optional provider clients
     from vocab_builder.llm_client import GeminiClient  # noqa: F401
@@ -644,7 +644,7 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
                 return legacy_path
             try:
                 target_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(legacy_path, candidate)
+                atomic_copy_file(legacy_path, candidate)
                 return candidate
             except OSError:
                 return legacy_path
@@ -656,21 +656,37 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
         return classify_input_type(text)
 
     def create_initial_tex_file(self):
-        try:
-            template = getattr(self, "vocab_template", self.DEFAULT_LANGUAGE_CONFIG.vocab)
-            # Create the parent directory if needed (only if not in the current directory)
-            if self.latex_file.parent != Path('.'):
-                self.latex_file.parent.mkdir(parents=True, exist_ok=True)
-            with self.latex_file.open('w', encoding='utf-8') as file:
-                file.write(template.initial_content)
-                sample = template.sample_entry or ""
-                if sample:
-                    file.write(sample)
-                file.write(template.final_content)
-            self.ui.success(f"Created initial LaTeX file: {self.latex_file}")
-        except IOError as e:
-            self.ui.error(f"Error creating initial LaTeX file: {e}", with_panel=True)
-            raise
+        if hasattr(self, "_vocab_repo"):
+            self._vocab_repo.create_initial_tex_file()
+            return
+        with file_lock(self.latex_file):
+            if self.latex_file.exists():
+                self.ui.warning(f"Initial LaTeX file already exists; leaving it unchanged: {self.latex_file}")
+                return
+            try:
+                template = getattr(self, "vocab_template", self.DEFAULT_LANGUAGE_CONFIG.vocab)
+                # Create the parent directory if needed (only if not in the current directory)
+                if self.latex_file.parent != Path('.'):
+                    self.latex_file.parent.mkdir(parents=True, exist_ok=True)
+                backup_path = self.latex_file.with_suffix(self.latex_file.suffix + ".bak")
+                if backup_path.exists() and backup_path.is_file():
+                    atomic_copy_file(backup_path, self.latex_file)
+                    self.ui.warning(
+                        f"{self.latex_file} was missing; restored it from backup {backup_path}."
+                    )
+                    return
+                with self.latex_file.open('x', encoding='utf-8') as file:
+                    file.write(template.initial_content)
+                    sample = template.sample_entry or ""
+                    if sample:
+                        file.write(sample)
+                    file.write(template.final_content)
+                self.ui.success(f"Created initial LaTeX file: {self.latex_file}")
+            except FileExistsError:
+                self.ui.warning(f"Initial LaTeX file already exists; leaving it unchanged: {self.latex_file}")
+            except IOError as e:
+                self.ui.error(f"Error creating initial LaTeX file: {e}", with_panel=True)
+                raise
 
     def _provider_label(self) -> str:
         """Human-readable provider label (delegated to LLMCoordinator)."""

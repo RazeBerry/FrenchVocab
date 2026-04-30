@@ -226,6 +226,8 @@ class VocabDisplayMixin:
     def _entry_matches_search_term(search_term: str, word_key: str, entry: Dict[str, Any]) -> bool:
         if search_term in word_key.lower():
             return True
+        if search_term in str(entry.get("word", "")).lower():
+            return True
         if search_term in str(entry.get("definitions", "")).lower():
             return True
 

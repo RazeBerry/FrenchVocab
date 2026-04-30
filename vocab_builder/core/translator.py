@@ -19,6 +19,7 @@ from vocab_builder.languages import TranslatorConfig
 from vocab_builder.llm_client import LLMClient
 from vocab_builder.ui_helper import UIHelper, read_line
 from vocab_builder.core.history_logger import TranslationLogger
+from vocab_builder.core.file_safety import atomic_copy_file, atomic_write_text, file_lock
 from vocab_builder.latex_repository import parse_balanced_group
 
 
@@ -103,16 +104,52 @@ class TranslatorCLI:
     # File handling
     # ------------------------------------------------------------------
     def _ensure_tex_file_exists(self) -> None:
-        if not self.latex_file.exists():
-            self._create_initial_tex_file()
+        with file_lock(self.latex_file):
+            if self.latex_file.exists():
+                return
+            backup_path = self._backup_path()
+            if backup_path.exists() and backup_path.is_file():
+                self._restore_from_backup_if_available()
+                return
+            self._create_initial_tex_file_unlocked()
 
-    def _create_initial_tex_file(self) -> None:
+    def _backup_path(self) -> Path:
+        return self.latex_file.with_suffix(self.latex_file.suffix + ".bak")
+
+    def _restore_from_backup_if_available(self) -> bool:
+        backup_path = self._backup_path()
+        if not backup_path.exists() or not backup_path.is_file():
+            return False
         try:
             self.latex_file.parent.mkdir(parents=True, exist_ok=True)
-            with self.latex_file.open("w", encoding="utf-8") as file:
+            atomic_copy_file(backup_path, self.latex_file)
+            self.ui.warning(
+                f"{self.latex_file} was missing; restored it from backup {backup_path}."
+            )
+            return True
+        except OSError as exc:
+            self.ui.error(
+                f"Failed to restore {self.latex_file} from backup {backup_path}: {exc}",
+                with_panel=True,
+            )
+            return False
+
+    def _create_initial_tex_file(self) -> None:
+        with file_lock(self.latex_file):
+            if self.latex_file.exists():
+                self.ui.warning(f"Initial LaTeX file already exists; leaving it unchanged: {self.latex_file}")
+                return
+            self._create_initial_tex_file_unlocked()
+
+    def _create_initial_tex_file_unlocked(self) -> None:
+        try:
+            self.latex_file.parent.mkdir(parents=True, exist_ok=True)
+            with self.latex_file.open("x", encoding="utf-8") as file:
                 file.write(self.initial_tex_content)
                 file.write(self.final_tex_content)
             self.ui.success(f"Created initial LaTeX file: {self.latex_file}")
+        except FileExistsError:
+            self.ui.warning(f"Initial LaTeX file already exists; leaving it unchanged: {self.latex_file}")
         except IOError as exc:
             self.ui.error(f"Failed to create initial LaTeX file {self.latex_file}: {exc}", with_panel=True)
 
@@ -170,6 +207,9 @@ class TranslatorCLI:
             j = content.find(cmd, i)
             if j == -1:
                 break
+            if self._command_is_in_latex_comment(content, j):
+                i = j + len(cmd)
+                continue
 
             pos = j + len(cmd)
             # Skip whitespace to first brace
@@ -207,14 +247,19 @@ class TranslatorCLI:
                     continue
 
                 normalized = self.normalize_text(source)
+                pair_key = normalized
                 if normalized in self._pairs:
                     existing = self._pairs[normalized]["source"]
                     self.ui.warning(
                         f"Duplicate normalized {self.source_label} key '{normalized}' found. "
-                        f"Overwriting entry for '{existing}' with '{source}'."
+                        f"Preserving both '{existing}' and '{source}'."
                     )
+                    pair_key = self._unique_pair_key(normalized)
 
-                self._pairs[normalized] = {"source": source, "target": target}
+                entry = {"source": source, "target": target}
+                if pair_key != normalized:
+                    entry["duplicate_of"] = normalized
+                self._pairs[pair_key] = entry
                 loaded_count += 1
                 i = pos
 
@@ -224,6 +269,31 @@ class TranslatorCLI:
                 i = j + len(cmd)
 
         return loaded_count, parse_errors
+
+    def _unique_pair_key(self, normalized: str) -> str:
+        suffix = 2
+        while True:
+            candidate = f"{normalized}__duplicate_{suffix}"
+            if candidate not in self._pairs:
+                return candidate
+            suffix += 1
+
+    @staticmethod
+    def _command_is_in_latex_comment(content: str, command_pos: int) -> bool:
+        """Return True when a command occurrence is after an unescaped % on its line."""
+        line_start = content.rfind("\n", 0, command_pos) + 1
+        prefix = content[line_start:command_pos]
+        for index, char in enumerate(prefix):
+            if char != "%":
+                continue
+            backslashes = 0
+            cursor = index - 1
+            while cursor >= 0 and prefix[cursor] == "\\":
+                backslashes += 1
+                cursor -= 1
+            if backslashes % 2 == 0:
+                return True
+        return False
 
     # ------------------------------------------------------------------
     # Helper utilities
@@ -395,18 +465,18 @@ class TranslatorCLI:
 
     def _add_entry_to_file(self, latex_entry: str) -> bool:
         try:
-            with self.latex_file.open("r", encoding="utf-8") as file:
-                content = file.read()
+            with file_lock(self.latex_file):
+                with self.latex_file.open("r", encoding="utf-8") as file:
+                    content = file.read()
 
-            insert_pos = content.rfind("\\end{itemize}")
-            if insert_pos == -1:
-                self.ui.error("Error: could not find insertion point in LaTeX file.")
-                return False
+                insert_pos = content.rfind("\\end{itemize}")
+                if insert_pos == -1:
+                    self.ui.error("Error: could not find insertion point in LaTeX file.")
+                    return False
 
-            updated = content[:insert_pos] + f"{latex_entry}\n\n" + content[insert_pos:]
+                updated = content[:insert_pos] + f"{latex_entry}\n\n" + content[insert_pos:]
 
-            from vocab_builder.core.file_safety import atomic_write_text
-            atomic_write_text(self.latex_file, updated, create_backup=True)
+                atomic_write_text(self.latex_file, updated, create_backup=True)
 
             self.ui.success(f"Added entry to {self.latex_file}")
             return True

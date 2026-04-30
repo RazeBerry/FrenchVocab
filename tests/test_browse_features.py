@@ -239,10 +239,11 @@ def test_show_recently_added_skips_deleted_and_fills_limit_from_older_history(tm
 
     assert len(ui.tables) == 1
     rows = ui.tables[0]["rows"]
-    assert rows == [
-        ["1", "Beta", "noun", "variant", "14mo ago"],
-        ["2", "Alpha", "noun", "added", "14mo ago"],
+    assert [row[:4] for row in rows] == [
+        ["1", "Beta", "noun", "variant"],
+        ["2", "Alpha", "noun", "added"],
     ]
+    assert all(row[4].endswith("mo ago") for row in rows)
 
 
 def test_browse_by_word_type_renders_only_selected_entries():

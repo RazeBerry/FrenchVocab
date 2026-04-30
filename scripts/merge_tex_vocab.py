@@ -16,7 +16,6 @@ import argparse
 import datetime as _dt
 import pathlib as _pl
 import re
-import shutil
 import sys
 import unicodedata as _ud
 
@@ -70,6 +69,15 @@ def _deduplicate_and_sort(entries: list[str]) -> list[str]:
     # Sort by the same normalization so É and E sit together, etc.
     return [seen[k] for k in sorted(seen, key=lambda k: _key(k))]
 
+def _unique_output_path(path: _pl.Path) -> _pl.Path:
+    stem = f"{path.stem}_merged_{_dt.datetime.now():%Y%m%d_%H%M%S_%f}"
+    candidate = path.with_stem(stem)
+    counter = 1
+    while candidate.exists():
+        candidate = path.with_stem(f"{stem}_{counter}")
+        counter += 1
+    return candidate
+
 def _merge(path1: _pl.Path, path2: _pl.Path) -> _pl.Path:
     tex1, tex2 = path1.read_text(), path2.read_text()
     pre1, body1, post1 = _split_tex(tex1)
@@ -85,12 +93,9 @@ def _merge(path1: _pl.Path, path2: _pl.Path) -> _pl.Path:
         [header_line, *merged_entries, r"\end{itemize}", ""]
     )
 
-    out = path1.with_stem(
-        f"{path1.stem}_merged_{_dt.datetime.now():%Y%m%d_%H%M}"
-    )
-    if out.exists():
-        shutil.copy2(out, out.with_suffix(".bak"))
-    out.write_text(pre1 + body + post1)
+    out = _unique_output_path(path1)
+    with out.open("x", encoding="utf-8") as handle:
+        handle.write(pre1 + body + post1)
     return out
 
 # ----------------------------------------------------------------------

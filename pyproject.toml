@@ -37,10 +37,6 @@ dependencies = [
 [project.scripts]
 vocabbuilder = "vocab_builder.cli.main:main"
 
-[project.urls]
-Homepage = "https://github.com/RazeBerry/FrenchVocab"
-Repository = "https://github.com/RazeBerry/FrenchVocab"
-
 [tool.setuptools]
 py-modules = ["FrenchVocab"]
 license-files = ["LICENSE"]

@@ -7,11 +7,15 @@ Provides utilities to prevent data loss from:
 - Disk full conditions
 """
 
+import hashlib
 import os
 import shutil
 import tempfile
+import threading
+from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 
 class AtomicFileWriter:
@@ -57,13 +61,10 @@ class AtomicFileWriter:
         # Success path - create backup and atomic rename
         try:
             if self.create_backup and self.target_path.exists():
-                self._backup_path = self.target_path.with_suffix(
-                    self.target_path.suffix + self.backup_suffix
+                self._backup_path = create_backup_snapshot(
+                    self.target_path,
+                    backup_suffix=self.backup_suffix,
                 )
-                try:
-                    os.link(self.target_path, self._backup_path)
-                except OSError:
-                    shutil.copy2(self.target_path, self._backup_path)
 
             _fsync_file(self._temp_file)
             # Atomic replace (os.replace is atomic on POSIX)
@@ -113,6 +114,102 @@ def atomic_write_text(
     if create_backup and path.with_suffix(path.suffix + ".bak").exists():
         return path.with_suffix(path.suffix + ".bak")
     return None
+
+
+def atomic_copy_file(source: Path, destination: Path) -> None:
+    """Atomically copy source to destination without exposing partial output."""
+    _copy_file_atomic(Path(source), Path(destination))
+
+
+_THREAD_LOCKS: dict[Path, threading.RLock] = {}
+_THREAD_LOCKS_GUARD = threading.Lock()
+
+
+@contextmanager
+def file_lock(path: Path) -> Iterator[None]:
+    """Cross-process lock for read-modify-write transactions on a data file."""
+    lock_path = _lock_path_for(Path(path))
+    thread_lock = _thread_lock_for(lock_path)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with thread_lock:
+        with lock_path.open("a", encoding="utf-8") as handle:
+            _lock_handle(handle)
+            try:
+                yield
+            finally:
+                _unlock_handle(handle)
+
+
+def create_backup_snapshot(path: Path, backup_suffix: str = ".bak") -> Optional[Path]:
+    """Create a latest backup plus a timestamped snapshot for an existing file."""
+    source = Path(path)
+    if not source.exists() or not source.is_file():
+        return None
+
+    latest_backup = source.with_suffix(source.suffix + backup_suffix)
+    _copy_file_atomic(source, latest_backup)
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    snapshot = source.with_name(f"{source.name}.{timestamp}{backup_suffix}")
+    counter = 1
+    while snapshot.exists():
+        snapshot = source.with_name(f"{source.name}.{timestamp}.{counter}{backup_suffix}")
+        counter += 1
+    _copy_file_atomic(source, snapshot)
+    return latest_backup
+
+
+def _lock_path_for(path: Path) -> Path:
+    resolved = path.expanduser().resolve(strict=False)
+    digest = hashlib.sha256(str(resolved).encode("utf-8")).hexdigest()
+    return Path(tempfile.gettempdir()) / "vocabbuilder-file-locks" / f"{digest}.lock"
+
+
+def _thread_lock_for(lock_path: Path) -> threading.RLock:
+    with _THREAD_LOCKS_GUARD:
+        lock = _THREAD_LOCKS.get(lock_path)
+        if lock is None:
+            lock = threading.RLock()
+            _THREAD_LOCKS[lock_path] = lock
+        return lock
+
+
+def _copy_file_atomic(source: Path, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp_name = tempfile.mkstemp(
+        dir=destination.parent,
+        prefix=f".{destination.name}.",
+        suffix=".tmp",
+    )
+    os.close(fd)
+    temp_path = Path(temp_name)
+    try:
+        shutil.copy2(source, temp_path)
+        _fsync_file(temp_path)
+        os.replace(temp_path, destination)
+        _fsync_directory(destination.parent)
+    finally:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+
+
+def _lock_handle(handle) -> None:
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover - Windows
+        return
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+
+
+def _unlock_handle(handle) -> None:
+    try:
+        import fcntl
+    except ImportError:  # pragma: no cover - Windows
+        return
+    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _fsync_file(path: Optional[Path]) -> None:

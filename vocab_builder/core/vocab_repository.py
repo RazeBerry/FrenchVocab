@@ -13,7 +13,7 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from vocab_builder.core.file_safety import atomic_write_text
+from vocab_builder.core.file_safety import atomic_copy_file, atomic_write_text, file_lock
 from vocab_builder.latex_repository import LatexRepository, find_entry_bounds, iter_entry_groups, parse_all_entries
 from vocab_builder.models import normalize_word_key
 from vocab_builder.languages import LanguageConfig, get_language_config
@@ -79,6 +79,7 @@ class VocabRepository:
         # Entry storage
         self.word_entries: Dict[str, Dict] = {}
         self.normalized_entries: Dict[str, str] = {}
+        self.duplicate_entry_keys: Dict[str, List[str]] = {}
         self.entry_count: int = 0
 
         # Thread-safe lazy loading state
@@ -104,21 +105,53 @@ class VocabRepository:
 
     def create_initial_tex_file(self) -> None:
         """Create an initial LaTeX vocabulary file from template."""
+        with file_lock(self.latex_file):
+            if self.latex_file.exists():
+                self.ui.warning(f"Initial LaTeX file already exists; leaving it unchanged: {self.latex_file}")
+                return
+            backup_path = self._backup_path()
+            if backup_path.exists() and backup_path.is_file():
+                self._restore_from_backup_if_available()
+                return
+            try:
+                template = self.vocab_template
+                # Create the parent directory if needed
+                if self.latex_file.parent != Path('.'):
+                    self.latex_file.parent.mkdir(parents=True, exist_ok=True)
+                with self.latex_file.open('x', encoding='utf-8') as file:
+                    file.write(template.initial_content)
+                    sample = template.sample_entry or ""
+                    if sample:
+                        file.write(sample)
+                    file.write(template.final_content)
+                self.ui.success(f"Created initial LaTeX file: {self.latex_file}")
+            except FileExistsError:
+                self.ui.warning(f"Initial LaTeX file already exists; leaving it unchanged: {self.latex_file}")
+            except IOError as e:
+                self.ui.error(f"Error creating initial LaTeX file: {e}", with_panel=True)
+                raise
+
+    def _backup_path(self) -> Path:
+        return self.latex_file.with_suffix(self.latex_file.suffix + ".bak")
+
+    def _restore_from_backup_if_available(self) -> bool:
+        backup_path = self._backup_path()
+        if not backup_path.exists() or not backup_path.is_file():
+            return False
         try:
-            template = self.vocab_template
-            # Create the parent directory if needed
             if self.latex_file.parent != Path('.'):
                 self.latex_file.parent.mkdir(parents=True, exist_ok=True)
-            with self.latex_file.open('w', encoding='utf-8') as file:
-                file.write(template.initial_content)
-                sample = template.sample_entry or ""
-                if sample:
-                    file.write(sample)
-                file.write(template.final_content)
-            self.ui.success(f"Created initial LaTeX file: {self.latex_file}")
-        except IOError as e:
-            self.ui.error(f"Error creating initial LaTeX file: {e}", with_panel=True)
-            raise
+            atomic_copy_file(backup_path, self.latex_file)
+            self.ui.warning(
+                f"{self.latex_file} was missing; restored it from backup {backup_path}."
+            )
+            return True
+        except OSError as exc:
+            self.ui.error(
+                f"Failed to restore {self.latex_file} from backup {backup_path}: {exc}",
+                with_panel=True,
+            )
+            return False
 
     # -------------------------------------------------------------------------
     # Entry Loading
@@ -162,10 +195,12 @@ class VocabRepository:
         """Load existing vocabulary entries using a balanced-brace parser."""
         self.word_entries.clear()
         self.normalized_entries.clear()
+        self.duplicate_entry_keys.clear()
 
         entries = self.repo.load_entries()
         self._report_load_issues(self.repo.last_load_issues)
         key_collisions: Dict[str, List[str]] = {}
+        normalized_collisions: Dict[str, List[str]] = {}
 
         for e in entries:
             word = (e.word or "").strip()
@@ -178,9 +213,11 @@ class VocabRepository:
             if not e.examples:
                 self.ui.warning(f"Entry '{word}' is missing examples; keeping it with an empty example list.")
 
-            key = word.lower()
-            if key in self.word_entries:
-                key_collisions.setdefault(key, [self.word_entries[key]['word']]).append(e.word)
+            base_key = word.lower()
+            key = self._unique_entry_key(base_key)
+            if key != base_key:
+                key_collisions.setdefault(base_key, [self.word_entries[base_key]['word']]).append(e.word)
+                self.duplicate_entry_keys.setdefault(base_key, []).append(key)
 
             definitions = list(e.definitions or [])
             examples = list(e.examples or [])
@@ -191,25 +228,55 @@ class VocabRepository:
                 'examples': "; ".join([f"{fr} ({en})" if en else fr for fr, en in examples]),
                 'definitions_list': definitions,
                 'examples_list': examples,
+                'duplicate_of': base_key if key != base_key else None,
             }
-            norm = self.normalize_word(key)
-            self.normalized_entries[norm] = key
+            norm = self.normalize_word(base_key)
+            existing_normalized_key = self.normalized_entries.get(norm)
+            if existing_normalized_key is None:
+                self.normalized_entries[norm] = base_key
+            elif existing_normalized_key != base_key:
+                normalized_collisions.setdefault(
+                    norm,
+                    [self.word_entries[existing_normalized_key]['word']],
+                ).append(word)
 
         if key_collisions:
             self.ui.panel(
                 f"[bold yellow]WARNING:[/bold yellow] {len(key_collisions)} duplicate word key(s) detected during loading, "
-                f"resulting in {sum(len(v) - 1 for v in key_collisions.values())} overwritten entries.\n"
-                "The application uses the *last* encountered entry for each duplicate word.\n"
+                f"preserving {sum(len(v) - 1 for v in key_collisions.values())} duplicate entries separately.\n"
+                "Duplicate entries are visible in browse/export views; duplicate checks use the first encountered entry.\n"
                 "Please review your `.tex` file and remove redundant entries for:\n" +
                 "\n".join([f" - Key: '{key}' (from words: {', '.join(words)})" for key, words in key_collisions.items()]),
                 title="Duplicate Entries Found",
                 border_style="yellow"
+            )
+        if normalized_collisions:
+            self.ui.panel(
+                f"[bold yellow]WARNING:[/bold yellow] {len(normalized_collisions)} normalized duplicate key(s) detected.\n"
+                "All entries remain loaded, but duplicate checks use the first encountered normalized form.\n"
+                "Please review entries for:\n" +
+                "\n".join(
+                    f" - Normalized key: '{key}' (from words: {', '.join(words)})"
+                    for key, words in normalized_collisions.items()
+                ),
+                title="Normalized Duplicate Entries Found",
+                border_style="yellow",
             )
 
         self.entry_count = len(self.word_entries)
         with self._entries_lock:
             self._entries_loaded = True
             self._entries_ready.set()
+
+    def _unique_entry_key(self, base_key: str) -> str:
+        if base_key not in self.word_entries:
+            return base_key
+        suffix = 2
+        while True:
+            candidate = f"{base_key}__duplicate_{suffix}"
+            if candidate not in self.word_entries:
+                return candidate
+            suffix += 1
 
     def count_entries(self) -> int:
         """Count entries with file stat caching for performance."""
@@ -302,15 +369,16 @@ class VocabRepository:
         Returns True if the entry was successfully written to the file.
         """
         try:
-            with self.latex_file.open("r", encoding="utf-8") as file:
-                content = file.read()
+            with file_lock(self.latex_file):
+                with self.latex_file.open("r", encoding="utf-8") as file:
+                    content = file.read()
 
-            entry_cmd = self._get_entry_command()
-            insert_position = self._choose_insert_position(content, entry_cmd, new_word)
+                entry_cmd = self._get_entry_command()
+                insert_position = self._choose_insert_position(content, entry_cmd, new_word)
 
-            updated_content = content[:insert_position] + new_entry + "\n\n" + content[insert_position:]
+                updated_content = content[:insert_position] + new_entry + "\n\n" + content[insert_position:]
 
-            atomic_write_text(self.latex_file, updated_content, create_backup=True)
+                atomic_write_text(self.latex_file, updated_content, create_backup=True)
 
             # Update the normalized entries dictionary after successful file write
             self._register_normalized_word(new_word)
@@ -393,40 +461,45 @@ class VocabRepository:
         Uses balanced-brace parsing to correctly handle nested LaTeX macros.
         """
         try:
-            with self.latex_file.open("r", encoding="utf-8") as file:
-                content = file.read()
+            with file_lock(self.latex_file):
+                with self.latex_file.open("r", encoding="utf-8") as file:
+                    content = file.read()
 
-            entry_cmd = self._get_entry_command()
-            split = self._extract_itemize_entries_section(content)
-            if split is None:
-                return
-            header, header_line, entries_section, footer = split
+                entry_cmd = self._get_entry_command()
+                split = self._extract_itemize_entries_section(content)
+                if split is None:
+                    return
+                header, header_line, entries_section, footer = split
 
-            entries, already_sorted, original_entry_count = self._collect_entries_for_sort(
-                entries_section, entry_cmd
-            )
-            if not entries:
-                if not silent:
-                    self.ui.warning("No entries found to alphabetize.")
-                return
-            if already_sorted:
-                if not silent:
-                    self.ui.info("Entries are already alphabetized.", accent="dim")
-                return
-
-            sorted_entries = sorted(entries, key=lambda x: x[0])
-            if len(sorted_entries) != original_entry_count:
-                loss_count = original_entry_count - len(sorted_entries)
-                self.ui.error(
-                    f"Entry count mismatch detected: {original_entry_count} entries before, "
-                    f"{len(sorted_entries)} after ({loss_count} would be lost). "
-                    "Aborting alphabetization to prevent data loss."
+                entries, already_sorted, original_entry_count = self._collect_entries_for_sort(
+                    entries_section, entry_cmd
                 )
-                return
+                if not entries:
+                    if not silent:
+                        self.ui.warning("No entries found to alphabetize.")
+                    return
+                if already_sorted:
+                    if not silent:
+                        self.ui.info("Entries are already alphabetized.", accent="dim")
+                    return
 
-            sorted_entries_section = self._render_sorted_entries_section(header_line, sorted_entries)
-            sorted_content = header + sorted_entries_section + footer
-            atomic_write_text(self.latex_file, sorted_content, create_backup=True)
+                sorted_entries = sorted(entries, key=lambda x: x[0])
+                if len(sorted_entries) != original_entry_count:
+                    loss_count = original_entry_count - len(sorted_entries)
+                    self.ui.error(
+                        f"Entry count mismatch detected: {original_entry_count} entries before, "
+                        f"{len(sorted_entries)} after ({loss_count} would be lost). "
+                        "Aborting alphabetization to prevent data loss."
+                    )
+                    return
+
+                sorted_entries_section = self._render_sorted_entries_section(
+                    header_line,
+                    entries_section,
+                    sorted_entries,
+                )
+                sorted_content = header + sorted_entries_section + footer
+                atomic_write_text(self.latex_file, sorted_content, create_backup=True)
 
             if not silent:
                 self.ui.success("Entries alphabetized successfully.")
@@ -470,12 +543,12 @@ class VocabRepository:
         self,
         entries_section: str,
         entry_cmd: str,
-    ) -> Tuple[List[Tuple[str, str, str]], bool, int]:
+    ) -> Tuple[List[Tuple[str, str, str, int, int]], bool, int]:
         parsed_entries = parse_all_entries(entries_section, entry_cmd)
         if not parsed_entries:
             return [], True, 0
 
-        entries: List[Tuple[str, str, str]] = []
+        entries: List[Tuple[str, str, str, int, int]] = []
         already_sorted = True
         previous_key: Optional[str] = None
         for groups, start, end in parsed_entries:
@@ -485,16 +558,28 @@ class VocabRepository:
             if previous_key is not None and normalized < previous_key:
                 already_sorted = False
             previous_key = normalized
-            entries.append((normalized, word, full_entry))
+            entries.append((normalized, word, full_entry, start, end))
 
         return entries, already_sorted, len(parsed_entries)
 
     @staticmethod
     def _render_sorted_entries_section(
-        header_line: str, entries: List[Tuple[str, str, str]]
+        header_line: str,
+        entries_section: str,
+        entries: List[Tuple[str, str, str, int, int]],
     ) -> str:
-        rendered_entries = "\n\n".join(entry for _, _, entry in entries)
-        return header_line + "\n" + rendered_entries
+        slots = sorted(entries, key=lambda item: item[3])
+        sorted_blocks = [entry for _, _, entry, _, _ in entries]
+
+        rendered = [header_line]
+        cursor = 0
+        for index, slot in enumerate(slots):
+            _normalized, _word, _entry, start, end = slot
+            rendered.append(entries_section[cursor:start])
+            rendered.append(sorted_blocks[index])
+            cursor = end
+        rendered.append(entries_section[cursor:])
+        return "".join(rendered)
 
     def update_entry_in_file(self, word_capitalized: str, new_block: str) -> None:
         """Replace the LaTeX entry block for the given word with new_block.
@@ -505,21 +590,22 @@ class VocabRepository:
             EntryNotFoundError: If the entry cannot be located in the file.
             IOError: If file read/write operations fail.
         """
-        with self.latex_file.open("r", encoding="utf-8") as f:
-            content = f.read()
+        with file_lock(self.latex_file):
+            with self.latex_file.open("r", encoding="utf-8") as f:
+                content = f.read()
 
-        entry_cmd = self._get_entry_command()
-        bounds = find_entry_bounds(content, entry_cmd, word_capitalized, prefer_last=True)
+            entry_cmd = self._get_entry_command()
+            bounds = find_entry_bounds(content, entry_cmd, word_capitalized, prefer_last=False)
 
-        if bounds is None:
-            raise EntryNotFoundError(
-                f"Could not locate LaTeX entry for '{word_capitalized}' in file. "
-                f"The entry may have been manually modified or deleted."
-            )
+            if bounds is None:
+                raise EntryNotFoundError(
+                    f"Could not locate LaTeX entry for '{word_capitalized}' in file. "
+                    f"The entry may have been manually modified or deleted."
+                )
 
-        start, end = bounds
-        new_content = content[:start] + new_block + content[end:]
-        atomic_write_text(self.latex_file, new_content, create_backup=True)
+            start, end = bounds
+            new_content = content[:start] + new_block + content[end:]
+            atomic_write_text(self.latex_file, new_content, create_backup=True)
 
     def _report_load_issues(self, issues: List[str]) -> None:
         for issue in issues:

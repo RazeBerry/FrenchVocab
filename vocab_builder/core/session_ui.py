@@ -51,7 +51,7 @@ def build_welcome_message(app: Any, provider_name: str) -> Tuple[str, str]:
         f"[bold cyan]Using LLM provider: {provider_name}[/bold cyan]\n"
         f"[bold magenta]Active language: {language_name}[/bold magenta]\n\n"
         f"[italic cyan]Version 3.0[/italic cyan]\n"
-        f"[dim]GitHub: https://github.com/RazeBerry/FrenchVocab/tree/main[/dim]"
+        "[dim]CLI: vocabbuilder | Module: python -m vocab_builder[/dim]"
     )
     return message, panel_title
 
