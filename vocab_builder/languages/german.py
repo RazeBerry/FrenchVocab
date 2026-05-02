@@ -36,7 +36,7 @@ _UI_STRINGS: Dict[str, str] = {
 
 GERMAN_ENG_TO_DE_PROMPT = """You are an experienced English->German translator equally comfortable with literary, technical, and marketing texts. Derive the domain, target audience, formality, tone, and era directly from the source and recreate them authentically in German. Preserve the author's intent, emotional register, rhythm, and narrative voice. Recast idioms, cultural references, humor, and wordplay so they feel native to contemporary German readers while staying faithful to meaning.
 
-Before translating, observe any punctuation, typography, markdown, inline code, mathematical notation, HTML tags, placeholders, or dialogue markers. Copy this scaffolding exactly unless idiomatic German requires a minimal adjustment; never invent new structure. Keep product names, terminology, and proper nouns unchanged unless a widely used German equivalent exists, and respect capitalization, honorifics, and quotation style. When regional cues appear, adopt the matching German variant; otherwise default to neutral Standarddeutsch.
+Before translating, observe any punctuation, typography, markdown, inline code, mathematical notation, HTML tags, placeholders, or dialogue markers. Copy this scaffolding exactly unless idiomatic German requires a minimal adjustment; never invent new structure. Keep product names, terminology, and proper nouns unchanged unless a widely used German equivalent exists, and respect capitalization and honorifics. Convert English "..." to German „..." (or »...« where the source is set in that style); apply German conventions for dashes, ellipses, and dialogue markers. Where direct address occurs, infer Du/Sie from register and relationship; default to Sie in formal or neutral prose and Du with intimates, children, or informal peer address; mirror any register shift in the source. Silently normalize obvious source noise (mid-word line breaks, doubled or stray whitespace, single-character typos in proper nouns) without preserving them in the translation; preserve only intentional formatting. When regional cues appear, adopt the matching German variant; otherwise default to neutral Standarddeutsch.
 
 Output only:
 German translation: <single cohesive translation mirroring paragraph and line breaks>
@@ -48,10 +48,10 @@ English source:
 {english_text}
 """
 
-GERMAN_DE_TO_ENG_PROMPT = """Translate the following German text into idiomatic, context-appropriate English. Preserve register, tone, and rhetorical devices (questions, exclamations, dashes) while keeping paragraph and line breaks. Detect idioms, figurative language, and fixed expressions: when the source is idiomatic, deliver an equally idiomatic English expression at the same register; switch to a faithful literal rendering only when an idiomatic counterpart would distort meaning, keeping notable imagery intact. Favour fluent English phrasing over word-for-word translations, yet retain proper nouns and culture-specific terms when no natural equivalent exists. Produce only the English translation—no commentary, no quotation marks.
+GERMAN_DE_TO_ENG_PROMPT = """Translate the following German text into idiomatic, context-appropriate English. Preserve register, tone, and rhetorical devices (questions, exclamations, dashes) while keeping paragraph and line breaks. Detect idioms, figurative language, and fixed expressions: when the source is idiomatic, deliver an equally idiomatic English expression at the same register; switch to a faithful literal rendering only when an idiomatic counterpart would distort meaning, keeping notable imagery intact. Favour fluent English phrasing over word-for-word translations, yet retain proper nouns and culture-specific terms when no natural equivalent exists. Render German Perfekt as English simple past in narrative prose; reserve the English perfect only where the German marks present relevance. Where the German uses Konjunktiv I for reported speech, signal it in English through backshift, reporting verbs, or a slight register shift—don't flatten the layered voice into either a direct quote or neutral paraphrase. Produce only the English translation—no commentary, no quotation marks.
 
 German Text:
-"{german_text}"
+{german_text}
 
 English Translation:"""
 
@@ -109,6 +109,7 @@ STEP 1 — Detect the source language:
 Examine the input text for linguistic signals.
 • German signals: umlauts (ä ö ü), ß, German function words (der, die, das, ist, und, nicht, ein, eine, ich, wir, haben, werden, auch, für, mit, auf), German sentence structure.
 • English signals: English function words (the, is, are, was, were, have, has, do, does, not, and, but, for, with, this, that, it, I, we, they), English spelling patterns.
+When function-word signals are absent (single noun phrases, headlines, fragments), use German noun capitalization, ß, and umlauts as primary signals; failing those, treat capitalized standalone nouns as German. If genuinely ambiguous, pick the more plausible reading and flag the alternative in Notes.
 Classify the input as English or German — no other languages.
 
 STEP 2 — Translate into the opposite language, preserving tone, register, punctuation, paragraphing, markdown, and inline code.

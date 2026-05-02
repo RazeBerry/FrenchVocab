@@ -91,6 +91,7 @@ Provide exactly three examples numbered "1.", "2.", "3.".
 Formatting rules for every example:
 1. First line: the German sentence.
 2. Next line: the English translation in parentheses, on its own line.
+3. The English translation must read as natural English at the same register as the German—avoid clefts ("It is X who…"), unnecessary passives, and Latinate padding the German does not carry. Render the German plainly and idiomatically; do not over-formalize.
 
 Do not use square brackets anywhere. Do not include LaTeX. Use only plain text. Start with "Spelling Check:" and end right after the closing parenthesis of the third example's translation. Ensure Definitions entries start with exactly "a. ", "b. ", "c. " and Examples with exactly "1. ", "2. ", "3. ".
 

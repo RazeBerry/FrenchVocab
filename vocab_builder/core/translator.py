@@ -395,7 +395,7 @@ class TranslatorCLI:
                     except StopIteration as stop:
                         metrics = stop.value if stop.value else {}
                         break
-                translation = "".join(chunks).strip()
+                translation = self._strip_translation_scaffolding("".join(chunks))
                 self._emit_usage(metrics.get("usage") if isinstance(metrics, dict) else None)
 
             if not translation:
@@ -439,6 +439,66 @@ class TranslatorCLI:
             f"Save this {self.source_label} → {self.target_label} translation?",
             default=True,
         )
+
+    @staticmethod
+    def _detect_truncated_input(
+        text: str, *, threshold_chars: int = 80
+    ) -> tuple:
+        """Detect suspected mid-word truncation in long pasted input.
+
+        Returns (sanitized_text, dropped_fragment). When dropped_fragment is
+        None, no truncation was detected and the input is unchanged. Inputs
+        shorter than threshold_chars or ending in sentence-final punctuation,
+        whitespace, or a closing quote/bracket are passed through.
+        """
+        if not text:
+            return text, None
+        if text != text.rstrip():
+            return text.rstrip(), None
+        if len(text) < threshold_chars:
+            return text, None
+        if re.search(r"[.!?…»\"'\)\]\}”“:;]\s*$", text):
+            return text, None
+        if not text[-1].isalpha():
+            return text, None
+        last_ws = max(text.rfind(" "), text.rfind("\n"), text.rfind("\t"))
+        if last_ws == -1:
+            return text, None
+        trimmed = text[:last_ws].rstrip()
+        fragment = text[last_ws:].strip()
+        if not trimmed or not fragment:
+            return text, None
+        return trimmed, fragment
+
+    def _strip_translation_scaffolding(self, raw: str) -> str:
+        """Remove prompt-template labels and trailing Notes blocks from raw output.
+
+        The directional translator prompts ask the model to emit
+        "<Lang> translation: ..." and an optional "Notes (optional): ..." block.
+        Persisting those labels into the .tex file is a parser bug; this method
+        is the single chokepoint that cleans them out before save.
+        """
+        if not raw:
+            return ""
+        text = raw.strip()
+
+        label_words = {self.source_label, self.target_label, "German", "English", "French"}
+        label_alt = "|".join(
+            sorted({re.escape(w) for w in label_words if w}, key=len, reverse=True)
+        )
+        leading_label = re.compile(
+            rf"^\s*(?:(?:{label_alt})\s+)?translation\s*:\s*",
+            re.IGNORECASE,
+        )
+        text = leading_label.sub("", text, count=1)
+
+        notes_block = re.compile(
+            r"(?:^|\n)[ \t]*notes?\s*(?:\(optional\))?\s*:.*\Z",
+            re.IGNORECASE | re.DOTALL,
+        )
+        text = notes_block.sub("", text)
+
+        return text.strip()
 
     @staticmethod
     def _escape_latex(text: str) -> str:
@@ -533,6 +593,14 @@ class TranslatorCLI:
     def translate_and_save(self, source_text: str, *, provided_translation: Optional[str] = None) -> bool:
         if not source_text:
             return False
+
+        sanitized, dropped_fragment = self._detect_truncated_input(source_text)
+        if dropped_fragment is not None:
+            self.ui.warning(
+                f"Input ends mid-word with '{dropped_fragment}' — looks like a paste truncation. "
+                f"Trimming to the last whitespace boundary before translating."
+            )
+            source_text = sanitized
 
         normalized = self.normalize_text(source_text)
         existing_entry = self.check_duplicate(normalized)
