@@ -4,6 +4,7 @@ exported_words.json
 
 # Ignore all .apkg files
 *.apkg
+anki_exports/
 
 # Ignore all .json files
 *.json

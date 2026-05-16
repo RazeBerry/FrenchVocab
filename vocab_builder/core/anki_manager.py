@@ -35,6 +35,8 @@ class AnkiExportManager:
     a focused, testable component for deck generation and export management.
     """
 
+    EXPORT_DIRECTORY_NAME = "anki_exports"
+
     def __init__(
         self,
         ui: "UIHelper",
@@ -55,7 +57,15 @@ class AnkiExportManager:
         self._ui = ui
         self._language_config = language_config
         self._vocab_repo = vocab_repo
-        self._exported_words_file = exported_words_file
+        project_root_path = Path(project_root).expanduser()
+        if not project_root_path.is_absolute():
+            project_root_path = Path.cwd() / project_root_path
+        self._project_root = project_root_path.absolute()
+        exported_words_path = Path(exported_words_file).expanduser()
+        if not exported_words_path.is_absolute():
+            exported_words_path = self._project_root / exported_words_path
+        self._exported_words_file = exported_words_path.absolute()
+        self._default_export_directory = self._resolve_default_export_directory()
 
         # Load exported words state
         (
@@ -166,6 +176,13 @@ class AnkiExportManager:
         latest_genanki = sys.modules.get("genanki")
         if latest_genanki is not None:
             anki_mod.genanki = latest_genanki
+
+    def _resolve_default_export_directory(self) -> Path:
+        """Return the stable base directory for deck-name-only exports."""
+        export_directory = self._exported_words_file.parent / self.EXPORT_DIRECTORY_NAME
+        if not export_directory.is_absolute():
+            export_directory = self._project_root / export_directory
+        return export_directory.resolve()
 
     def _resolve_template_version(self) -> str:
         """Return a stable identifier for the current Anki template."""
@@ -425,6 +442,7 @@ class AnkiExportManager:
         all_exported_words: Set[str],
         deck_title: str,
         destination_path: Path,
+        destination_source: str,
         template_version: str,
         export_context: str,
     ) -> Tuple[Set[str], Set[str]]:
@@ -442,6 +460,7 @@ class AnkiExportManager:
         self._last_export_metadata = {
             "deck_name": deck_title,
             "path": str(destination_path),
+            "path_source": destination_source,
             "export_context": export_context,
             "timestamp": time.time(),
             "total_words": len(all_exported_words),
@@ -469,8 +488,39 @@ class AnkiExportManager:
             version = str(version)
 
         metadata_raw = data.get("last_export")
-        metadata = metadata_raw if isinstance(metadata_raw, dict) else None
+        metadata = (
+            self._normalize_loaded_export_metadata(metadata_raw)
+            if isinstance(metadata_raw, dict)
+            else None
+        )
         return words, version, metadata
+
+    def _normalize_loaded_export_metadata(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize old cwd-derived metadata that matches the deck default file."""
+        normalized = dict(metadata)
+        if normalized.get("path_source"):
+            return normalized
+
+        deck_name = str(normalized.get("deck_name") or "").strip()
+        raw_path = normalized.get("path")
+        if not deck_name or not raw_path:
+            return normalized
+
+        try:
+            previous_path = Path(os.path.expanduser(str(raw_path))).resolve()
+            default_path = self._normalize_output_path(deck_name)
+        except (OSError, RuntimeError, TypeError, ValueError):
+            return normalized
+
+        if previous_path == default_path:
+            normalized["path_source"] = "default"
+            return normalized
+
+        if previous_path.name == default_path.name:
+            normalized["path"] = str(default_path)
+            normalized["path_source"] = "default"
+
+        return normalized
 
     def _parse_legacy_exported_words_list(
         self,
@@ -580,7 +630,17 @@ class AnkiExportManager:
         self._vocab_repo.ensure_entries_loaded()
         requested_deck_name = deck_name or self._language_config.anki.default_deck_name
         deck_title = self._normalize_deck_title(requested_deck_name)
-        destination_path = self._normalize_output_path(output_path or requested_deck_name)
+        destination_input: Union[str, Path] = output_path or requested_deck_name
+        try:
+            destination_path = self._normalize_output_path(destination_input)
+        except ValueError as exc:
+            self._ui.error(f"Unsafe Anki export path: {exc}", with_panel=True)
+            return
+        destination_source = (
+            "explicit"
+            if output_path is not None or self._is_explicit_output_destination(requested_deck_name)
+            else "default"
+        )
 
         self._sync_anki_exporter_genanki_module()
 
@@ -639,6 +699,7 @@ class AnkiExportManager:
             all_exported_words=all_exported_words,
             deck_title=deck_title,
             destination_path=destination_path,
+            destination_source=destination_source,
             template_version=template_version,
             export_context=export_context,
         )
@@ -826,6 +887,16 @@ class AnkiExportManager:
             return self._language_config.anki.default_deck_name
         return sanitized
 
+    @staticmethod
+    def _is_explicit_output_destination(candidate: Union[str, Path]) -> bool:
+        """Return True when user input names a file/path rather than only a deck."""
+        raw = str(candidate or "").strip()
+        if not raw:
+            return False
+        if raw.startswith("~") or raw.lower().endswith(".apkg"):
+            return True
+        return any(sep in raw for sep in (os.sep, os.altsep) if sep)
+
     def _normalize_output_path(self, destination: Union[str, Path]) -> Path:
         """Resolve an absolute .apkg path from deck name or explicit destination."""
         if isinstance(destination, Path):
@@ -843,7 +914,12 @@ class AnkiExportManager:
             candidate = Path(f"{expanded}.apkg")
 
         if not candidate.is_absolute():
-            candidate = (Path.cwd() / candidate).resolve()
+            candidate = (self._default_export_directory / candidate).resolve()
+            if not candidate.is_relative_to(self._default_export_directory):
+                raise ValueError(
+                    "Relative Anki export paths must stay inside "
+                    f"{self._default_export_directory}"
+                )
         else:
             candidate = candidate.resolve()
         return candidate
@@ -854,7 +930,12 @@ class AnkiExportManager:
         Returns:
             Tuple of (deck_title, explicit_path, reused_previous)
         """
-        metadata = self._last_export_metadata or {}
+        metadata = (
+            self._normalize_loaded_export_metadata(self._last_export_metadata)
+            if self._last_export_metadata
+            else {}
+        )
+        self._last_export_metadata = metadata or self._last_export_metadata
         previous_deck = (metadata.get("deck_name") or "").strip()
         previous_path: Optional[Path] = None
         previous_raw_path = metadata.get("path")
@@ -894,12 +975,7 @@ class AnkiExportManager:
         if not raw_entry:
             raw_entry = prompt_default
 
-        ends_with_extension = raw_entry.lower().endswith(".apkg")
-        contains_directory = raw_entry.startswith("~") or any(
-            sep in raw_entry for sep in (os.sep, os.altsep) if sep
-        )
-
-        if contains_directory or ends_with_extension:
+        if self._is_explicit_output_destination(raw_entry):
             explicit_path = Path(os.path.expanduser(raw_entry))
             deck_title = self._normalize_deck_title(raw_entry)
             return deck_title, explicit_path, False

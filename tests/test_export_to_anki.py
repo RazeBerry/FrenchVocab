@@ -311,6 +311,7 @@ class TestExportToAnki(unittest.TestCase):
         self.assertIsInstance(metadata, dict)
         self.assertEqual(metadata["deck_name"], "Deck Name")
         self.assertEqual(Path(metadata["path"]), expected_path)
+        self.assertEqual(metadata["path_source"], "explicit")
         self.assertEqual(metadata["export_context"], "selected")
         self.assertIn('total_words', metadata)
         self.assertIn('new_words', metadata)

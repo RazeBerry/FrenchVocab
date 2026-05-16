@@ -104,3 +104,61 @@ def test_package_fallback_backs_up_existing_deck_before_direct_write(tmp_path, m
     snapshots = list(tmp_path.glob("Deck.apkg.*.bak"))
     assert len(snapshots) == 1
     assert snapshots[0].read_text(encoding="utf-8") == "old deck"
+
+
+def test_default_output_path_uses_export_state_directory_not_cwd(tmp_path, monkeypatch):
+    state_dir = tmp_path / "state"
+    manager = _manager(state_dir / "exported_words.json")
+    cwd = tmp_path / "elsewhere"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+
+    assert manager._normalize_output_path("French Vocabulary") == (
+        state_dir / "anki_exports" / "French Vocabulary.apkg"
+    ).resolve()
+    assert manager._normalize_output_path("anki/French Vocabulary") == (
+        state_dir / "anki_exports" / "anki" / "French Vocabulary.apkg"
+    ).resolve()
+
+
+def test_absolute_output_path_is_still_honored(tmp_path):
+    manager = _manager(tmp_path / "exported_words.json")
+    destination = tmp_path / "custom" / "Deck.apkg"
+
+    assert manager._normalize_output_path(destination) == destination.resolve()
+
+
+def test_relative_output_path_cannot_escape_export_directory(tmp_path):
+    manager = _manager(tmp_path / "exported_words.json")
+
+    try:
+        manager._normalize_output_path("../Deck")
+    except ValueError as exc:
+        assert "inside" in str(exc)
+    else:
+        raise AssertionError("path traversal should be rejected")
+
+
+def test_legacy_cwd_metadata_path_is_normalized_to_default_export_dir(tmp_path):
+    cwd_path = tmp_path / "old-cwd" / "French Vocabulary.apkg"
+    state_path = tmp_path / "exported_words.json"
+    state_path.write_text(
+        json.dumps(
+            {
+                "words": [],
+                "last_export": {
+                    "deck_name": "French Vocabulary",
+                    "path": str(cwd_path),
+                    "export_context": "incremental",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manager = _manager(state_path)
+
+    assert manager.last_export_metadata is not None
+    expected_path = (tmp_path / "anki_exports" / "French Vocabulary.apkg").resolve()
+    assert manager.last_export_metadata["path"] == str(expected_path)
+    assert manager.last_export_metadata["path_source"] == "default"
