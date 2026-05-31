@@ -11,11 +11,12 @@ Extracted from VocabBuilder to handle:
 import re
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
+from vocab_builder.core.bulk_add import BulkAddReport, DuplicatePolicy
 from vocab_builder.core.file_safety import atomic_copy_file, atomic_write_text, file_lock
 from vocab_builder.latex_repository import LatexRepository, find_entry_bounds, iter_entry_groups, parse_all_entries
-from vocab_builder.models import normalize_word_key
+from vocab_builder.models import WordEntry, normalize_word_key
 from vocab_builder.languages import LanguageConfig, get_language_config
 from vocab_builder.ui_helper import UIHelper
 
@@ -359,6 +360,23 @@ class VocabRepository:
         normalized_word = self.normalize_word(word_lower)
         self.normalized_entries[normalized_word] = word_lower
         self.entry_count = len(self.word_entries)
+
+    def bulk_add_entries(
+        self,
+        entries: Sequence[WordEntry],
+        *,
+        on_duplicate: DuplicatePolicy = "skip",
+        dry_run: bool = False,
+    ) -> BulkAddReport:
+        """Add or merge a batch with one all-or-nothing file write."""
+        from vocab_builder.core.bulk_repository import bulk_add_entries_for_repo
+
+        return bulk_add_entries_for_repo(
+            self,
+            entries,
+            on_duplicate=on_duplicate,
+            dry_run=dry_run,
+        )
 
     def insert_entry_alphabetically(self, new_entry: str, new_word: str) -> bool:
         """Insert a new LaTeX entry at the correct alphabetical position.

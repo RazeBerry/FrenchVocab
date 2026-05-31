@@ -19,7 +19,7 @@ VocabBuilder is an AI-assisted CLI for building bilingual vocabulary lists, gene
 - `vocab_builder/compat.py` provides backward-compatible helpers for env vars, config paths, and keyring migration.
 - `vocab_builder/diagnostics/` contains ESC latency tracing tools.
 - `FrenchVocab.py` is a deprecated shim that delegates to `vocab_builder.cli.main`.
-- `scripts/` contains utility and demo scripts.
+- `scripts/` contains utility and demo scripts, including `scripts/bulk_add.py` for operator-reviewed structured JSON vocabulary batches.
 - `tests/` is a pytest suite (`test_*.py`) for architecture boundaries, onboarding, translators, language config, exporters, and UI behavior.
 
 ## Build, Test, and Development Commands
@@ -41,6 +41,10 @@ python -m vocab_builder --help
 vocabbuilder --esc-debug
 vocabbuilder --esc-debug --esc-debug-log /tmp/esc_latency.log
 python scripts/demo_guided_onboarding.py
+
+# Operator bulk-add workflow
+python scripts/bulk_add.py --language fr --file entries.json --dry-run
+python scripts/bulk_add.py --language fr --file entries.json --json
 
 # Tests
 pytest
