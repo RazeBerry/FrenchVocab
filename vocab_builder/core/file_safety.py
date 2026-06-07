@@ -43,6 +43,7 @@ class AtomicFileWriter:
 
     def __enter__(self) -> Path:
         # Create temp file in same directory (ensures same filesystem for atomic rename)
+        self.target_path.parent.mkdir(parents=True, exist_ok=True)
         fd, temp_path = tempfile.mkstemp(
             dir=self.target_path.parent,
             prefix=f".{self.target_path.name}.",
@@ -51,6 +52,11 @@ class AtomicFileWriter:
         os.close(fd)
         self._temp_file = Path(temp_path)
         return self._temp_file
+
+    @property
+    def backup_path(self) -> Optional[Path]:
+        """Latest backup path created by this writer, if any."""
+        return self._backup_path
 
     def __exit__(self, exc_type, _exc_val, _exc_tb):
         if exc_type is not None:
@@ -108,12 +114,11 @@ def atomic_write_text(
         OSError: If write fails (disk full, permissions, etc.)
     """
     path = Path(path)
-    with AtomicFileWriter(path, create_backup=create_backup) as temp_path:
+    writer = AtomicFileWriter(path, create_backup=create_backup)
+    with writer as temp_path:
         temp_path.write_text(content, encoding=encoding)
 
-    if create_backup and path.with_suffix(path.suffix + ".bak").exists():
-        return path.with_suffix(path.suffix + ".bak")
-    return None
+    return writer.backup_path
 
 
 def atomic_copy_file(source: Path, destination: Path) -> None:

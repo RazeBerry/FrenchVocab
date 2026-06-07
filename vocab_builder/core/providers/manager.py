@@ -1,5 +1,6 @@
 import getpass
 import os
+import re
 import tempfile
 import threading
 from concurrent.futures import TimeoutError as FuturesTimeoutError
@@ -746,10 +747,13 @@ class ProviderManager:
     def _upsert_env_var(lines: List[str], key_var: str, api_key: str) -> List[str]:
         new_lines: List[str] = []
         updated = False
-        prefix = f"{key_var}="
+        assignment_pattern = re.compile(
+            rf"^(\s*(?:export\s+)?{re.escape(key_var)}\s*=\s*).*$"
+        )
         for line in lines:
-            if line.strip().startswith(prefix):
-                new_lines.append(f"{key_var}={api_key}")
+            match = assignment_pattern.match(line)
+            if match and not line.lstrip().startswith("#"):
+                new_lines.append(f"{match.group(1)}{api_key}")
                 updated = True
             else:
                 new_lines.append(line)

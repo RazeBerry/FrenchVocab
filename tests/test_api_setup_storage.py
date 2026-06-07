@@ -207,3 +207,25 @@ def test_write_env_file_hardens_permissions_and_removes_stale_backup(tmp_path):
     if os.name != "nt":
         mode = stat.S_IMODE(env_path.stat().st_mode)
         assert mode == 0o600
+
+
+def test_write_env_file_updates_export_assignment_without_duplicate(tmp_path):
+    manager, _ = _make_manager(tmp_path)
+    metadata = _get_provider_metadata("gemini")
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "# GEMINI_API_KEY=commented\n"
+        "export GEMINI_API_KEY=old\n"
+        "OTHER_VAR=value\n",
+        encoding="utf-8",
+    )
+
+    storage = manager._write_env_file(metadata, "AIza" + "q" * 36)
+
+    assert storage is not None
+    lines = env_path.read_text(encoding="utf-8").splitlines()
+    assert lines == [
+        "# GEMINI_API_KEY=commented",
+        "export GEMINI_API_KEY=AIza" + "q" * 36,
+        "OTHER_VAR=value",
+    ]

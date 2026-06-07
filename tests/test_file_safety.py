@@ -93,11 +93,25 @@ class TestAtomicFileWriter(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             path = Path(td) / "new_file.txt"
 
-            atomic_write_text(path, "new content", create_backup=True)
+            created_backup = atomic_write_text(path, "new content", create_backup=True)
 
             self.assertTrue(path.exists())
             backup = path.with_suffix(".txt.bak")
             self.assertFalse(backup.exists())
+            self.assertIsNone(created_backup)
+
+    def test_atomic_write_new_file_does_not_report_stale_backup(self):
+        """Test that stale backups are not reported as created for new files."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "new_file.txt"
+            stale_backup = path.with_suffix(".txt.bak")
+            stale_backup.write_text("stale backup")
+
+            backup = atomic_write_text(path, "new content", create_backup=True)
+
+            self.assertEqual(path.read_text(), "new content")
+            self.assertEqual(stale_backup.read_text(), "stale backup")
+            self.assertIsNone(backup)
 
     def test_atomic_write_preserves_encoding(self):
         """Test that UTF-8 encoding is preserved correctly."""
@@ -255,11 +269,9 @@ class TestAtomicWriterEdgeCases(unittest.TestCase):
             self.assertEqual(path.read_text(), "content")
 
     def test_write_to_deeply_nested_path(self):
-        """Test that parent directories must already exist."""
+        """Test that atomic writes create parent directories."""
         with tempfile.TemporaryDirectory() as td:
-            # The atomic writer expects the parent directory to exist
             nested_dir = Path(td) / "a" / "b" / "c"
-            nested_dir.mkdir(parents=True)
             path = nested_dir / "file.txt"
 
             atomic_write_text(path, "nested content")

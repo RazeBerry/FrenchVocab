@@ -62,7 +62,8 @@ INITIAL_TEX_CONTENT = r"""\documentclass[11pt]{article}
 }
 
 \begin{document}
-\begin{itemize}[leftmargin=*]"""
+\begin{itemize}[leftmargin=*]
+\item[]\relax"""
 
 SAMPLE_ENTRY = r"""\entry{agaçante}{Unknown}
       {
@@ -126,6 +127,7 @@ INITIAL_ENG_FR_TEX_CONTENT = r"""\documentclass[11pt]{article}
 
 \begin{itemize}[leftmargin=*, itemsep=1ex]
 % Entries will be added here by the script
+\item[]\relax
 """
 
 FINAL_ENG_FR_TEX_CONTENT = r"""
@@ -193,6 +195,7 @@ INITIAL_FR_ENG_TEX_CONTENT = r"""\documentclass[11pt]{article}
 
 \begin{itemize}[leftmargin=*, itemsep=1ex]
 % Entries will be added here by the script
+\item[]\relax
 """
 
 FINAL_FR_ENG_TEX_CONTENT = r"""

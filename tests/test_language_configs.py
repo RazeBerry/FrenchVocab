@@ -25,6 +25,9 @@ def test_builder_initializes_for_language(language_code, monkeypatch):
         assert builder.entry_command.startswith("\\")
         builder.create_initial_tex_file()
         assert tex_path.exists()
+        content = tex_path.read_text(encoding="utf-8").lstrip()
+        assert content.startswith("\\documentclass")
+        assert not content.startswith("\\\\documentclass")
 
 
 def test_available_language_codes_include_german():
@@ -55,6 +58,15 @@ def test_german_translator_config_has_dedicated_macros():
     assert "deeng" in cfg.target_to_eng.latex_commands
     assert "English to German" in cfg.eng_to_target.initial_tex_content
     assert "German to English" in cfg.target_to_eng.initial_tex_content
+
+
+@pytest.mark.parametrize("language_code", ["fr", "de"])
+def test_spawned_empty_latex_templates_include_placeholder_item(language_code):
+    cfg = get_language_config(language_code)
+
+    assert r"\item[]\relax" in cfg.vocab.initial_content
+    assert r"\item[]\relax" in cfg.eng_to_target.initial_tex_content
+    assert r"\item[]\relax" in cfg.target_to_eng.initial_tex_content
 
 
 def test_language_configs_include_template_versions():

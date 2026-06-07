@@ -11,6 +11,7 @@ anki_exports/
 
 # Ignore all .log files
 *.log
+*.aux
 
 # Backup files
 *.bak
@@ -48,6 +49,9 @@ data/history/*.jsonl
 
 # Local delayed-audit scheduler output
 .codex_audits/
+
+# Local design/spec notes
+docs/
 
 # Linter and tool caches
 .ruff_cache/
