@@ -12,6 +12,7 @@ anki_exports/
 # Ignore all .log files
 *.log
 *.aux
+*.out
 
 # Backup files
 *.bak

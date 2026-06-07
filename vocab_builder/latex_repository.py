@@ -87,6 +87,9 @@ def find_entry_bounds(
         j = content.find(entry_cmd, i)
         if j == -1:
             break
+        if command_is_in_latex_comment(content, j):
+            i = j + len(entry_cmd)
+            continue
         entry_start = j
         i = j + len(entry_cmd)
         # skip whitespace to first brace
@@ -130,6 +133,9 @@ def iter_entry_groups(content: str, entry_cmd: str, *, num_groups: int = 4):
         j = content.find(entry_cmd, i)
         if j == -1:
             break
+        if command_is_in_latex_comment(content, j):
+            i = j + len(entry_cmd)
+            continue
         entry_start = j
         i = j + len(entry_cmd)
         # skip whitespace to first brace
@@ -143,6 +149,23 @@ def iter_entry_groups(content: str, entry_cmd: str, *, num_groups: int = 4):
         groups, _, entry_end = result
         yield (groups, entry_start, entry_end)
         i = entry_end
+
+
+def command_is_in_latex_comment(content: str, command_pos: int) -> bool:
+    """Return True when a command occurrence is after an unescaped % on its line."""
+    line_start = content.rfind("\n", 0, command_pos) + 1
+    prefix = content[line_start:command_pos]
+    for index, char in enumerate(prefix):
+        if char != "%":
+            continue
+        backslashes = 0
+        cursor = index - 1
+        while cursor >= 0 and prefix[cursor] == "\\":
+            backslashes += 1
+            cursor -= 1
+        if backslashes % 2 == 0:
+            return True
+    return False
 
 
 class LatexRepository:
@@ -247,6 +270,9 @@ class LatexRepository:
             j = content.find(self.entry_command, i)
             if j == -1:
                 break
+            if command_is_in_latex_comment(content, j):
+                i = j + self._entry_command_len
+                continue
             parsed = self._parse_entry_at(content, j)
             if parsed is None:
                 i = j + self._entry_command_len

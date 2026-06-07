@@ -5,7 +5,12 @@ from unittest.mock import MagicMock, patch
 from vocab_builder.core import VocabBuilder
 from vocab_builder.core.vocab_repository import VocabRepository
 from vocab_builder.languages import get_language_config
-from vocab_builder.latex_repository import LatexRepository, parse_balanced_group
+from vocab_builder.latex_repository import (
+    LatexRepository,
+    find_entry_bounds,
+    iter_entry_groups,
+    parse_balanced_group,
+)
 
 
 def _repo(tmp_path: Path) -> VocabRepository:
@@ -54,6 +59,38 @@ def test_load_entries_handles_invalid_utf8_without_crashing(tmp_path: Path):
     assert len(entries) == 1
     assert entries[0].word == "broken"
     assert any("could not be decoded" in issue for issue in repo.last_load_issues)
+
+
+def test_entry_parser_ignores_commands_inside_latex_comments(tmp_path: Path):
+    path = tmp_path / "commented.tex"
+    path.write_text(
+        r"""% Usage: \entry{word}{type}{defs}{examples}
+\entry{Real}{noun}
+  {
+    \item Definition
+  }
+  {
+    \item Real \\ (Real)
+  }
+Escaped percent \% \entry{Also Real}{noun}
+  {
+    \item Second definition
+  }
+  {
+    \item Also real \\ (Also real)
+  }
+""",
+        encoding="utf-8",
+    )
+    content = path.read_text(encoding="utf-8")
+
+    repo = LatexRepository(path)
+    entries = repo.load_entries()
+    groups = list(iter_entry_groups(content, "\\entry"))
+
+    assert [entry.word for entry in entries] == ["Real", "Also Real"]
+    assert [group[0][0] for group in groups] == ["Real", "Also Real"]
+    assert find_entry_bounds(content, "\\entry", "word") is None
 
 
 def test_update_entry_in_file_prefers_first_duplicate(tmp_path: Path):
