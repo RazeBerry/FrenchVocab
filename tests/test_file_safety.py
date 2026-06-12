@@ -1,17 +1,53 @@
 """Unit tests for core/file_safety.py atomic write utilities."""
 
+import os
 import random
 import tempfile
 import threading
 import unittest
+from datetime import datetime as real_datetime
 from pathlib import Path
 from unittest.mock import patch
 
-from vocab_builder.core.file_safety import AtomicFileWriter, atomic_copy_file, atomic_write_text, file_lock
+from vocab_builder.core.file_safety import (
+    AtomicFileWriter,
+    atomic_copy_file,
+    atomic_write_text,
+    file_lock,
+)
 
 
 class TestAtomicFileWriter(unittest.TestCase):
     """Tests for the AtomicFileWriter context manager."""
+
+    _BACKUP_RETENTION_ENV_NAMES = (
+        "VOCABBUILDER_MAX_BACKUPS",
+        "FRENCHVOCAB_MAX_BACKUPS",
+        "FRENCH_VOCAB_MAX_BACKUPS",
+    )
+
+    def _clear_backup_retention_env(self) -> None:
+        for env_name in self._BACKUP_RETENTION_ENV_NAMES:
+            os.environ.pop(env_name, None)
+
+    def _write_version_series(self, path: Path, write_count: int) -> list[str]:
+        versions = [f"version-{i}" for i in range(write_count + 1)]
+        path.write_text(versions[0])
+
+        class IncrementingDatetime:
+            calls = 0
+
+            @classmethod
+            def now(cls, tz):
+                cls.calls += 1
+                return real_datetime(2026, 6, 12, 12, 0, 0, cls.calls, tzinfo=tz)
+
+        with patch("vocab_builder.core.file_safety.datetime", IncrementingDatetime):
+            for index in range(1, write_count + 1):
+                atomic_write_text(path, versions[index], create_backup=True)
+                self.assertEqual(path.read_text(), versions[index])
+
+        return versions
 
     def test_atomic_write_creates_backup(self):
         """Test that atomic write creates a backup of the original file."""
@@ -42,6 +78,101 @@ class TestAtomicFileWriter(unittest.TestCase):
             snapshot_contents = {snapshot.read_text() for snapshot in snapshots}
             self.assertIn("original content", snapshot_contents)
             self.assertIn("first update", snapshot_contents)
+
+    def test_atomic_write_prunes_timestamped_snapshots_to_default_cap(self):
+        """Test that default retention keeps the ten newest timestamped snapshots."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.txt"
+
+            with patch.dict(os.environ, {}, clear=False):
+                self._clear_backup_retention_env()
+                versions = self._write_version_series(path, 12)
+
+            snapshots = sorted(Path(td).glob("test.txt.*.bak"))
+            self.assertEqual(len(snapshots), 10)
+            self.assertEqual(
+                [snapshot.read_text() for snapshot in snapshots],
+                versions[2:12],
+            )
+
+    def test_backup_retention_preserves_latest_backup_and_non_matching_neighbors(self):
+        """Test that only strict timestamped snapshots are pruning candidates."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.txt"
+            neighbor = Path(td) / "test.txt.not-a-timestamp.bak"
+            recovered = Path(td) / "test.txt.20260612T120000000000Z.recovered_bak"
+            suffix_neighbor = Path(td) / "test.txt.20260612T120000000000Z.bak.extra"
+            neighbor.write_text("neighbor")
+            recovered.write_text("recovered")
+            suffix_neighbor.write_text("suffix neighbor")
+
+            with patch.dict(os.environ, {"VOCABBUILDER_MAX_BACKUPS": "3"}, clear=False):
+                versions = self._write_version_series(path, 5)
+
+            snapshots = sorted(Path(td).glob("test.txt.20260612T*.bak"))
+            self.assertEqual(len(snapshots), 3)
+            self.assertEqual(path.with_suffix(".txt.bak").read_text(), versions[-2])
+            self.assertEqual(neighbor.read_text(), "neighbor")
+            self.assertEqual(recovered.read_text(), "recovered")
+            self.assertEqual(suffix_neighbor.read_text(), "suffix neighbor")
+
+    def test_backup_retention_preserves_other_source_snapshots(self):
+        """Test that snapshots for a different source file are never pruned."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.txt"
+            other_snapshot = Path(td) / "other.txt.20260612T120000000000Z.bak"
+            other_snapshot.write_text("other source")
+
+            with patch.dict(os.environ, {"VOCABBUILDER_MAX_BACKUPS": "3"}, clear=False):
+                self._write_version_series(path, 5)
+
+            self.assertEqual(other_snapshot.read_text(), "other source")
+            self.assertEqual(len(sorted(Path(td).glob("test.txt.*.bak"))), 3)
+
+    def test_backup_retention_honors_max_backups_env(self):
+        """Test that VOCABBUILDER_MAX_BACKUPS overrides the default cap."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.txt"
+
+            with patch.dict(os.environ, {"VOCABBUILDER_MAX_BACKUPS": "3"}, clear=False):
+                versions = self._write_version_series(path, 5)
+
+            snapshots = sorted(Path(td).glob("test.txt.*.bak"))
+            self.assertEqual(len(snapshots), 3)
+            self.assertEqual(
+                [snapshot.read_text() for snapshot in snapshots],
+                versions[2:5],
+            )
+
+    def test_backup_retention_zero_disables_pruning(self):
+        """Test that VOCABBUILDER_MAX_BACKUPS=0 keeps unlimited snapshots."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.txt"
+
+            with patch.dict(os.environ, {"VOCABBUILDER_MAX_BACKUPS": "0"}, clear=False):
+                versions = self._write_version_series(path, 12)
+
+            snapshots = sorted(Path(td).glob("test.txt.*.bak"))
+            self.assertEqual(len(snapshots), 12)
+            self.assertEqual(
+                [snapshot.read_text() for snapshot in snapshots],
+                versions[:-1],
+            )
+
+    def test_backup_retention_garbage_env_falls_back_to_default(self):
+        """Test that invalid VOCABBUILDER_MAX_BACKUPS values fall back to ten."""
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.txt"
+
+            with patch.dict(os.environ, {"VOCABBUILDER_MAX_BACKUPS": "garbage"}, clear=False):
+                versions = self._write_version_series(path, 12)
+
+            snapshots = sorted(Path(td).glob("test.txt.*.bak"))
+            self.assertEqual(len(snapshots), 10)
+            self.assertEqual(
+                [snapshot.read_text() for snapshot in snapshots],
+                versions[2:12],
+            )
 
     def test_atomic_write_no_backup_when_disabled(self):
         """Test that backup is not created when create_backup=False."""
@@ -241,12 +372,13 @@ class TestAtomicFileWriter(unittest.TestCase):
             versions = ["initial"]
             path.write_text(versions[0])
 
-            for i in range(30):
-                alphabet = "abcXYZ012{}[] \n"
-                content = f"{i}:" + "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 80)))
-                versions.append(content)
-                atomic_write_text(path, content, create_backup=True)
-                self.assertEqual(path.read_text(), content)
+            with patch.dict(os.environ, {"VOCABBUILDER_MAX_BACKUPS": "0"}, clear=False):
+                for i in range(30):
+                    alphabet = "abcXYZ012{}[] \n"
+                    content = f"{i}:" + "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 80)))
+                    versions.append(content)
+                    atomic_write_text(path, content, create_backup=True)
+                    self.assertEqual(path.read_text(), content)
 
             self.assertEqual(path.with_suffix(".txt.bak").read_text(), versions[-2])
             snapshot_contents = {

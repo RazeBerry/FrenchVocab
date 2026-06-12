@@ -9,6 +9,7 @@ Provides utilities to prevent data loss from:
 
 import hashlib
 import os
+import re
 import shutil
 import tempfile
 import threading
@@ -16,6 +17,12 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Optional
+
+from vocab_builder.compat import get_env
+
+
+_DEFAULT_MAX_BACKUP_SNAPSHOTS = 10
+_MAX_BACKUPS_ENV_VAR = "VOCABBUILDER_MAX_BACKUPS"
 
 
 class AtomicFileWriter:
@@ -161,7 +168,47 @@ def create_backup_snapshot(path: Path, backup_suffix: str = ".bak") -> Optional[
         snapshot = source.with_name(f"{source.name}.{timestamp}.{counter}{backup_suffix}")
         counter += 1
     _copy_file_atomic(source, snapshot)
+    _prune_backup_snapshots(source, backup_suffix)
     return latest_backup
+
+
+def _max_backup_snapshots() -> int:
+    raw_value = get_env(_MAX_BACKUPS_ENV_VAR)
+    if raw_value is None:
+        return _DEFAULT_MAX_BACKUP_SNAPSHOTS
+
+    try:
+        max_backups = int(raw_value)
+    except (TypeError, ValueError):
+        return _DEFAULT_MAX_BACKUP_SNAPSHOTS
+
+    if max_backups >= 1 or max_backups == 0:
+        return max_backups
+    return _DEFAULT_MAX_BACKUP_SNAPSHOTS
+
+
+def _prune_backup_snapshots(source: Path, backup_suffix: str) -> None:
+    max_backups = _max_backup_snapshots()
+    if max_backups == 0:
+        return
+
+    snapshot_pattern = re.compile(
+        rf"^{re.escape(source.name)}\.\d{{8}}T\d{{12}}Z(\.\d+)?{re.escape(backup_suffix)}$"
+    )
+    try:
+        candidates = [
+            candidate
+            for candidate in source.parent.iterdir()
+            if candidate.is_file() and snapshot_pattern.match(candidate.name)
+        ]
+    except OSError:
+        return
+
+    for stale_snapshot in sorted(candidates, key=lambda path: path.name)[:-max_backups]:
+        try:
+            stale_snapshot.unlink()
+        except OSError:
+            pass
 
 
 def _lock_path_for(path: Path) -> Path:
