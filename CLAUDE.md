@@ -141,6 +141,8 @@ choice = self.ui.interactive_menu(
 All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENCH_VOCAB_*` names are still recognized via `vocab_builder/compat.py` with deprecation warnings.
 
 - `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`: Provider API credentials.
+- `VOCABBUILDER_CLAUDE_MODEL`: Override Claude model ID (default `claude-sonnet-4-6`).
+- `VOCABBUILDER_GEMINI_MODEL`: Override Gemini model ID (default `gemini-3-flash-preview`).
 - `VOCABBUILDER_CONFIG_DIR`: Override directory used for `.env` storage/loading.
 - `VOCABBUILDER_SKIP_KEYRING=1`: Disable keyring lookups/storage.
 - `VOCABBUILDER_FORCE_SYNC_LOAD=1`: Force synchronous loading (useful in tests).

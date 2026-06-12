@@ -30,6 +30,16 @@ _PROVIDER_DISCOVERY_ORDER: Tuple[Tuple[str, str, str], ...] = (
 )
 
 
+def _resolve_model_name(env_var: str, default: str) -> str:
+    from vocab_builder.compat import get_env
+
+    configured = get_env(env_var)
+    if configured is None:
+        return default
+    stripped = configured.strip()
+    return stripped or default
+
+
 def _candidate_env_paths() -> Tuple[Path, ...]:
     from vocab_builder.compat import config_homes_for_read, get_env, runtime_root
     candidates = []
@@ -199,6 +209,10 @@ class GeminiClient(LLMClient):
 
         self._types = types
         self._client = genai.Client(api_key=key)
+        self._model_name = _resolve_model_name(
+            "VOCABBUILDER_GEMINI_MODEL",
+            self.MODEL_NAME,
+        )
 
     def _maybe_raise_mapped_error(self, exc: Exception) -> None:
         if self._is_leaked_key_error(exc):
@@ -368,7 +382,7 @@ class GeminiClient(LLMClient):
         Example return: {'ttft': 0.5, 'tps': 50.0, 'tokens_out': 100, 'usage': {...}}
         """
         client = self._client
-        model_name = self.MODEL_NAME
+        model_name = self._model_name
 
         t0 = perf_counter()
         sdk_level = self._resolve_thinking_level(thinking_level)
@@ -387,7 +401,7 @@ class GeminiClient(LLMClient):
         return self._build_metrics(state.ttft, out_tokens, tps, usage_summary)
 
     def model_label(self) -> str:
-        return f"Google Gemini ({self.MODEL_NAME})"
+        return f"Google Gemini ({self._model_name})"
 
     def verify_credentials(self, timeout: float = 5.0) -> None:
         def _probe() -> None:
@@ -397,7 +411,7 @@ class GeminiClient(LLMClient):
                     parts=[self._types.Part.from_text(text="credential-check")],
                 )
             ]
-            self._client.models.count_tokens(model=self.MODEL_NAME, contents=payload)
+            self._client.models.count_tokens(model=self._model_name, contents=payload)
 
         executor = ThreadPoolExecutor(max_workers=1)
         future = executor.submit(_probe)
@@ -458,7 +472,7 @@ class GeminiClient(LLMClient):
         )
 
 class ClaudeClient(LLMClient):
-    MODEL_NAME = "claude-3-5-sonnet-20240620"
+    MODEL_NAME = "claude-sonnet-4-6"
 
     def __init__(self, api_key: str | None = None):
         try:
@@ -473,6 +487,10 @@ class ClaudeClient(LLMClient):
         if not key:
             raise RuntimeError("ANTHROPIC_API_KEY is not set")
         self._client = anthropic.Anthropic(api_key=key)
+        self._model_name = _resolve_model_name(
+            "VOCABBUILDER_CLAUDE_MODEL",
+            self.MODEL_NAME,
+        )
 
     def stream(self, prompt: str, *, thinking_level: str = "low"):
         # Claude doesn't use thinking_level; parameter accepted for interface compatibility
@@ -481,15 +499,12 @@ class ClaudeClient(LLMClient):
         pieces: list[str] = []
 
         with self._client.messages.stream(
-            model=self.MODEL_NAME,
+            model=self._model_name,
             max_tokens=8192,
             temperature=0.1,
             messages=[
                 {"role": "user", "content": [{"type": "text", "text": prompt}]}
             ],
-            extra_headers={
-                "anthropic-beta": "max-tokens-3-5-sonnet-2024-07-15"
-            },
         ) as stream:
             for text in stream.text_stream:
                 if not t_first:
@@ -522,7 +537,7 @@ class ClaudeClient(LLMClient):
         return metrics
 
     def model_label(self) -> str:
-        return f"Anthropic Claude ({self.MODEL_NAME})"
+        return f"Anthropic Claude ({self._model_name})"
 
     def verify_credentials(self, timeout: float = 5.0) -> None:
         def _probe() -> None:

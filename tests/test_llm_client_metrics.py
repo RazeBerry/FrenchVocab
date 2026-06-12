@@ -18,10 +18,12 @@ class _FakeStream:
 
 class _Models:
     def __init__(self, stream_factory=None):
+        self.last_stream_kwargs = None
         self.last_count_kwargs = None
         self._stream_factory = stream_factory or _FakeStream
 
-    def generate_content_stream(self, **_kwargs):
+    def generate_content_stream(self, **kwargs):
+        self.last_stream_kwargs = kwargs
         return self._stream_factory()
 
     def count_tokens(self, **kwargs):
@@ -96,6 +98,94 @@ def _restore_google_stub(saved):
             sys.modules[name] = module
 
 
+class _ClaudeMessageStream:
+    def __init__(self):
+        self.text_stream = iter(["hello", "world"])
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+    def get_final_message(self):
+        return SimpleNamespace(
+            usage=SimpleNamespace(input_tokens=7, output_tokens=11)
+        )
+
+
+class _ClaudeMessages:
+    def __init__(self):
+        self.last_stream_kwargs = None
+
+    def stream(self, **kwargs):
+        self.last_stream_kwargs = kwargs
+        return _ClaudeMessageStream()
+
+
+class _ClaudeModels:
+    def list(self):
+        return []
+
+
+class _ClaudeClient:
+    def __init__(self, api_key=None):
+        self.api_key = api_key
+        self.messages = _ClaudeMessages()
+        self.models = _ClaudeModels()
+
+
+def _install_anthropic_stub():
+    saved = sys.modules.get("anthropic")
+    clients = []
+
+    anthropic_mod = types.ModuleType("anthropic")
+
+    def _create_client(api_key=None):
+        client = _ClaudeClient(api_key=api_key)
+        clients.append(client)
+        return client
+
+    anthropic_mod.Anthropic = _create_client
+    sys.modules["anthropic"] = anthropic_mod
+    return saved, clients
+
+
+def _restore_anthropic_stub(saved):
+    if saved is None:
+        sys.modules.pop("anthropic", None)
+    else:
+        sys.modules["anthropic"] = saved
+
+
+def _load_real_llm_client():
+    sys.modules.pop("vocab_builder.llm_client", None)
+    sys.modules.pop("llm_client", None)
+    llm_client = importlib.import_module("vocab_builder.llm_client")
+    return importlib.reload(llm_client)
+
+
+def _consume_stream(generator):
+    chunks = []
+    while True:
+        try:
+            chunks.append(next(generator))
+        except StopIteration as stop:
+            return "".join(chunks), stop.value
+
+
+def _clear_model_env(monkeypatch):
+    for name in (
+        "VOCABBUILDER_CLAUDE_MODEL",
+        "VOCABBUILDER_GEMINI_MODEL",
+        "FRENCHVOCAB_CLAUDE_MODEL",
+        "FRENCHVOCAB_GEMINI_MODEL",
+        "FRENCH_VOCAB_CLAUDE_MODEL",
+        "FRENCH_VOCAB_GEMINI_MODEL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_gemini_client_uses_structured_token_payload(tmp_path):
     os.environ["GEMINI_API_KEY"] = "AIza" + "x" * 36
     saved = _install_google_stub()
@@ -127,6 +217,97 @@ def test_gemini_client_uses_structured_token_payload(tmp_path):
         assert metrics["usage"]["total_tokens"] == 5
     finally:
         _restore_google_stub(saved)
+
+
+def test_model_labels_use_default_models_when_env_unset(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
+    _clear_model_env(monkeypatch)
+    google_saved = _install_google_stub()
+    anthropic_saved, _clients = _install_anthropic_stub()
+    try:
+        llm_client = _load_real_llm_client()
+
+        gemini = llm_client.GeminiClient()
+        claude = llm_client.ClaudeClient(api_key="sk-ant-" + "x" * 40)
+
+        assert gemini.model_label() == "Google Gemini (gemini-3-flash-preview)"
+        assert claude.model_label() == "Anthropic Claude (claude-sonnet-4-6)"
+    finally:
+        _restore_google_stub(google_saved)
+        _restore_anthropic_stub(anthropic_saved)
+
+
+def test_model_labels_use_env_overrides(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
+    monkeypatch.setenv("VOCABBUILDER_GEMINI_MODEL", "gemini-test-model")
+    monkeypatch.setenv("VOCABBUILDER_CLAUDE_MODEL", "claude-test-model")
+    google_saved = _install_google_stub()
+    anthropic_saved, _clients = _install_anthropic_stub()
+    try:
+        llm_client = _load_real_llm_client()
+
+        gemini = llm_client.GeminiClient()
+        claude = llm_client.ClaudeClient(api_key="sk-ant-" + "x" * 40)
+
+        assert gemini.model_label() == "Google Gemini (gemini-test-model)"
+        assert claude.model_label() == "Anthropic Claude (claude-test-model)"
+    finally:
+        _restore_google_stub(google_saved)
+        _restore_anthropic_stub(anthropic_saved)
+
+
+def test_model_override_whitespace_falls_back_to_defaults(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
+    monkeypatch.setenv("VOCABBUILDER_GEMINI_MODEL", "   ")
+    monkeypatch.setenv("VOCABBUILDER_CLAUDE_MODEL", "\t")
+    google_saved = _install_google_stub()
+    anthropic_saved, _clients = _install_anthropic_stub()
+    try:
+        llm_client = _load_real_llm_client()
+
+        gemini = llm_client.GeminiClient()
+        claude = llm_client.ClaudeClient(api_key="sk-ant-" + "x" * 40)
+
+        assert gemini.model_label() == "Google Gemini (gemini-3-flash-preview)"
+        assert claude.model_label() == "Anthropic Claude (claude-sonnet-4-6)"
+    finally:
+        _restore_google_stub(google_saved)
+        _restore_anthropic_stub(anthropic_saved)
+
+
+def test_resolved_models_are_used_for_provider_requests(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
+    monkeypatch.setenv("VOCABBUILDER_GEMINI_MODEL", "gemini-request-model")
+    monkeypatch.setenv("VOCABBUILDER_CLAUDE_MODEL", "claude-request-model")
+    google_saved = _install_google_stub()
+    anthropic_saved, clients = _install_anthropic_stub()
+    try:
+        llm_client = _load_real_llm_client()
+
+        gemini = llm_client.GeminiClient()
+        gemini_text, gemini_metrics = _consume_stream(gemini.stream("prompt"))
+
+        claude = llm_client.ClaudeClient(api_key="sk-ant-" + "x" * 40)
+        claude_text, claude_metrics = _consume_stream(claude.stream("prompt"))
+
+        assert gemini_text == "helloworld"
+        assert gemini_metrics["usage"]["output_tokens"] == 5
+        assert gemini._client.models.last_stream_kwargs["model"] == "gemini-request-model"
+        assert gemini._client.models.last_count_kwargs["model"] == "gemini-request-model"
+
+        assert claude_text == "helloworld"
+        assert claude_metrics["usage"]["prompt_tokens"] == 7
+        assert claude_metrics["usage"]["output_tokens"] == 11
+        stream_kwargs = clients[0].messages.last_stream_kwargs
+        assert stream_kwargs["model"] == "claude-request-model"
+        assert stream_kwargs["max_tokens"] == 8192
+        assert stream_kwargs["temperature"] == 0.1
+        assert "extra_headers" not in stream_kwargs
+        assert "top_p" not in stream_kwargs
+        assert "thinking" not in stream_kwargs
+    finally:
+        _restore_google_stub(google_saved)
+        _restore_anthropic_stub(anthropic_saved)
 
 
 def test_gemini_client_reports_usage_metadata(tmp_path):
