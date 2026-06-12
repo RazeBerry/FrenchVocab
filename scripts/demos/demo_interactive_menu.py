@@ -1,13 +1,25 @@
 #!/usr/bin/env python
-"""Test script to showcase the new interactive menu design."""
+"""Showcase the interactive menu design."""
 
-from vocab_builder.cli.navigation import _render_menu
+import sys
+from pathlib import Path
+
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
-from rich import box
 
-def test_menu_rendering():
+
+def _ensure_repo_root_on_path() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+
+def main() -> None:
     """Display the new interactive menu styling."""
+    _ensure_repo_root_on_path()
+    from vocab_builder.cli.navigation import _render_menu
+
     console = Console()
 
     console.print("\n[bold #E67E50]═══ Anthropic-Themed Interactive Menu ═══[/]\n")
@@ -70,5 +82,6 @@ def test_menu_rendering():
     console.print("  • [bold]Icons:[/] Emoji support for visual context")
     console.print("  • [bold]Brand:[/] Colors match Anthropic's design language\n")
 
+
 if __name__ == "__main__":
-    test_menu_rendering()
+    main()

@@ -1,11 +1,23 @@
 #!/usr/bin/env python
-"""Test script to showcase the new modern UI design."""
+"""Showcase the modern UI design."""
 
-from vocab_builder.ui_helper import UIHelper
+import sys
+from pathlib import Path
+
 from rich.console import Console
 
-def test_modern_ui():
+
+def _ensure_repo_root_on_path() -> None:
+    repo_root = Path(__file__).resolve().parents[2]
+    if str(repo_root) not in sys.path:
+        sys.path.insert(0, str(repo_root))
+
+
+def main() -> None:
     """Display examples of all the modernized UI elements."""
+    _ensure_repo_root_on_path()
+    from vocab_builder.ui_helper import UIHelper
+
     console = Console()
     ui = UIHelper(console)
 
@@ -76,5 +88,6 @@ def test_modern_ui():
     console.print("  [dim]• Enhanced visual hierarchy[/]")
     console.print("  [dim]• Warm, approachable aesthetic matching Anthropic's brand[/]\n")
 
+
 if __name__ == "__main__":
-    test_modern_ui()
+    main()

@@ -5,7 +5,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich import box
 
-def demonstrate_esc_behavior():
+
+def main() -> None:
     """Show how ESC key works at different menu levels."""
     console = Console()
 
@@ -140,5 +141,6 @@ def demonstrate_esc_behavior():
     console.print("[dim]  • Key detection on their platform (Windows vs POSIX)[/]")
     console.print("[dim]  • Whether they're on main menu (where ESC = exit, not back)[/]\n")
 
+
 if __name__ == "__main__":
-    demonstrate_esc_behavior()
+    main()

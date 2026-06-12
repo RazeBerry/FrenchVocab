@@ -1,12 +1,13 @@
 #!/usr/bin/env python
-"""Test script to demonstrate consistent panel width behavior."""
+"""Demonstrate consistent panel width behavior."""
 
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich import box
 
-def test_panel_consistency():
+
+def main() -> None:
     """Demonstrate the new design system for panel widths."""
     console = Console()
 
@@ -89,5 +90,6 @@ def test_panel_consistency():
     console.print("  • [#51cf66]✓[/#51cf66] Professional, cohesive design")
     console.print("  • [#51cf66]✓[/#51cf66] Follows Anthropic's design language\n")
 
+
 if __name__ == "__main__":
-    test_panel_consistency()
+    main()
