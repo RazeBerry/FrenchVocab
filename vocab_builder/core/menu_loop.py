@@ -19,10 +19,10 @@ def main_menu_loop(app: VocabAppProtocol) -> None:
 
 def _refresh_menu_counts(app: VocabAppProtocol) -> None:
     app.entry_count = app.count_entries()
-    if app.eng_to_fr_translator:
-        app.eng_to_fr_translator.entry_count = len(app.eng_to_fr_translator.pairs)
-    if app.fr_to_eng_translator:
-        app.fr_to_eng_translator.entry_count = len(app.fr_to_eng_translator.pairs)
+    if app.eng_to_target_translator:
+        app.eng_to_target_translator.entry_count = len(app.eng_to_target_translator.pairs)
+    if app.target_to_eng_translator:
+        app.target_to_eng_translator.entry_count = len(app.target_to_eng_translator.pairs)
 
 
 def _handle_main_choice(app: VocabAppProtocol, choice: str) -> bool:
@@ -70,8 +70,8 @@ def _run_auto_translation(app: VocabAppProtocol) -> None:
 def _run_eng_to_target(app: VocabAppProtocol) -> None:
     if not app.ensure_llm_ready():
         return
-    if app.eng_to_fr_translator:
-        app.eng_to_fr_translator.run()
+    if app.eng_to_target_translator:
+        app.eng_to_target_translator.run()
         return
     title = app._translator_title(app.language_config.eng_to_target)
     app.ui.error(f"{title} is unavailable because the AI provider could not be initialized.")
@@ -80,8 +80,8 @@ def _run_eng_to_target(app: VocabAppProtocol) -> None:
 def _run_target_to_eng(app: VocabAppProtocol) -> None:
     if not app.ensure_llm_ready():
         return
-    if app.fr_to_eng_translator:
-        app.fr_to_eng_translator.run()
+    if app.target_to_eng_translator:
+        app.target_to_eng_translator.run()
         return
     title = app._translator_title(app.language_config.target_to_eng)
     app.ui.error(f"{title} is unavailable because the AI provider could not be initialized.")

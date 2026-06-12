@@ -53,12 +53,12 @@ class VocabAppProtocol(Protocol):
         ...
 
     @property
-    def eng_to_fr_translator(self) -> Optional["TranslatorCLI"]:
+    def eng_to_target_translator(self) -> Optional["TranslatorCLI"]:
         """English to target language translator, if available."""
         ...
 
     @property
-    def fr_to_eng_translator(self) -> Optional["TranslatorCLI"]:
+    def target_to_eng_translator(self) -> Optional["TranslatorCLI"]:
         """Target language to English translator, if available."""
         ...
 

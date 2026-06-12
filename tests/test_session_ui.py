@@ -25,15 +25,15 @@ class _StubLLM:
 
 
 def test_main_menu_counts_translation_files_while_ai_initializes(tmp_path: Path):
-    eng_to_fr = tmp_path / "EnglishToFrench.tex"
-    fr_to_eng = tmp_path / "FrenchToEnglish.tex"
-    eng_to_fr.write_text(
+    eng_to_target = tmp_path / "EnglishToFrench.tex"
+    target_to_eng = tmp_path / "FrenchToEnglish.tex"
+    eng_to_target.write_text(
         r"""% Usage: \engfre{English Text}{French Translation}
 Literal percent \% before command: \engfre{hello}{bonjour}
 """,
         encoding="utf-8",
     )
-    fr_to_eng.write_text(
+    target_to_eng.write_text(
         r"""% \freeng{commented}{ignored}
 \freeng{salut}{hi}
 """,
@@ -41,10 +41,10 @@ Literal percent \% before command: \engfre{hello}{bonjour}
     )
 
     app = SimpleNamespace(
-        eng_to_fr_translator=None,
-        fr_to_eng_translator=None,
-        eng_to_fr_latex_file=eng_to_fr,
-        fr_to_eng_latex_file=fr_to_eng,
+        eng_to_target_translator=None,
+        target_to_eng_translator=None,
+        eng_to_target_latex_file=eng_to_target,
+        target_to_eng_latex_file=target_to_eng,
         language_config=get_language_config("fr"),
         entry_count=462,
         _llm=_StubLLM(),

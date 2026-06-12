@@ -38,6 +38,31 @@ def test_word_entries_and_normalized_entries_fallback_for_test_doubles() -> None
     assert builder.normalized_entries["salut"] == "salut"
 
 
+def test_deprecated_translator_aliases_warn_and_delegate() -> None:
+    builder = object.__new__(VocabBuilder)
+    eng_to_target = object()
+    target_to_eng = object()
+
+    builder.eng_to_target_translator = eng_to_target
+    builder.target_to_eng_translator = target_to_eng
+
+    with pytest.warns(DeprecationWarning):
+        assert builder.eng_to_fr_translator is eng_to_target
+    with pytest.warns(DeprecationWarning):
+        assert builder.fr_to_eng_translator is target_to_eng
+
+    next_eng_to_target = object()
+    next_target_to_eng = object()
+
+    with pytest.warns(DeprecationWarning):
+        builder.eng_to_fr_translator = next_eng_to_target
+    with pytest.warns(DeprecationWarning):
+        builder.fr_to_eng_translator = next_target_to_eng
+
+    assert builder.eng_to_target_translator is next_eng_to_target
+    assert builder.target_to_eng_translator is next_target_to_eng
+
+
 def test_word_entries_raise_clear_error_when_uninitialized() -> None:
     builder = object.__new__(VocabBuilder)
 

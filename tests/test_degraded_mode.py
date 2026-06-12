@@ -59,8 +59,8 @@ def test_builder_enters_degraded_mode_when_setup_fails(monkeypatch, tmp_path):
     assert builder.client is None
     assert builder.api_available is False
     assert builder.api_error_reason == "forced failure"
-    assert builder.eng_to_fr_translator is None
-    assert builder.fr_to_eng_translator is None
+    assert builder.eng_to_target_translator is None
+    assert builder.target_to_eng_translator is None
 
 
 def test_reconfigure_provider_restores_client(monkeypatch, tmp_path):
@@ -102,8 +102,8 @@ def test_reconfigure_provider_restores_client(monkeypatch, tmp_path):
     assert isinstance(builder.client, _DummyClient)
     assert builder.api_available is True
     assert builder.api_error_reason is None
-    assert builder.eng_to_fr_translator is not None
-    assert builder.fr_to_eng_translator is not None
+    assert builder.eng_to_target_translator is not None
+    assert builder.target_to_eng_translator is not None
 
 
 def test_ensure_llm_ready_skip_returns_false(monkeypatch, tmp_path):

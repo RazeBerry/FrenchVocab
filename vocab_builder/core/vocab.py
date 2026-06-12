@@ -1,6 +1,7 @@
 import os
 import string
 import unicodedata
+import warnings
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from pathlib import Path
 from rich.console import Console
@@ -131,6 +132,42 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
             return
         object.__setattr__(self, "_normalized_entries_fallback", value)
 
+    @property
+    def eng_to_fr_translator(self) -> Optional["TranslatorCLI"]:
+        warnings.warn(
+            "Deprecated translator alias; use eng_to_target_translator.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.eng_to_target_translator
+
+    @eng_to_fr_translator.setter
+    def eng_to_fr_translator(self, value: Optional["TranslatorCLI"]) -> None:
+        warnings.warn(
+            "Deprecated translator alias; use eng_to_target_translator.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.eng_to_target_translator = value
+
+    @property
+    def fr_to_eng_translator(self) -> Optional["TranslatorCLI"]:
+        warnings.warn(
+            "Deprecated translator alias; use target_to_eng_translator.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.target_to_eng_translator
+
+    @fr_to_eng_translator.setter
+    def fr_to_eng_translator(self, value: Optional["TranslatorCLI"]) -> None:
+        warnings.warn(
+            "Deprecated translator alias; use target_to_eng_translator.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.target_to_eng_translator = value
+
     def _ensure_anki_manager(self) -> "AnkiExportManager":
         """Return the AnkiExportManager, creating one for test doubles if needed.
 
@@ -245,8 +282,8 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
         else:
             self.latex_file = Path(latex_file)
             base_dir = self.latex_file.parent
-        self.eng_to_fr_latex_file = base_dir / self.language_config.eng_to_target_filename
-        self.fr_to_eng_latex_file = base_dir / self.language_config.target_to_eng_filename
+        self.eng_to_target_latex_file = base_dir / self.language_config.eng_to_target_filename
+        self.target_to_eng_latex_file = base_dir / self.language_config.target_to_eng_filename
 
     def _initialize_vocab_repository(self) -> None:
         if not self.latex_file.exists():
@@ -282,8 +319,8 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
         self._load_input_limits()
         self.history_logger = self._create_history_logger()
 
-        self.eng_to_fr_translator: Optional["TranslatorCLI"] = None
-        self.fr_to_eng_translator: Optional["TranslatorCLI"] = None
+        self.eng_to_target_translator: Optional["TranslatorCLI"] = None
+        self.target_to_eng_translator: Optional["TranslatorCLI"] = None
         self.auto_translator: Optional["AutoTranslator"] = None
         self.duplicate_resolution: Optional[Dict[str, str]] = None
         self.enable_auto_translator: bool = self._should_enable_auto_translator()
@@ -355,8 +392,8 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
 
     def _on_llm_degraded(self, reason: str) -> None:
         """Callback invoked by LLMCoordinator when entering degraded mode."""
-        self.eng_to_fr_translator = None
-        self.fr_to_eng_translator = None
+        self.eng_to_target_translator = None
+        self.target_to_eng_translator = None
         self.auto_translator = None
 
     @property
@@ -520,38 +557,38 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
     def _init_translators(self) -> None:
         """Instantiate translator flows when an LLM client is available."""
         if not self.client:
-            self.eng_to_fr_translator = None
-            self.fr_to_eng_translator = None
+            self.eng_to_target_translator = None
+            self.target_to_eng_translator = None
             self.auto_translator = None
             return
         from .translator import TranslatorCLI
 
         if (
-            self.eng_to_fr_translator
-            and self.fr_to_eng_translator
-            and self.eng_to_fr_translator.client is self.client
-            and self.fr_to_eng_translator.client is self.client
+            self.eng_to_target_translator
+            and self.target_to_eng_translator
+            and self.eng_to_target_translator.client is self.client
+            and self.target_to_eng_translator.client is self.client
         ):
             return
 
         eng_to_target = self.language_config.eng_to_target
         target_to_eng = self.language_config.target_to_eng
 
-        self.eng_to_fr_translator = TranslatorCLI(
+        self.eng_to_target_translator = TranslatorCLI(
             console=self.console,
             client=self.client,
             config=eng_to_target,
-            latex_file_path=self.eng_to_fr_latex_file,
+            latex_file_path=self.eng_to_target_latex_file,
             direction="eng_to_target",
             logger=self.history_logger,
             usage_callback=self._record_usage,
             on_query_exception=self._handle_ai_exception,
         )
-        self.fr_to_eng_translator = TranslatorCLI(
+        self.target_to_eng_translator = TranslatorCLI(
             console=self.console,
             client=self.client,
             config=target_to_eng,
-            latex_file_path=self.fr_to_eng_latex_file,
+            latex_file_path=self.target_to_eng_latex_file,
             direction="target_to_eng",
             logger=self.history_logger,
             usage_callback=self._record_usage,
@@ -571,7 +608,7 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
             self.auto_translator = None
             return
 
-        if not (self.eng_to_fr_translator and self.fr_to_eng_translator):
+        if not (self.eng_to_target_translator and self.target_to_eng_translator):
             self.auto_translator = None
             return
 
@@ -580,8 +617,8 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
             console=self.console,
             client=self.client,
             language_config=self.language_config,
-            eng_to_target=self.eng_to_fr_translator,
-            target_to_eng=self.fr_to_eng_translator,
+            eng_to_target=self.eng_to_target_translator,
+            target_to_eng=self.target_to_eng_translator,
             prompt_template=prompt,
             prompt_variable=prompt_variable,
             usage_callback=self._record_usage,
@@ -1168,8 +1205,8 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
         """Display file paths and configuration."""
         info_text = (
             f"[bold]Vocabulary File:[/bold]\n  {self.latex_file}\n\n"
-            f"[bold]English → {self.language_config.display_name}:[/bold]\n  {self.eng_to_fr_latex_file}\n\n"
-            f"[bold]{self.language_config.display_name} → English:[/bold]\n  {self.fr_to_eng_latex_file}\n\n"
+            f"[bold]English → {self.language_config.display_name}:[/bold]\n  {self.eng_to_target_latex_file}\n\n"
+            f"[bold]{self.language_config.display_name} → English:[/bold]\n  {self.target_to_eng_latex_file}\n\n"
             f"[bold]Exported Words Tracker:[/bold]\n  {self.exported_words_file}\n\n"
             f"[bold]Project Root:[/bold]\n  {self.project_root}"
         )
@@ -1218,7 +1255,7 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
                 language_config=self.language_config,
                 history_logger=self.history_logger,
                 spelling_checker=self._spelling_checker,
-                fr_to_eng_translator=self.fr_to_eng_translator,
+                target_to_eng_translator=self.target_to_eng_translator,
                 options=workflow_options,
                 callbacks=workflow_callbacks,
             )

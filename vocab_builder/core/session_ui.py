@@ -113,14 +113,14 @@ def build_welcome_message(app: Any, provider_name: str) -> Tuple[str, str]:
 def show_main_menu(app: Any) -> str:
     eng_fr_count = _translation_pair_count(
         app,
-        translator_attr="eng_to_fr_translator",
-        file_attr="eng_to_fr_latex_file",
+        translator_attr="eng_to_target_translator",
+        file_attr="eng_to_target_latex_file",
         config=app.language_config.eng_to_target,
     )
     fr_eng_count = _translation_pair_count(
         app,
-        translator_attr="fr_to_eng_translator",
-        file_attr="fr_to_eng_latex_file",
+        translator_attr="target_to_eng_translator",
+        file_attr="target_to_eng_latex_file",
         config=app.language_config.target_to_eng,
     )
 
@@ -181,14 +181,14 @@ def show_translation_menu(app: Any) -> str:
     target_to_cfg = app.language_config.target_to_eng
     eng_fr_count = _translation_pair_count(
         app,
-        translator_attr="eng_to_fr_translator",
-        file_attr="eng_to_fr_latex_file",
+        translator_attr="eng_to_target_translator",
+        file_attr="eng_to_target_latex_file",
         config=eng_to_cfg,
     )
     fr_eng_count = _translation_pair_count(
         app,
-        translator_attr="fr_to_eng_translator",
-        file_attr="fr_to_eng_latex_file",
+        translator_attr="target_to_eng_translator",
+        file_attr="target_to_eng_latex_file",
         config=target_to_cfg,
     )
 
@@ -239,12 +239,12 @@ def show_post_translation_menu(app: Any) -> Optional[str]:
             if translation_choice == "auto" and app.auto_translator:
                 if app.ensure_llm_ready():
                     app.auto_translator.run()
-            elif translation_choice == "eng_to_target" and app.eng_to_fr_translator:
+            elif translation_choice == "eng_to_target" and app.eng_to_target_translator:
                 if app.ensure_llm_ready():
-                    app.eng_to_fr_translator.run()
-            elif translation_choice == "target_to_eng" and app.fr_to_eng_translator:
+                    app.eng_to_target_translator.run()
+            elif translation_choice == "target_to_eng" and app.target_to_eng_translator:
                 if app.ensure_llm_ready():
-                    app.fr_to_eng_translator.run()
+                    app.target_to_eng_translator.run()
             return "translate"
         if quick_action == "add":
             return "add"

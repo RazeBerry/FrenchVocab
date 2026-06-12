@@ -142,7 +142,7 @@ class TestSentenceFlow(unittest.TestCase):
             def translate_and_save(self, text, provided_translation=None):
                 calls['n'] += 1
                 return True
-        b.fr_to_eng_translator = _Spy()
+        b.target_to_eng_translator = _Spy()
         # Stub interactive_menu to return "menu" (go back to main menu)
         b.ui.interactive_menu = lambda *args, **kwargs: "menu"
 
@@ -164,7 +164,7 @@ class TestSentenceFlow(unittest.TestCase):
             def translate_and_save(self, text, provided_translation=None):
                 return True
 
-        b.fr_to_eng_translator = _Spy()
+        b.target_to_eng_translator = _Spy()
         b.get_word_input = lambda: "Ceci est une phrase."
         b.ui.interactive_menu = lambda *args, **kwargs: "menu"
         b._show_word_entry_quick_actions = lambda: (_ for _ in ()).throw(
@@ -185,7 +185,7 @@ class TestSentenceFlow(unittest.TestCase):
             def translate_and_save(self, text, provided_translation=None):
                 return False
 
-        b.fr_to_eng_translator = _Spy()
+        b.target_to_eng_translator = _Spy()
         b.query_ai = lambda _text: "stub"
         b.parse_ai_response = lambda _resp: (
             ["sentence"],
@@ -216,8 +216,8 @@ class TestSentenceFlow(unittest.TestCase):
 
         class _App:
             auto_translator = None
-            eng_to_fr_translator = None
-            fr_to_eng_translator = None
+            eng_to_target_translator = None
+            target_to_eng_translator = None
 
             class _UI:
                 @staticmethod

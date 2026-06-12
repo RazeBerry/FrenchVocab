@@ -88,7 +88,7 @@ class WordEntryWorkflow:
         *,
         history_logger: Optional[TranslationLogger] = None,
         spelling_checker: Optional[SpellingChecker] = None,
-        fr_to_eng_translator: Optional["TranslatorCLI"] = None,
+        target_to_eng_translator: Optional["TranslatorCLI"] = None,
         options: Optional[WorkflowOptions] = None,
         callbacks: Optional[WorkflowCallbacks] = None,
     ):
@@ -98,7 +98,7 @@ class WordEntryWorkflow:
         self.language_config = language_config
         self.history_logger = history_logger
         self.spelling_checker = spelling_checker or SpellingChecker(ui)
-        self.fr_to_eng_translator = fr_to_eng_translator
+        self.target_to_eng_translator = target_to_eng_translator
         resolved_options = options or WorkflowOptions()
         resolved_callbacks = callbacks or WorkflowCallbacks()
 
@@ -700,7 +700,7 @@ class WordEntryWorkflow:
         if not route:
             return False
 
-        if not self.fr_to_eng_translator:
+        if not self.target_to_eng_translator:
             alt_title = self._translator_title(self.language_config.target_to_eng)
             self.ui.error(
                 f"{alt_title} is not available (initialization failed). "
@@ -708,7 +708,7 @@ class WordEntryWorkflow:
             )
             return False
 
-        ok = self.fr_to_eng_translator.translate_and_save(original_word)
+        ok = self.target_to_eng_translator.translate_and_save(original_word)
         if ok is False:
             self.ui.warning("Translation cancelled or failed.")
             return False
