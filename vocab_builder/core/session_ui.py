@@ -59,6 +59,18 @@ def _command_is_in_latex_comment(content: str, command_pos: int) -> bool:
     return False
 
 
+def _composition_debt_count(app: Any) -> Optional[int]:
+    if not getattr(app, "enable_composition", True):
+        return None
+    getter = getattr(app, "composition_debt_count", None)
+    if not callable(getter):
+        return None
+    try:
+        return getter()
+    except (OSError, RuntimeError, ValueError, AttributeError):
+        return None
+
+
 def resolve_welcome_provider_name(app: Any) -> str:
     from vocab_builder.core.llm_coordinator import InitState
 
@@ -156,15 +168,22 @@ def show_main_menu(app: Any) -> str:
     app.ui.panel(status_text, title="Status", border_style="dim dark_orange")
 
     add_word_label = app._ui_text("menu.add_word", f"Add {language_name} word")
+    composition_count = _composition_debt_count(app)
 
     options = [
         ("add", add_word_label),
         ("translate", "Translate text"),
-        ("anki_tools", "Anki tools"),
-        ("browse", "Browse vocabulary"),
-        ("settings", "Settings & Configuration"),
-        ("exit", "[bold yellow]Exit[/bold yellow]"),
     ]
+    if composition_count is not None:
+        options.append(("composition", f"Composition practice   ({composition_count} unproduced)"))
+    options.extend(
+        [
+            ("anki_tools", "Anki tools"),
+            ("browse", "Browse vocabulary"),
+            ("settings", "Settings & Configuration"),
+            ("exit", "[bold yellow]Exit[/bold yellow]"),
+        ]
+    )
 
     try:
         return app.ui.interactive_menu(

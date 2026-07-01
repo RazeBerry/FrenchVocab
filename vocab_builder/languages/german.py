@@ -4,6 +4,7 @@ from typing import Dict
 
 from vocab_builder.ai_prompts import GERMAN_PROMPT_TEMPLATE
 from .base import (
+    CompositionConfig,
     LanguageConfig,
     TranslatorConfig,
     VocabTemplate,
@@ -127,6 +128,85 @@ Input:
 {source_text}
 """.strip()
 
+GERMAN_COMPOSITION_GRADING_PROMPT = """
+You are a rigorous but warm German composition coach for an advanced learner aiming at Goethe C2 register awareness.
+
+Grade one short German composition. The learner was asked to use the target words below. Judge whether each target word is used idiomatically in context, not merely present. Give reasons for every correction and one stronger alternative phrasing. Keep the feedback concise and practical.
+
+Target words:
+{target_words}
+
+Vocabulary details from the learner's own list:
+{word_details}
+
+Learner attempt:
+{user_text}
+
+Respond in plain text with exactly these section headers. Do not add any other headers.
+
+Corrected Text:
+<full corrected German attempt>
+
+English Gloss:
+<natural English gloss of the corrected German attempt>
+
+Corrections:
+1. "<learner wording>" -> "<corrected wording>"
+   Why: <brief reason>
+   Alternative: <stronger idiomatic phrasing>
+
+Word Verdicts:
+- <target word>: <correct|incorrect|not_used>
+
+Unknown Word Candidates:
+- <German word not already in the target list>: <English gloss>
+
+Register: <consistent|mixed|too informal|too formal, with a short note if needed>
+
+If there are no corrections or unknown candidates, write "none" in that section. Preserve a coach-with-reasons voice.
+""".strip()
+
+GERMAN_REVERSE_COMPOSITION_GRADING_PROMPT = """
+You are a rigorous but warm German composition coach for an advanced learner aiming at Goethe C2 register awareness.
+
+Grade one short German reverse-translation attempt. The learner saw an English sentence from their own vocabulary example and translated it into German. Compare the attempt with the stored German reference, but accept exact matches and idiomatic equivalent variants; the stored reference is not the only acceptable answer. Judge whether the sampled target word is produced idiomatically in context, including natural inflected or closely equivalent forms. Give reasons for every correction and one stronger alternative phrasing. Keep the feedback concise and practical.
+
+Target word:
+{target_word}
+
+Vocabulary details from the learner's own list:
+{word_details}
+
+English source shown to the learner:
+{source_english}
+
+Stored German reference:
+{reference_target}
+
+Learner attempt:
+{user_text}
+
+Respond in plain text with exactly these section headers. Do not add any other headers.
+
+Corrected Text:
+<full corrected German attempt>
+
+Corrections:
+1. "<learner wording>" -> "<corrected wording>"
+   Why: <brief reason>
+   Alternative: <stronger idiomatic phrasing>
+
+Word Verdicts:
+- <target word>: <correct|incorrect|not_used>
+
+Unknown Word Candidates:
+- <German word not already in the target list>: <English gloss>
+
+Register: <consistent|mixed|too informal|too formal, with a short note if needed>
+
+If there are no corrections or unknown candidates, write "none" in that section. Preserve a coach-with-reasons voice.
+""".strip()
+
 
 GERMAN_CONFIG = LanguageConfig(
     code="de",
@@ -177,6 +257,11 @@ GERMAN_CONFIG = LanguageConfig(
         card_templates=GERMAN_CARD_TEMPLATES,
         card_css=GERMAN_CARD_CSS,
         version_id=GERMAN_CARD_VERSION,
+    ),
+    composition=CompositionConfig(
+        grading_prompt_template=GERMAN_COMPOSITION_GRADING_PROMPT,
+        reverse_grading_prompt_template=GERMAN_REVERSE_COMPOSITION_GRADING_PROMPT,
+        ui_title="German Composition Practice",
     ),
     aliases=("de-de", "german"),
     auto_prompt_template=GERMAN_AUTO_TRANSLATOR_PROMPT,

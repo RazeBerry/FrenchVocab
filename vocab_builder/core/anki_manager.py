@@ -16,10 +16,16 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
-from vocab_builder.anki_exporter import AnkiExporter, AnkiExportEntry
+from vocab_builder.anki_exporter import (
+    AnkiExporter,
+    AnkiExportEntry,
+    AnkiMistakeDeckExporter,
+    AnkiMistakeEntry,
+)
 from vocab_builder.core.file_safety import atomic_write_text, create_backup_snapshot
+from vocab_builder.core.history_logger import default_history_base_dir
 from vocab_builder.languages.anki_shared_styles import compute_template_hash
 
 if TYPE_CHECKING:
@@ -44,6 +50,7 @@ class AnkiExportManager:
         vocab_repo: "VocabRepository",
         exported_words_file: Path,
         project_root: Path,
+        composition_history_paths: Optional[Sequence[Path]] = None,
     ):
         """Initialize the Anki export manager.
 
@@ -66,6 +73,9 @@ class AnkiExportManager:
             exported_words_path = self._project_root / exported_words_path
         self._exported_words_file = exported_words_path.absolute()
         self._default_export_directory = self._resolve_default_export_directory()
+        self._composition_history_paths = self._resolve_composition_history_paths(
+            composition_history_paths
+        )
 
         # Load exported words state
         (
@@ -184,6 +194,42 @@ class AnkiExportManager:
             export_directory = self._project_root / export_directory
         return export_directory.resolve()
 
+    def _resolve_composition_history_paths(
+        self,
+        history_paths: Optional[Sequence[Path]],
+    ) -> Tuple[Path, ...]:
+        """Return JSONL history paths that may contain composition attempts."""
+        if history_paths is not None:
+            return tuple(Path(path) for path in history_paths)
+
+        from vocab_builder.compat import config_home, config_homes_for_read, get_env
+
+        language_code = self._language_config.code
+        filename = f"{language_code}_compositions.jsonl"
+        base_dir_override = get_env("VOCABBUILDER_HISTORY_DIR")
+        if base_dir_override:
+            bases = [Path(base_dir_override)]
+        else:
+            primary_base = default_history_base_dir()
+            bases = [primary_base]
+            canonical_primary = config_home(create=True) / "history"
+            bases.extend(
+                candidate / "history"
+                for candidate in config_homes_for_read()
+                if candidate / "history" != canonical_primary
+            )
+
+        paths: List[Path] = []
+        seen: Set[str] = set()
+        for base in bases:
+            path = Path(base) / filename
+            key = str(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            paths.append(path)
+        return tuple(paths)
+
     def _resolve_template_version(self) -> str:
         """Return a stable identifier for the current Anki template."""
         anki_config = self._language_config.anki
@@ -292,6 +338,83 @@ class AnkiExportManager:
 
         return entries_for_export
 
+    def _read_composition_history_records(self) -> List[Dict[str, Any]]:
+        records: List[Dict[str, Any]] = []
+        for path in self._composition_history_paths:
+            try:
+                with path.open("r", encoding="utf-8") as handle:
+                    for line in handle:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            record = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if isinstance(record, dict):
+                            records.append(record)
+            except OSError:
+                continue
+        return records
+
+    def _collect_mistake_entries_for_export(self) -> List[AnkiMistakeEntry]:
+        entries: List[AnkiMistakeEntry] = []
+        for record in self._read_composition_history_records():
+            record_language = record.get("language")
+            if record_language and record_language != self._language_config.code:
+                continue
+            entries.extend(self._mistake_entries_from_record(record))
+        return entries
+
+    def _mistake_entries_from_record(self, record: Dict[str, Any]) -> List[AnkiMistakeEntry]:
+        attempt_id = str(record.get("attempt_id") or "").strip()
+        if not attempt_id:
+            return []
+
+        corrections = record.get("corrections")
+        if not isinstance(corrections, list) or not corrections:
+            return []
+
+        user_text = str(record.get("user_text") or "")
+        corrected_text = str(record.get("corrected_text") or "")
+        if not user_text.strip() or not corrected_text.strip():
+            return []
+
+        english_intent = self._english_intent_for_mistake_record(record)
+        entries: List[AnkiMistakeEntry] = []
+        for index, correction in enumerate(corrections):
+            if not isinstance(correction, dict):
+                continue
+            entries.append(
+                AnkiMistakeEntry(
+                    attempt_id=attempt_id,
+                    correction_index=index,
+                    flawed_text=user_text,
+                    corrected_text=corrected_text,
+                    why_lines=self._why_lines_for_correction(correction),
+                    english_intent=english_intent,
+                )
+            )
+        return entries
+
+    @staticmethod
+    def _why_lines_for_correction(correction: Dict[str, Any]) -> List[str]:
+        why = str(correction.get("why") or "").strip()
+        if why:
+            return [why]
+
+        original = str(correction.get("from") or "").strip()
+        replacement = str(correction.get("to") or "").strip()
+        if original or replacement:
+            return [f"{original} -> {replacement}".strip()]
+        return []
+
+    @staticmethod
+    def _english_intent_for_mistake_record(record: Dict[str, Any]) -> str:
+        if str(record.get("mode") or "").strip() == "reverse":
+            return str(record.get("source_english") or "").strip()
+        return str(record.get("english_gloss") or "").strip()
+
     def _debug_export(
         self,
         *,
@@ -322,6 +445,7 @@ class AnkiExportManager:
         selected_words: Optional[Set[str]],
         include_all: bool,
         auto_retry_on_empty: bool,
+        include_mistake_deck: bool,
     ) -> bool:
         """Return True if the caller should stop (already handled)."""
         if entries_for_export:
@@ -347,6 +471,7 @@ class AnkiExportManager:
             auto_retry_on_empty=False,
             output_path=destination_path,
             export_context=export_context,
+            include_mistake_deck=include_mistake_deck,
         )
         return True
 
@@ -571,6 +696,7 @@ class AnkiExportManager:
         auto_due_to_version: bool,
         selected_words: Optional[Set[str]],
         latex_words: Set[str],
+        mistake_note_count: int = 0,
     ) -> str:
         feedback = f"""
         [bold green]Anki deck '{deck_title}.apkg' created successfully![/bold green]
@@ -585,6 +711,12 @@ class AnkiExportManager:
         New words added:
         {', '.join(sorted(newly_added_display, key=str.lower)) if newly_added_display else 'No new words added in this export.'}
         """
+
+        if mistake_note_count:
+            feedback += (
+                f"\n[bold cyan]Composition mistake notes packaged: "
+                f"{mistake_note_count}[/bold cyan]"
+            )
 
         if auto_due_to_version:
             feedback += (
@@ -616,6 +748,7 @@ class AnkiExportManager:
         auto_retry_on_empty: bool = True,
         output_path: Optional[Path] = None,
         export_context: str = "incremental",
+        include_mistake_deck: bool = False,
     ) -> None:
         """Export vocabulary entries to an Anki deck.
 
@@ -626,6 +759,7 @@ class AnkiExportManager:
             auto_retry_on_empty: Retry with all words if export produces no cards
             output_path: Explicit output location for the deck
             export_context: Context description for metadata
+            include_mistake_deck: Include composition mistakes as a sibling deck
         """
         self._vocab_repo.ensure_entries_loaded()
         requested_deck_name = deck_name or self._language_config.anki.default_deck_name
@@ -680,16 +814,31 @@ class AnkiExportManager:
             selected_words=selected_words,
             include_all=include_all,
             auto_retry_on_empty=auto_retry_on_empty,
+            include_mistake_deck=include_mistake_deck,
         ):
             return
 
         deck = exporter.build_deck([item[2] for item in entries_for_export])
+        mistake_entries = (
+            self._collect_mistake_entries_for_export()
+            if include_mistake_deck
+            else []
+        )
+        package_payload: Any = deck
+        if mistake_entries:
+            mistake_deck = AnkiMistakeDeckExporter(anki_config).build_deck(mistake_entries)
+            package_payload = [deck, mistake_deck]
+        elif include_mistake_deck:
+            self._ui.warning(
+                "No composition mistake records with corrections were found; "
+                "exporting the vocabulary deck only."
+            )
 
         export_directory = self._ensure_export_directory(destination_path)
         if export_directory is None:
             return
 
-        package = self._write_package_atomic(deck, destination_path, export_directory)
+        package = self._write_package_atomic(package_payload, destination_path, export_directory)
         if package is None:
             return
 
@@ -716,6 +865,7 @@ class AnkiExportManager:
             auto_due_to_version=auto_due_to_version,
             selected_words=selected_words,
             latex_words=latex_words,
+            mistake_note_count=len(mistake_entries),
         )
         self._ui.panel(feedback, title="Export Summary", border_style="green")
 
@@ -770,6 +920,23 @@ class AnkiExportManager:
         self._ui.info("Returning to main menu without running Anki actions.")
         return False
 
+    def _prompt_include_mistake_deck(self) -> bool:
+        mistake_count = len(self._collect_mistake_entries_for_export())
+        if mistake_count <= 0:
+            return False
+
+        message = (
+            f"Include composition mistake deck "
+            f"'{self._language_config.anki.deck_namespace}::Mistakes' "
+            f"({mistake_count} note(s))?"
+        )
+        confirm = getattr(self._ui, "confirm", None)
+        if callable(confirm):
+            return bool(confirm(message, default=True))
+
+        self._ui.info("Including composition mistake deck by default.")
+        return True
+
     def handle_anki_export(self) -> None:
         """Handle the Anki export workflow with mode selection."""
         default_deck = self._language_config.anki.default_deck_name
@@ -804,6 +971,12 @@ class AnkiExportManager:
             include_exported = True
 
         try:
+            include_mistake_deck = self._prompt_include_mistake_deck()
+        except KeyboardInterrupt:
+            self._ui.warning("Anki export cancelled.")
+            return
+
+        try:
             deck_name, explicit_path, reused_previous = self._determine_export_destination(default_deck)
         except KeyboardInterrupt:
             self._ui.warning("Anki export cancelled.")
@@ -819,6 +992,7 @@ class AnkiExportManager:
             selected_words=selected_words,
             output_path=explicit_path,
             export_context=export_mode,
+            include_mistake_deck=include_mistake_deck,
         )
 
     def _prompt_selected_words(self) -> Optional[Set[str]]:

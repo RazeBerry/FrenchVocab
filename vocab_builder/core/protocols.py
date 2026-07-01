@@ -103,6 +103,14 @@ class VocabAppProtocol(Protocol):
         """
         ...
 
+    def handle_composition(self) -> None:
+        """Handle composition practice."""
+        ...
+
+    def composition_debt_count(self) -> Optional[int]:
+        """Return production debt count, or None when unavailable/disabled."""
+        ...
+
     def display_all_vocabulary(self) -> None:
         """Display all vocabulary entries to the user."""
         ...

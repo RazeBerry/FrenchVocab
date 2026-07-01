@@ -20,12 +20,7 @@ from .spelling_checker import SpellingChecker
 from .vocab_display_mixin import VocabDisplayMixin
 from .vocab_merge_mixin import VocabMergeMixin
 from .vocab_runtime_mixin import VocabRuntimeMixin
-from .word_entry_workflow import (
-    WordEntryWorkflow,
-    WorkflowCallbacks,
-    WorkflowOptions,
-    WorkflowOutcome,
-)
+from .word_entry_workflow import WorkflowOutcome
 from .text_utils import detect_input_type as classify_input_type, sanitize_user_text, translator_title
 from .menu_loop import main_menu_loop
 from .session_ui import (
@@ -322,8 +317,10 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
         self.eng_to_target_translator: Optional["TranslatorCLI"] = None
         self.target_to_eng_translator: Optional["TranslatorCLI"] = None
         self.auto_translator: Optional["AutoTranslator"] = None
+        self._composition_coach = None
         self.duplicate_resolution: Optional[Dict[str, str]] = None
         self.enable_auto_translator: bool = self._should_enable_auto_translator()
+        self.enable_composition: bool = self._should_enable_composition()
 
     def _initialize_llm(
         self,
@@ -1224,41 +1221,9 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
         instead of recursion to avoid stack overflow on repeated "add" actions.
         """
         while True:
-            # Create workflow with current state
-            workflow_options = WorkflowOptions(
-                max_word_length=self.max_word_length,
-                max_words=self.max_words,
-                allow_sentence_punctuation=self.allow_sentence_punctuation,
-                route_sentences=self.route_sentences,
-                sentence_examples_in_vocab=self.sentence_examples_in_vocab,
-                entry_command=self.entry_command,
-            )
-            workflow_callbacks = WorkflowCallbacks(
-                provider_label_fn=self._provider_label,
-                on_settings=self.show_settings_screen,
-                on_post_translation_menu=self._show_post_translation_menu,
-                get_word_input_fn=self.get_word_input,
-                query_ai_fn=self.query_ai,
-                check_spelling_fn=self.check_spelling,
-                parse_ai_response_fn=self.parse_ai_response,
-                check_duplicate_fn=self.check_duplicate,
-                display_parsed_info_fn=self.display_parsed_info,
-                display_latex_entry_fn=self.display_latex_entry,
-                is_valid_latex_entry_fn=self.is_valid_latex_entry,
-                insert_entry_alphabetically_fn=self.insert_entry_alphabetically,
-                add_word_to_entries_fn=self.add_word_to_entries,
-            )
-            workflow = WordEntryWorkflow(
-                vocab_repo=self._vocab_repo,
-                llm=self._llm,
-                ui=self.ui,
-                language_config=self.language_config,
-                history_logger=self.history_logger,
-                spelling_checker=self._spelling_checker,
-                target_to_eng_translator=self.target_to_eng_translator,
-                options=workflow_options,
-                callbacks=workflow_callbacks,
-            )
+            # Construction lives in VocabRuntimeMixin so composition capture
+            # can reuse it with a pre-seeded word input.
+            workflow = self._build_word_entry_workflow()
 
             # Run the workflow
             outcome = workflow.run(self.ensure_llm_ready)

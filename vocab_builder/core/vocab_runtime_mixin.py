@@ -9,7 +9,13 @@ from typing import Any, Dict, Optional
 
 from vocab_builder.compat import config_homes_for_read, config_home, get_env
 
-from .history_logger import TranslationLogger, default_history_base_dir
+from .composition_scheduler import (
+    composition_feature_enabled,
+    composition_set_size,
+    composition_words_per_attempt,
+)
+from .history_logger import CompositionLogger, TranslationLogger, default_history_base_dir
+from .word_entry_workflow import WordEntryWorkflow, WorkflowCallbacks, WorkflowOptions
 
 
 class VocabRuntimeMixin:
@@ -150,6 +156,107 @@ class VocabRuntimeMixin:
         if env_value is not None:
             return str(env_value).strip().lower() in ("1", "true", "yes", "y", "on")
         return bool(getattr(self.language_config, "auto_prompt_template", None))
+
+    def _should_enable_composition(self) -> bool:
+        return composition_feature_enabled(default=True)
+
+    def _create_composition_logger(self) -> CompositionLogger:
+        history_logger = getattr(self, "history_logger", None)
+        if history_logger is not None:
+            return CompositionLogger(
+                language_code=self.language_code,
+                base_dir=history_logger.base_dir,
+                enabled=history_logger.enabled,
+                fallback_base_dirs=history_logger.fallback_base_dirs,
+                on_error=self._history_log_error,
+            )
+        return CompositionLogger(
+            language_code=self.language_code,
+            base_dir=default_history_base_dir(),
+            on_error=self._history_log_error,
+        )
+
+    def _ensure_composition_coach(self):
+        coach = getattr(self, "_composition_coach", None)
+        if coach is not None:
+            return coach
+        from .composition import CompositionCoach
+
+        coach = CompositionCoach(
+            console=self.console,
+            llm=self._llm,
+            language_config=self.language_config,
+            vocab_repo=self._vocab_repo,
+            logger=self._create_composition_logger(),
+            set_size=composition_set_size(),
+            words_per_attempt=composition_words_per_attempt(),
+            provider_label_fn=self._provider_label,
+            on_settings=self.show_settings_screen,
+            on_query_exception=self._handle_ai_exception,
+            run_word_entry=self._run_seeded_word_entry,
+        )
+        self._composition_coach = coach
+        return coach
+
+    def _build_word_entry_workflow(self, get_word_input_fn=None) -> WordEntryWorkflow:
+        """Construct a WordEntryWorkflow wired to this app's callbacks.
+
+        ``get_word_input_fn`` overrides the interactive word prompt so callers
+        (composition capture) can pre-seed the word being added.
+        """
+        options = WorkflowOptions(
+            max_word_length=self.max_word_length,
+            max_words=self.max_words,
+            allow_sentence_punctuation=self.allow_sentence_punctuation,
+            route_sentences=self.route_sentences,
+            sentence_examples_in_vocab=self.sentence_examples_in_vocab,
+            entry_command=self.entry_command,
+        )
+        callbacks = WorkflowCallbacks(
+            provider_label_fn=self._provider_label,
+            on_settings=self.show_settings_screen,
+            on_post_translation_menu=self._show_post_translation_menu,
+            get_word_input_fn=get_word_input_fn or self.get_word_input,
+            query_ai_fn=self.query_ai,
+            check_spelling_fn=self.check_spelling,
+            parse_ai_response_fn=self.parse_ai_response,
+            check_duplicate_fn=self.check_duplicate,
+            display_parsed_info_fn=self.display_parsed_info,
+            display_latex_entry_fn=self.display_latex_entry,
+            is_valid_latex_entry_fn=self.is_valid_latex_entry,
+            insert_entry_alphabetically_fn=self.insert_entry_alphabetically,
+            add_word_to_entries_fn=self.add_word_to_entries,
+        )
+        return WordEntryWorkflow(
+            vocab_repo=self._vocab_repo,
+            llm=self._llm,
+            ui=self.ui,
+            language_config=self.language_config,
+            history_logger=self.history_logger,
+            spelling_checker=self._spelling_checker,
+            target_to_eng_translator=self.target_to_eng_translator,
+            options=options,
+            callbacks=callbacks,
+        )
+
+    def _run_seeded_word_entry(self, word: str) -> None:
+        """Run one word-entry pass with the word pre-seeded (no retyping)."""
+        workflow = self._build_word_entry_workflow(get_word_input_fn=lambda: word)
+        workflow.run(self.ensure_llm_ready)
+        self.duplicate_resolution = workflow.duplicate_resolution
+
+    def composition_debt_count(self) -> Optional[int]:
+        if not getattr(self, "enable_composition", True):
+            return None
+        return self._ensure_composition_coach().scheduler.debt_count()
+
+    def handle_composition(self) -> None:
+        if not getattr(self, "enable_composition", True):
+            self.ui.warning("Composition practice is disabled by VOCABBUILDER_COMPOSITION.")
+            return
+        if not self.ensure_llm_ready():
+            return
+        self._ensure_composition_coach().run()
 
     def _create_history_logger(self) -> TranslationLogger:
         config_section: Dict[str, Any] = {}

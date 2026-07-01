@@ -210,6 +210,148 @@ class AnkiExportEntry:
         return "\n".join(rendered)
 
 
+@dataclass
+class AnkiMistakeEntry:
+    """Structured composition-mistake payload for deck export."""
+
+    attempt_id: str
+    correction_index: int
+    flawed_text: str
+    corrected_text: str
+    why_lines: Sequence[str]
+    english_intent: str = ""
+
+    def why_text(self) -> str:
+        return "\n".join(line.strip() for line in self.why_lines if line and line.strip())
+
+
+_MISTAKE_FIELD_NAMES = ("FlawedText", "CorrectedText", "WhyLines", "EnglishIntent")
+
+_MISTAKE_FIX_FRONT_TEMPLATE = """
+<div class="entry-card entry-card--front mistake-card mistake-card--fix">
+  <div class="entry-section-title">Find the error(s)</div>
+  <div class="entry-content mistake-text">{{FlawedText}}</div>
+</div>
+""".strip()
+
+_MISTAKE_FIX_BACK_TEMPLATE = """
+<div class="entry-card entry-card--back mistake-card mistake-card--fix">
+  <div class="entry-section">
+    <div class="entry-section-title">Corrected text</div>
+    <div class="entry-content mistake-text">{{CorrectedText}}</div>
+  </div>
+  {{#WhyLines}}
+  <div class="entry-section">
+    <div class="entry-section-title">Why</div>
+    <div class="entry-content mistake-text">{{WhyLines}}</div>
+  </div>
+  {{/WhyLines}}
+</div>
+""".strip()
+
+_MISTAKE_PRODUCE_FRONT_TEMPLATE = """
+{{#EnglishIntent}}
+<div class="entry-card entry-card--front mistake-card mistake-card--produce">
+  <div class="entry-section-title">Produce this</div>
+  <div class="entry-content mistake-text">{{EnglishIntent}}</div>
+</div>
+{{/EnglishIntent}}
+""".strip()
+
+_MISTAKE_PRODUCE_BACK_TEMPLATE = """
+<div class="entry-card entry-card--back mistake-card mistake-card--produce">
+  <div class="entry-section">
+    <div class="entry-section-title">Idiomatic version</div>
+    <div class="entry-content mistake-text">{{CorrectedText}}</div>
+  </div>
+</div>
+""".strip()
+
+_MISTAKE_CARD_CSS = """
+.mistake-card .entry-section-title {
+    text-transform: uppercase;
+}
+
+.mistake-text {
+    white-space: normal;
+}
+""".strip()
+
+
+class AnkiMistakeDeckExporter:
+    """Create a deterministic Anki deck from composition mistake history."""
+
+    def __init__(self, config: AnkiConfig):
+        self.config = config
+        self.namespace = config.deck_namespace
+        self.deck_name = f"{self.namespace}::Mistakes"
+        self.deck_id = AnkiExporter._stable_32(self.deck_name)
+        self.model_id = AnkiExporter._stable_32(f"{self.namespace}::MistakeModel/v1")
+
+    def build_deck(self, entries: Iterable[AnkiMistakeEntry]) -> genanki.Deck:
+        genanki_mod = _get_genanki()
+        model = self._build_model()
+        deck = genanki_mod.Deck(self.deck_id, self.deck_name)
+
+        if not hasattr(deck, "add_note"):
+            deck.notes = getattr(deck, "notes", [])  # type: ignore[attr-defined]
+
+            def _add_note(note, _deck=deck):
+                _deck.notes.append(note)
+
+            deck.add_note = _add_note  # type: ignore[attr-defined]
+        if not hasattr(deck, "notes"):
+            deck.notes = []  # type: ignore[attr-defined]
+        if not hasattr(deck, "name"):
+            deck.name = self.deck_name  # type: ignore[attr-defined]
+        if not hasattr(deck, "deck_id"):
+            deck.deck_id = self.deck_id  # type: ignore[attr-defined]
+
+        for entry in entries:
+            deck.add_note(self._build_note(entry, model))
+        return deck
+
+    def _build_model(self) -> genanki.Model:
+        genanki_mod = _get_genanki()
+        css_parts = [self.config.card_css] if self.config.card_css else []
+        css_parts.append(_MISTAKE_CARD_CSS)
+        return genanki_mod.Model(
+            self.model_id,
+            f"{self.namespace} Mistake Model v1",
+            fields=[{"name": name} for name in _MISTAKE_FIELD_NAMES],
+            templates=[
+                {
+                    "name": "Fix-this",
+                    "qfmt": _MISTAKE_FIX_FRONT_TEMPLATE,
+                    "afmt": _MISTAKE_FIX_BACK_TEMPLATE,
+                },
+                {
+                    "name": "Produce-this",
+                    "qfmt": _MISTAKE_PRODUCE_FRONT_TEMPLATE,
+                    "afmt": _MISTAKE_PRODUCE_BACK_TEMPLATE,
+                },
+            ],
+            css="\n\n".join(css_parts) or None,
+        )
+
+    def _build_note(self, entry: AnkiMistakeEntry, model: genanki.Model) -> genanki.Note:
+        genanki_mod = _get_genanki()
+        guid = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            f"{self.namespace}::mistake::{entry.attempt_id}::{entry.correction_index}",
+        ).hex
+        fields = [
+            _plain_text_to_anki_html(entry.flawed_text),
+            _plain_text_to_anki_html(entry.corrected_text),
+            _plain_text_to_anki_html(entry.why_text()),
+            _plain_text_to_anki_html(entry.english_intent),
+        ]
+        note = genanki_mod.Note(model=model, guid=guid, fields=fields)
+        if not hasattr(note, "fields"):
+            note.fields = fields  # type: ignore[attr-defined]
+        return note
+
+
 class AnkiExporter:
     """Create deterministic Anki decks from structured vocabulary entries."""
 
@@ -290,8 +432,15 @@ class AnkiExporter:
         return struct.unpack(">I", digest[:4])[0] & 0x7FFFFFFF
 
 
+def _plain_text_to_anki_html(text: object) -> str:
+    escaped = html.escape(str(text or ""), quote=False)
+    return escaped.replace("\n", "<br>")
+
+
 __all__ = [
     "AnkiExportEntry",
     "AnkiExporter",
+    "AnkiMistakeDeckExporter",
+    "AnkiMistakeEntry",
     "latex_to_anki_format",
 ]

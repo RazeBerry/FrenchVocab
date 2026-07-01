@@ -4,6 +4,7 @@ from typing import Dict, List
 
 from .base import (
     LanguageConfig,
+    CompositionConfig,
     TranslatorConfig,
     AnkiConfig,
     AnkiCardTemplate,
@@ -86,6 +87,7 @@ def default_language_code() -> str:
 
 __all__ = [
     "LanguageConfig",
+    "CompositionConfig",
     "TranslatorConfig",
     "AnkiConfig",
     "AnkiCardTemplate",

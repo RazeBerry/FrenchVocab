@@ -33,6 +33,7 @@ def _handle_main_choice(app: VocabAppProtocol, choice: str) -> bool:
     handlers = {
         "add": app.handle_new_word_entry,
         "translate": lambda: _handle_translation(app),
+        "composition": app.handle_composition,
         "anki_tools": app.handle_anki_tools,
         "browse": app.browse_vocabulary,
         "settings": app.show_settings_screen,

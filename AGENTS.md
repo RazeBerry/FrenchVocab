@@ -151,6 +151,9 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 - `VOCABBUILDER_ESC_DEBUG_LOG`: Custom log path for ESC latency tracing.
 - `VOCABBUILDER_DEBUG_EXPORT=1`: Print export debug details during Anki generation.
 - `VOCABBUILDER_AUTO_TRANSLATOR`: Enable/disable intelligent translator option.
+- `VOCABBUILDER_COMPOSITION`: Enable/disable composition practice (default on).
+- `VOCABBUILDER_COMPOSITION_WORDS`: Target words per use-these-words attempt (default `3`, int >= 1).
+- `VOCABBUILDER_COMPOSITION_SET_SIZE`: Attempts per daily composition set (default `3`, int >= 1).
 - `VOCABBUILDER_MAX_BACKUPS`: Maximum timestamped backup snapshots to retain per file (default `10`; `0` disables pruning).
 - `VOCABBUILDER_MAX_CHARS`: Override maximum input length.
 - `VOCABBUILDER_MAX_WORDS`: Override max words allowed per input.

@@ -104,6 +104,18 @@ class TranslatorConfig:
 
 
 @dataclass(frozen=True)
+class CompositionConfig:
+    """Language-specific composition-practice grading configuration."""
+
+    grading_prompt_template: str
+    reverse_grading_prompt_template: str = ""
+    ui_title: str = "Composition Practice"
+    use_words_label: str = "Daily set (use these words)"
+    reverse_label: str = "Daily set (reverse translation)"
+    max_sentences: int = 4
+
+
+@dataclass(frozen=True)
 class VocabTemplate:
     """Configuration for the core vocabulary LaTeX document."""
 
@@ -149,6 +161,7 @@ class LanguageConfig:
     target_to_eng: TranslatorConfig
     vocab: VocabTemplate
     anki: AnkiConfig
+    composition: CompositionConfig | None = None
     aliases: Tuple[str, ...] = ()
     auto_prompt_template: str | None = None
     auto_prompt_variable: str = "source_text"
@@ -157,6 +170,7 @@ class LanguageConfig:
 
 __all__ = [
     "LanguageConfig",
+    "CompositionConfig",
     "TranslatorConfig",
     "VocabTemplate",
     "AnkiConfig",

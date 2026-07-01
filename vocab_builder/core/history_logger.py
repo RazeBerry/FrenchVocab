@@ -221,19 +221,67 @@ class TranslationLogger:
         }
         try:
             path = _ensure_path(self._record_path())
-            line = json.dumps(record, ensure_ascii=False) + "\n"
-            with _path_lock(path):
-                with path.open("a", encoding="utf-8") as handle:
-                    _lock_handle(handle)
-                    try:
-                        handle.write(line)
-                        handle.flush()
-                        os.fsync(handle.fileno())
-                    finally:
-                        _unlock_handle(handle)
+            _append_jsonl_record(path, record)
         except Exception as exc:  # pragma: no cover - defensive path
             if self.on_error:
                 self.on_error(f"Failed to write translation history: {exc}")
+
+
+@dataclass
+class CompositionLogger:
+    """Append-only JSONL composition-practice history."""
+
+    language_code: str
+    base_dir: Path
+    enabled: bool = True
+    file_pattern: str = "{language}_compositions.jsonl"
+    fallback_base_dirs: Sequence[Path] = ()
+    on_error: ErrorHandler = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.base_dir, Path):
+            self.base_dir = Path(self.base_dir)
+        self.fallback_base_dirs = tuple(Path(path) for path in self.fallback_base_dirs)
+
+    def record_path(self) -> Path:
+        return self.base_dir / self.file_pattern.format(language=self.language_code)
+
+    def record_paths_for_read(self) -> Tuple[Path, ...]:
+        paths = [self.record_path()]
+        for base_dir in self.fallback_base_dirs:
+            paths.append(Path(base_dir) / self.file_pattern.format(language=self.language_code))
+        deduped: List[Path] = []
+        seen: set[str] = set()
+        for path in paths:
+            key = str(path)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(path)
+        return tuple(deduped)
+
+    def log_attempt(self, record: MutableMapping[str, Any]) -> None:
+        if not self.enabled:
+            return
+        try:
+            path = _ensure_path(self.record_path())
+            _append_jsonl_record(path, dict(record))
+        except Exception as exc:  # pragma: no cover - defensive path
+            if self.on_error:
+                self.on_error(f"Failed to write composition history: {exc}")
+
+
+def _append_jsonl_record(path: Path, record: Dict[str, Any]) -> None:
+    line = json.dumps(record, ensure_ascii=False) + "\n"
+    with _path_lock(path):
+        with path.open("a", encoding="utf-8") as handle:
+            _lock_handle(handle)
+            try:
+                handle.write(line)
+                handle.flush()
+                os.fsync(handle.fileno())
+            finally:
+                _unlock_handle(handle)
 
 
 def _path_lock(path: Path) -> threading.Lock:
