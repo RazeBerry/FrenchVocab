@@ -176,6 +176,15 @@ class VocabRuntimeMixin:
             on_error=self._history_log_error,
         )
 
+    def _read_vocab_history_for_anki_order(self) -> list[Dict[str, Any]]:
+        logger = getattr(self, "history_logger", None)
+        if logger is None:
+            return []
+        return logger.read_recent_vocab_entries(
+            limit=None,
+            actions=("new", "force"),
+        )
+
     def _ensure_composition_coach(self):
         coach = getattr(self, "_composition_coach", None)
         if coach is not None:
@@ -215,6 +224,7 @@ class VocabRuntimeMixin:
         callbacks = WorkflowCallbacks(
             provider_label_fn=self._provider_label,
             on_settings=self.show_settings_screen,
+            on_entry_saved=self._ensure_anki_manager().register_entry_order,
             on_post_translation_menu=self._show_post_translation_menu,
             get_word_input_fn=get_word_input_fn or self.get_word_input,
             query_ai_fn=self.query_ai,

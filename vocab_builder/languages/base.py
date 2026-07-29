@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, FrozenSet, Mapping, Sequence, Tuple
+from typing import Callable, FrozenSet, Literal, Mapping, Sequence, Tuple
 
 InputValidator = Callable[[str, bool], bool]
+LearningMode = Literal["bilingual", "monolingual"]
 
 # Base punctuation set shared across all languages.
 #
@@ -112,6 +113,9 @@ class CompositionConfig:
     ui_title: str = "Composition Practice"
     use_words_label: str = "Daily set (use these words)"
     reverse_label: str = "Daily set (reverse translation)"
+    reverse_source_label: str = "English source"
+    reverse_instruction_template: str = "Translate into {language}."
+    input_instruction_template: str = "Write 1-4 sentences in {language}."
     max_sentences: int = 4
 
 
@@ -152,13 +156,13 @@ class LanguageConfig:
     display_name: str
     prompt_template: str
     vocab_filename: str
-    eng_to_target_filename: str
-    target_to_eng_filename: str
+    eng_to_target_filename: str | None
+    target_to_eng_filename: str | None
     latex_babel_languages: Sequence[str]
     ui_strings: Mapping[str, str]
     input_validator: InputValidator
-    eng_to_target: TranslatorConfig
-    target_to_eng: TranslatorConfig
+    eng_to_target: TranslatorConfig | None
+    target_to_eng: TranslatorConfig | None
     vocab: VocabTemplate
     anki: AnkiConfig
     composition: CompositionConfig | None = None
@@ -166,6 +170,16 @@ class LanguageConfig:
     auto_prompt_template: str | None = None
     auto_prompt_variable: str = "source_text"
     auto_direction_tokens: Tuple[str, str] | None = None
+    learning_mode: LearningMode = "bilingual"
+
+    @property
+    def supports_translation(self) -> bool:
+        """Whether this language exposes the bilingual translation workflows."""
+        return (
+            self.learning_mode == "bilingual"
+            and self.eng_to_target is not None
+            and self.target_to_eng is not None
+        )
 
 
 __all__ = [
@@ -176,5 +190,6 @@ __all__ = [
     "AnkiConfig",
     "AnkiCardTemplate",
     "InputValidator",
+    "LearningMode",
     "make_text_validator",
 ]

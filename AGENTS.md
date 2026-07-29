@@ -6,7 +6,7 @@
 - Run `pytest tests/test_agent_docs_sync.py` to validate alignment.
 
 ## Project Overview
-VocabBuilder is an AI-assisted CLI for building bilingual vocabulary lists, generating LaTeX documents, and exporting Anki decks. The current app supports French (`fr`) and German (`de`), has Rich-based keyboard navigation, and integrates with Google Gemini or Anthropic Claude. Install with `pip install vocab-builder` and run `vocabbuilder`.
+VocabBuilder is an AI-assisted CLI for building bilingual or monolingual vocabulary lists, generating LaTeX documents, and exporting Anki decks. The current app supports English (`en`), French (`fr`), and German (`de`), has Rich-based keyboard navigation, and integrates with Google Gemini or Anthropic Claude. Install with `pip install vocab-builder` and run `vocabbuilder`.
 
 ## Project Structure and Module Organization
 - All source code lives under the `vocab_builder/` package.
@@ -14,7 +14,7 @@ VocabBuilder is an AI-assisted CLI for building bilingual vocabulary lists, gene
 - `vocab_builder/cli/` contains bootstrap flow, interactive menu/navigation helpers, and compatibility shims.
 - `vocab_builder/core/` contains application workflows (vocab ingestion, translators, auto translator, Anki export, LLM/provider lifecycle, history logging, menu/session UI helpers).
 - `vocab_builder/core/providers/manager.py` encapsulates provider selection, credential validation, and secure storage.
-- `vocab_builder/languages/` contains language registry, validators, prompts, and LaTeX/Anki configuration (`french.py`, `german.py`, `german_tex.py`).
+- `vocab_builder/languages/` contains language registry, validators, prompts, and LaTeX/Anki configuration (`english.py`, `english_tex.py`, `french.py`, `german.py`, `german_tex.py`).
 - `vocab_builder/` root modules (`models.py`, `anki_exporter.py`, `latex_repository.py`, `llm_client.py`, `ui_helper.py`) provide shared infrastructure.
 - `vocab_builder/compat.py` provides backward-compatible helpers for env vars, config paths, and keyring migration.
 - `vocab_builder/diagnostics/` contains ESC latency tracing tools.
@@ -31,6 +31,7 @@ pip install -e .
 vocabbuilder --help
 vocabbuilder --language fr
 vocabbuilder --language de
+vocabbuilder --language en
 vocabbuilder --language fr --provider gemini
 vocabbuilder --language fr --provider claude
 vocabbuilder --language fr --latex-file ./FrenchVocab.custom.tex
@@ -68,7 +69,7 @@ pytest -k "anki"
 - `translator.py` and `auto_translator.py` handle directional and intelligent translation flows.
 - `text_utils.py` centralizes text normalization and input-type detection.
 - `session_ui.py` builds menu/welcome/status screen content.
-- `anki_manager.py` coordinates export state and Anki generation.
+- `anki_manager.py` coordinates export state and Anki generation, including persistent acquisition order so decks do not inherit LaTeX alphabetization.
 - `llm_coordinator.py` manages provider initialization lifecycle, degraded mode, and usage metrics, and uses generation-guarded background init so stale workers cannot overwrite newer provider changes.
 - `history_logger.py` writes append-only JSONL history.
 - `file_safety.py` provides atomic file operations and backup/restore support.
@@ -84,8 +85,9 @@ pytest -k "anki"
 ### Language System (`vocab_builder/languages/`)
 - `base.py` defines `LanguageConfig`, `TranslatorConfig`, `VocabTemplate`, and `AnkiConfig`.
 - `__init__.py` lazily registers/loads language configs and resolves aliases with `get_language_config(code)`.
-- `french.py` and `german.py` define prompts, validators, translator configs, and Anki metadata.
-- `german_tex.py` contains dedicated German LaTeX templates.
+- `english.py`, `french.py`, and `german.py` define prompts, validators, learning-mode behavior, and Anki metadata.
+- English is monolingual: it omits translation workflows and uses plain-English example paraphrases as active-recall cues.
+- `english_tex.py` and `german_tex.py` contain dedicated language-specific LaTeX templates.
 - `latex_templates.py`, `anki_shared_styles.py`, and `anki_themes.py` provide shared assets.
 
 ### Shared Modules (`vocab_builder/`)
@@ -107,9 +109,9 @@ pytest -k "anki"
 ## Key Patterns
 
 ### Adding a New Language
-1. Create `vocab_builder/languages/<lang>.py` with a `LanguageConfig` (copy `french.py` or `german.py`).
+1. Create `vocab_builder/languages/<lang>.py` with a `LanguageConfig` (copy `french.py` or `german.py`); `learning_mode` selects bilingual versus monolingual behavior.
 2. Register it through `vocab_builder/languages/__init__.py`.
-3. Add language-specific vocab and translator templates (new `*_tex.py` module if needed).
+3. Add language-specific vocab and translator templates (new `*_tex.py` module if needed); translator config and filename fields are optional (`None`) for monolingual languages.
 4. Provide Anki config/templates and optional auto-translator prompt tokens.
 
 ### UI Messaging
@@ -152,6 +154,7 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 - `VOCABBUILDER_DEBUG_EXPORT=1`: Print export debug details during Anki generation.
 - `VOCABBUILDER_AUTO_TRANSLATOR`: Enable/disable intelligent translator option.
 - `VOCABBUILDER_COMPOSITION`: Enable/disable composition practice (default on).
+- `VOCABBUILDER_EXIT_SNAPSHOT`: Enable/disable the automatic complete Anki snapshot on clean exit (default on).
 - `VOCABBUILDER_COMPOSITION_WORDS`: Target words per use-these-words attempt (default `3`, int >= 1).
 - `VOCABBUILDER_COMPOSITION_SET_SIZE`: Attempts per daily composition set (default `3`, int >= 1).
 - `VOCABBUILDER_MAX_BACKUPS`: Maximum timestamped backup snapshots to retain per file (default `10`; `0` disables pruning).

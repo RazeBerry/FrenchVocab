@@ -10,6 +10,7 @@ from .base import (
     AnkiCardTemplate,
     VocabTemplate,
     InputValidator,
+    LearningMode,
 )
 
 # Lazy loading for language configs - only load when actually needed
@@ -25,12 +26,16 @@ def _ensure_configs_loaded() -> None:
     if _configs_loaded:
         return
 
+    from .english import ENGLISH_CONFIG
     from .french import FRENCH_CONFIG
     from .german import GERMAN_CONFIG
 
+    _CONFIGS[ENGLISH_CONFIG.code] = ENGLISH_CONFIG
     _CONFIGS[FRENCH_CONFIG.code] = FRENCH_CONFIG
     _CONFIGS[GERMAN_CONFIG.code] = GERMAN_CONFIG
 
+    for alias in ENGLISH_CONFIG.aliases:
+        _ALIASES[alias] = ENGLISH_CONFIG.code
     for alias in FRENCH_CONFIG.aliases:
         _ALIASES[alias] = FRENCH_CONFIG.code
     for alias in GERMAN_CONFIG.aliases:
@@ -44,6 +49,9 @@ def __getattr__(name: str) -> LanguageConfig:
     if name == "FRENCH_CONFIG":
         from .french import FRENCH_CONFIG
         return FRENCH_CONFIG
+    elif name == "ENGLISH_CONFIG":
+        from .english import ENGLISH_CONFIG
+        return ENGLISH_CONFIG
     elif name == "GERMAN_CONFIG":
         from .german import GERMAN_CONFIG
         return GERMAN_CONFIG
@@ -93,6 +101,7 @@ __all__ = [
     "AnkiCardTemplate",
     "VocabTemplate",
     "InputValidator",
+    "LearningMode",
     "register_language",
     "get_language_config",
     "available_language_codes",

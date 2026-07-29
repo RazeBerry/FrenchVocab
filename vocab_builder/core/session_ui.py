@@ -12,6 +12,8 @@ def _translation_pair_count(
     file_attr: str,
     config: Any,
 ) -> int:
+    if config is None:
+        return 0
     translator = getattr(app, translator_attr, None)
     if translator is not None:
         return translator.entry_count
@@ -122,19 +124,53 @@ def build_welcome_message(app: Any, provider_name: str) -> Tuple[str, str]:
     return message, panel_title
 
 
+def refresh_anki_snapshot_on_exit(app: Any) -> Optional[str]:
+    """Refresh the complete Anki package without blocking a clean exit."""
+    from vocab_builder.core.anki_manager import AnkiSnapshotStatus, exit_snapshot_enabled
+
+    if not exit_snapshot_enabled():
+        return None
+
+    try:
+        result = app._ensure_anki_manager().export_snapshot_if_changed(
+            export_context="clean_exit",
+            quiet=True,
+        )
+    except Exception as exc:
+        app.ui.warning(
+            "Could not refresh the Anki snapshot on exit; "
+            f"your vocabulary remains safely stored in LaTeX ({exc})."
+        )
+        return None
+
+    if result.status == AnkiSnapshotStatus.FAILED:
+        app.ui.warning(
+            "Could not refresh the Anki snapshot on exit; "
+            "your vocabulary remains safely stored in LaTeX."
+        )
+        return None
+    if result.status == AnkiSnapshotStatus.EXPORTED and result.path is not None:
+        return str(result.path)
+    return None
+
+
 def show_main_menu(app: Any) -> str:
-    eng_fr_count = _translation_pair_count(
-        app,
-        translator_attr="eng_to_target_translator",
-        file_attr="eng_to_target_latex_file",
-        config=app.language_config.eng_to_target,
-    )
-    fr_eng_count = _translation_pair_count(
-        app,
-        translator_attr="target_to_eng_translator",
-        file_attr="target_to_eng_latex_file",
-        config=app.language_config.target_to_eng,
-    )
+    supports_translation = app.language_config.supports_translation
+    eng_fr_count = 0
+    fr_eng_count = 0
+    if supports_translation:
+        eng_fr_count = _translation_pair_count(
+            app,
+            translator_attr="eng_to_target_translator",
+            file_attr="eng_to_target_latex_file",
+            config=app.language_config.eng_to_target,
+        )
+        fr_eng_count = _translation_pair_count(
+            app,
+            translator_attr="target_to_eng_translator",
+            file_attr="target_to_eng_latex_file",
+            config=app.language_config.target_to_eng,
+        )
 
     language_name = app.language_config.display_name
 
@@ -159,21 +195,20 @@ def show_main_menu(app: Any) -> str:
         provider_status = "Unavailable"
         provider_color = "yellow"
 
-    total_translation_pairs = eng_fr_count + fr_eng_count
-    status_text = (
-        f"[bold]Library:[/bold] {app.entry_count} vocab words  |  "
-        f"[bold]Translations:[/bold] {total_translation_pairs} pairs  |  "
-        f"[bold]AI:[/bold] [{provider_color}]{provider_status}[/{provider_color}]"
-    )
+    status_parts = [f"[bold]Library:[/bold] {app.entry_count} vocab words"]
+    if supports_translation:
+        total_translation_pairs = eng_fr_count + fr_eng_count
+        status_parts.append(f"[bold]Translations:[/bold] {total_translation_pairs} pairs")
+    status_parts.append(f"[bold]AI:[/bold] [{provider_color}]{provider_status}[/{provider_color}]")
+    status_text = "  |  ".join(status_parts)
     app.ui.panel(status_text, title="Status", border_style="dim dark_orange")
 
     add_word_label = app._ui_text("menu.add_word", f"Add {language_name} word")
     composition_count = _composition_debt_count(app)
 
-    options = [
-        ("add", add_word_label),
-        ("translate", "Translate text"),
-    ]
+    options = [("add", add_word_label)]
+    if supports_translation:
+        options.append(("translate", "Translate text"))
     if composition_count is not None:
         options.append(("composition", f"Composition practice   ({composition_count} unproduced)"))
     options.extend(
@@ -198,6 +233,9 @@ def show_main_menu(app: Any) -> str:
 def show_translation_menu(app: Any) -> str:
     eng_to_cfg = app.language_config.eng_to_target
     target_to_cfg = app.language_config.target_to_eng
+    if not app.language_config.supports_translation or not eng_to_cfg or not target_to_cfg:
+        app.ui.warning("Translation tools are not used in monolingual vocabulary mode.")
+        return "back"
     eng_fr_count = _translation_pair_count(
         app,
         translator_attr="eng_to_target_translator",

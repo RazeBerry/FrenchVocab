@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vocab-builder"
 version = "3.0.0"
-description = "AI-assisted CLI for building bilingual vocabulary lists, generating LaTeX documents, and exporting Anki decks"
+description = "AI-assisted CLI for building vocabulary lists, generating LaTeX documents, and exporting Anki decks"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
 authors = [
     { name = "RazeBerry" },
 ]
-keywords = ["vocabulary", "language-learning", "anki", "latex", "llm", "french", "german"]
+keywords = ["vocabulary", "language-learning", "anki", "latex", "llm", "english", "french", "german"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",

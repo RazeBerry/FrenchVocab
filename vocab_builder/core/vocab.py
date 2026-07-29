@@ -25,6 +25,7 @@ from .text_utils import detect_input_type as classify_input_type, sanitize_user_
 from .menu_loop import main_menu_loop
 from .session_ui import (
     build_welcome_message,
+    refresh_anki_snapshot_on_exit,
     resolve_welcome_provider_name,
     show_main_menu,
     show_post_translation_menu,
@@ -277,8 +278,14 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
         else:
             self.latex_file = Path(latex_file)
             base_dir = self.latex_file.parent
-        self.eng_to_target_latex_file = base_dir / self.language_config.eng_to_target_filename
-        self.target_to_eng_latex_file = base_dir / self.language_config.target_to_eng_filename
+        eng_to_target_filename = self.language_config.eng_to_target_filename
+        target_to_eng_filename = self.language_config.target_to_eng_filename
+        self.eng_to_target_latex_file = (
+            base_dir / eng_to_target_filename if eng_to_target_filename else None
+        )
+        self.target_to_eng_latex_file = (
+            base_dir / target_to_eng_filename if target_to_eng_filename else None
+        )
 
     def _initialize_vocab_repository(self) -> None:
         if not self.latex_file.exists():
@@ -358,6 +365,7 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
             vocab_repo=self._vocab_repo,
             exported_words_file=exported_words_file,
             project_root=self.project_root,
+            entry_history_reader=self._read_vocab_history_for_anki_order,
         )
         self._init_translators()
 
@@ -553,7 +561,7 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
 
     def _init_translators(self) -> None:
         """Instantiate translator flows when an LLM client is available."""
-        if not self.client:
+        if not self.client or not self.language_config.supports_translation:
             self.eng_to_target_translator = None
             self.target_to_eng_translator = None
             self.auto_translator = None
@@ -570,6 +578,16 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
 
         eng_to_target = self.language_config.eng_to_target
         target_to_eng = self.language_config.target_to_eng
+        if (
+            eng_to_target is None
+            or target_to_eng is None
+            or self.eng_to_target_latex_file is None
+            or self.target_to_eng_latex_file is None
+        ):
+            self.eng_to_target_translator = None
+            self.target_to_eng_translator = None
+            self.auto_translator = None
+            return
 
         self.eng_to_target_translator = TranslatorCLI(
             console=self.console,
@@ -1026,6 +1044,8 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
             if self.verbose:
                 self.ui.debug(f"Exit alphabetization skipped: {exc}")
 
+        snapshot_path = refresh_anki_snapshot_on_exit(self)
+
         language_name = self.language_config.display_name
         app_title = self._ui_text("app.title", f"{language_name} Vocabulary LaTeX Builder")
         token_summary = self._format_token_summary()
@@ -1035,6 +1055,11 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
         )
         if token_summary:
             message += f"\n\n[#E67E50]Session tokens[/#E67E50]: {token_summary}"
+        if snapshot_path:
+            message += (
+                "\n\n[bold green]Anki snapshot refreshed:[/bold green] "
+                f"{snapshot_path}"
+            )
         self.ui.panel(
             message,
             title="Goodbye!",
@@ -1200,13 +1225,23 @@ class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
 
     def _show_file_locations(self):
         """Display file paths and configuration."""
-        info_text = (
-            f"[bold]Vocabulary File:[/bold]\n  {self.latex_file}\n\n"
-            f"[bold]English → {self.language_config.display_name}:[/bold]\n  {self.eng_to_target_latex_file}\n\n"
-            f"[bold]{self.language_config.display_name} → English:[/bold]\n  {self.target_to_eng_latex_file}\n\n"
-            f"[bold]Exported Words Tracker:[/bold]\n  {self.exported_words_file}\n\n"
-            f"[bold]Project Root:[/bold]\n  {self.project_root}"
+        sections = [f"[bold]Vocabulary File:[/bold]\n  {self.latex_file}"]
+        if self.language_config.supports_translation:
+            sections.extend(
+                [
+                    f"[bold]English → {self.language_config.display_name}:[/bold]\n"
+                    f"  {self.eng_to_target_latex_file}",
+                    f"[bold]{self.language_config.display_name} → English:[/bold]\n"
+                    f"  {self.target_to_eng_latex_file}",
+                ]
+            )
+        sections.extend(
+            [
+                f"[bold]Exported Words Tracker:[/bold]\n  {self.exported_words_file}",
+                f"[bold]Project Root:[/bold]\n  {self.project_root}",
+            ]
         )
+        info_text = "\n\n".join(sections)
 
         self.ui.panel(info_text, title="File Locations", border_style="blue")
 

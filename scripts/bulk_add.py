@@ -22,7 +22,11 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Bulk-load structured vocabulary JSON into a LaTeX vocab file."
     )
-    parser.add_argument("--language", required=True, help="Language code or alias, e.g. fr or de.")
+    parser.add_argument(
+        "--language",
+        required=True,
+        help="Language code or alias, e.g. fr, de, or en.",
+    )
     parser.add_argument("--file", type=Path, help="JSON input file. Reads stdin when omitted.")
     parser.add_argument("--dry-run", action="store_true", help="Plan the batch without writing.")
     parser.add_argument(

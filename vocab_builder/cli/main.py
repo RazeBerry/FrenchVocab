@@ -15,7 +15,7 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
         "--language",
         "-l",
         type=str.lower,
-        help="Language code to launch immediately (e.g., 'fr', 'de').",
+        help="Language code to launch immediately (e.g., 'fr', 'de', 'en').",
     )
     parser.add_argument(
         "--provider",

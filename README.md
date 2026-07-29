@@ -1,14 +1,17 @@
 # VocabBuilder
 
-An AI-assisted command line companion for growing bilingual vocabulary lists, producing tidy LaTeX, and exporting Anki decks. The current release focuses on a smooth first-run experience so you can get productive within minutes.
+An AI-assisted command line companion for growing bilingual or monolingual vocabulary lists, producing tidy LaTeX, and exporting Anki decks. The current release focuses on a smooth first-run experience so you can get productive within minutes.
 
 ---
 
 ## What You Get
-- **Multi-language vocab builder** -- swap languages with `--language` (French `fr` and German `de` included) and keep each glossary in its own LaTeX file.
+- **Multi-language vocab builder** -- swap languages with `--language` (English `en`, French `fr`, and German `de`) and keep each glossary in its own LaTeX file.
+- **Native-English vocabulary mode** -- learn uncommon English words through concise definitions, contextual examples, plain-English recall cues, and usage coaching without irrelevant translation menus.
 - **Rich CLI UX** -- colour panels, guided prompts, and smart duplicate detection make the terminal feel welcoming.
 - **Bidirectional translators** -- jump between English->Target and Target->English flows with sentence-aware routing.
 - **Deterministic exports** -- LaTeX remains brace-balanced; Anki decks use language-specific metadata with stable note IDs.
+- **Learning-first Anki order** -- LaTeX stays alphabetized for reading, while Anki keeps persistent acquisition order; older untracked entries receive a stable non-alphabetical fallback order.
+- **Safe clean-exit snapshots** -- when card content, order, or templates change, exiting refreshes a complete `.apkg` atomically, preserves any previously exported composition-mistake subdeck, and does not consume the incremental "new words" queue; unchanged sessions do no export work, and snapshots can be disabled with `VOCABBUILDER_EXIT_SNAPSHOT=0`.
 
 ---
 
@@ -24,6 +27,8 @@ An AI-assisted command line companion for growing bilingual vocabulary lists, pr
 ```bash
 pip install vocab-builder
 vocabbuilder --language fr
+# or launch the monolingual English helper
+vocabbuilder --language en
 ```
 
 ### Install from Source
@@ -115,10 +120,12 @@ Unset the environment variable to disable tracing once you have collected enough
 ---
 
 ## Everyday CLI Actions
+- `vocabbuilder --language en` -- collect uncommon English words, expressions, and usage examples.
 - `vocabbuilder --language de` -- add new vocab entries (default menu option 1).
-- Translator modes (options 2 and 3) capture multi-line input and preview results before saving.
-- Export queued entries to Anki via menu option 4.
-- View and search saved vocab using option 5.
+- In bilingual French and German modes, translator flows capture multi-line input and preview results before saving.
+- English usage practice includes both use-these-words exercises and recall from plain-English cues.
+- Anki tools support incremental, full, and selected-word exports plus reconciliation and optional composition-mistake decks.
+- View and search saved vocabulary from the Browse vocabulary menu.
 
 Pass `--verbose` for timing details, or `--provider claude` to select Anthropic directly.
 

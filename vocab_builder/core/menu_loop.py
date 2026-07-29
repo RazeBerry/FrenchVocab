@@ -74,7 +74,11 @@ def _run_eng_to_target(app: VocabAppProtocol) -> None:
     if app.eng_to_target_translator:
         app.eng_to_target_translator.run()
         return
-    title = app._translator_title(app.language_config.eng_to_target)
+    config = app.language_config.eng_to_target
+    if config is None:
+        app.ui.warning("Translation tools are unavailable in monolingual vocabulary mode.")
+        return
+    title = app._translator_title(config)
     app.ui.error(f"{title} is unavailable because the AI provider could not be initialized.")
 
 
@@ -84,5 +88,9 @@ def _run_target_to_eng(app: VocabAppProtocol) -> None:
     if app.target_to_eng_translator:
         app.target_to_eng_translator.run()
         return
-    title = app._translator_title(app.language_config.target_to_eng)
+    config = app.language_config.target_to_eng
+    if config is None:
+        app.ui.warning("Translation tools are unavailable in monolingual vocabulary mode.")
+        return
+    title = app._translator_title(config)
     app.ui.error(f"{title} is unavailable because the AI provider could not be initialized.")

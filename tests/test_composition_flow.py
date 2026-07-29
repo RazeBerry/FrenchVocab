@@ -99,7 +99,15 @@ def _read_jsonl(path: Path):
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
-def _build_builder(tmp_path, monkeypatch, responses, *, set_size="3", words_per_attempt="3"):
+def _build_builder(
+    tmp_path,
+    monkeypatch,
+    responses,
+    *,
+    set_size="3",
+    words_per_attempt="3",
+    language="fr",
+):
     monkeypatch.setenv("VOCABBUILDER_HISTORY_DIR", str(tmp_path / "history"))
     monkeypatch.setenv("VOCABBUILDER_COMPOSITION_SET_SIZE", set_size)
     monkeypatch.setenv("VOCABBUILDER_COMPOSITION_WORDS", words_per_attempt)
@@ -108,7 +116,7 @@ def _build_builder(tmp_path, monkeypatch, responses, *, set_size="3", words_per_
         provider="gemini",
         verbose=False,
         client=_FakeLLMClient(responses),
-        language="fr",
+        language=language,
     )
 
 
@@ -324,14 +332,57 @@ def test_composition_reverse_escape_cancels_before_grading(tmp_path, monkeypatch
     assert not any(panel["title"] == "Composition Summary" for panel in capture.panels)
 
 
-def test_reverse_grading_prompts_configured_for_french_and_german():
-    for language in ("fr", "de"):
+def test_reverse_grading_prompts_configured_for_all_languages():
+    for language in ("fr", "de", "en"):
         template = get_language_config(language).composition.reverse_grading_prompt_template
 
         assert "{source_english}" in template
         assert "{reference_target}" in template
         assert "Word Verdicts:" in template
         assert "not the only acceptable answer" in template
+
+
+def test_english_recall_uses_plain_english_cue_and_writes_history(tmp_path, monkeypatch):
+    builder = _build_builder(
+        tmp_path,
+        monkeypatch,
+        [_reverse_response("recondite", "The recondite lecture confused everyone.")],
+        set_size="1",
+        words_per_attempt="1",
+        language="en",
+    )
+    builder.word_entries = {
+        "recondite": {
+            "word": "recondite",
+            "type": "adjective",
+            "definitions_list": ["Difficult to understand; obscure."],
+            "examples_list": [
+                (
+                    "The recondite lecture confused everyone.",
+                    "The obscure, difficult lecture confused everyone.",
+                )
+            ],
+        }
+    }
+    builder._vocab_repo._entries_loaded = True
+    builder._vocab_repo.entry_count = 1
+
+    coach = builder._ensure_composition_coach()
+    capture = _CaptureUI(choices=["reverse"])
+    coach.ui = capture
+    lines = iter(["The recondite lecture confused everyone.", ""])
+    monkeypatch.setattr(composition_module, "read_line", lambda _prompt="": next(lines))
+
+    builder.handle_composition()
+
+    history_path = tmp_path / "history" / "en_compositions.jsonl"
+    records = _read_jsonl(history_path)
+    assert records[0]["mode"] == "reverse"
+    assert records[0]["source_english"] == "The obscure, difficult lecture confused everyone."
+    assert records[0]["reference_target"] == "The recondite lecture confused everyone."
+    assert "Plain-English cue shown to the learner" in builder.client.prompts[0]
+    recall_panel = next(panel for panel in capture.panels if "Plain-English cue" in panel["content"])
+    assert 'using "recondite"' in recall_panel["content"]
 
 
 def test_main_menu_includes_composition_debt_counter(tmp_path):

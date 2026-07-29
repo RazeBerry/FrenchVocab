@@ -10,7 +10,9 @@ def _install_genanki_stub() -> None:
 
     class _Dummy:
         def __init__(self, *args, **kwargs):
-            pass
+            if "fields" in kwargs:
+                self.fields = kwargs["fields"]
+                self.sort_field = self.fields[0] if self.fields else ""
 
     class _DummyPackage:
         def __init__(self, deck):

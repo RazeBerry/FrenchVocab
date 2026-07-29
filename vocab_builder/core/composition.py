@@ -132,7 +132,7 @@ class CompositionCoach:
 
     def run_reverse_daily_set(self) -> None:
         if not self.config.reverse_grading_prompt_template:
-            self.ui.error("Reverse translation grading prompt is not configured for this language.")
+            self.ui.error("Recall-practice grading is not configured for this language.")
             return
 
         session_id = str(uuid4())
@@ -145,12 +145,16 @@ class CompositionCoach:
             word = self.scheduler.sample_reverse_word(exclude_keys=used_keys)
             if word is None:
                 self.ui.warning(
-                    "No vocabulary entries with stored examples are available for reverse translation."
+                    "No vocabulary entries with usable stored examples are available for recall practice."
                 )
                 break
 
             reference_target, source_english = word.examples[0]
-            self._show_reverse_prompt(source_english, attempt_number)
+            self._show_reverse_prompt(
+                source_english,
+                attempt_number,
+                target_word=word.word,
+            )
             user_text = self._collect_multiline_input()
             if user_text is None:
                 self.ui.warning("Composition practice cancelled.")
@@ -253,22 +257,35 @@ class CompositionCoach:
             box_style=box.ROUNDED,
         )
 
-    def _show_reverse_prompt(self, source_english: str, attempt_number: int) -> None:
+    def _show_reverse_prompt(
+        self,
+        source_english: str,
+        attempt_number: int,
+        *,
+        target_word: str,
+    ) -> None:
+        instruction = self.config.reverse_instruction_template.format(
+            language=self.language_config.display_name,
+            target_word=target_word,
+        )
         content = (
-            "[bold #E67E50]English source[/bold #E67E50]\n"
+            f"[bold #E67E50]{_escape_markup(self.config.reverse_source_label)}[/bold #E67E50]\n"
             f"{_escape_markup(source_english)}\n\n"
-            f"[dim]Translate into {self.language_config.display_name}.[/dim]"
+            f"[dim]{_escape_markup(instruction)}[/dim]"
         )
         self.ui.panel(
             content,
-            title=f"Attempt {attempt_number}: Reverse Translation",
+            title=f"Attempt {attempt_number}: {self.config.reverse_label}",
             border_style="dark_orange",
             box_style=box.ROUNDED,
         )
 
     def _collect_multiline_input(self) -> Optional[str]:
+        input_instruction = self.config.input_instruction_template.format(
+            language=self.language_config.display_name,
+        )
         instructions = (
-            "[#E67E50]Write 1-4 sentences in the target language.[/#E67E50]\n"
+            f"[#E67E50]{_escape_markup(input_instruction)}[/#E67E50]\n"
             "[dim]- Press Enter on an empty line to submit.\n"
             "- Press Esc to cancel this daily set.[/dim]"
         )

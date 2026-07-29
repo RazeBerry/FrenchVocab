@@ -192,6 +192,7 @@ class AnkiExportEntry:
     word_type: str
     definitions: Sequence[str]
     examples: Sequence[Tuple[str, str]]
+    order: int = 0
 
     def definitions_text(self) -> str:
         return "\n".join(d.strip() for d in self.definitions if d and d.strip())
@@ -379,8 +380,8 @@ class AnkiExporter:
         if not hasattr(deck, "deck_id"):
             deck.deck_id = self.deck_id  # type: ignore[attr-defined]
 
-        for entry in entries:
-            note = self._build_note(entry, model)
+        for position, entry in enumerate(entries, start=1):
+            note = self._build_note(entry, model, fallback_order=position)
             deck.add_note(note)
         return deck
 
@@ -405,7 +406,13 @@ class AnkiExporter:
             css=self.config.card_css or None,
         )
 
-    def _build_note(self, entry: AnkiExportEntry, model: genanki.Model) -> genanki.Note:
+    def _build_note(
+        self,
+        entry: AnkiExportEntry,
+        model: genanki.Model,
+        *,
+        fallback_order: int,
+    ) -> genanki.Note:
         genanki_mod = _get_genanki()
         normalized = entry.word.strip().lower()
         guid_namespace = self.config.deck_namespace.lower()
@@ -424,6 +431,9 @@ class AnkiExporter:
         note = genanki_mod.Note(model=model, guid=guid, fields=fields)
         if not hasattr(note, "fields"):
             note.fields = fields  # type: ignore[attr-defined]
+        # Anki recomputes sfld from the headword on import, so due is the only
+        # channel that carries acquisition order.
+        note.due = entry.order if entry.order > 0 else fallback_order
         return note
 
     @staticmethod

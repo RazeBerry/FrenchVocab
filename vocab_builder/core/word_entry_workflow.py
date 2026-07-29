@@ -298,7 +298,10 @@ class WordEntryWorkflow:
     def _maybe_show_sentence_hint(self, detected_type: str) -> None:
         if detected_type != "sentence" or not self.route_sentences:
             return
-        target_filename = self.language_config.target_to_eng.default_filename
+        target_config = self.language_config.target_to_eng
+        if not self.language_config.supports_translation or target_config is None:
+            return
+        target_filename = target_config.default_filename
         self.ui.info(
             "This looks like a sentence. After AI analysis, "
             f"you'll have the option to route it to {target_filename}.",
@@ -692,7 +695,10 @@ class WordEntryWorkflow:
 
     def _offer_sentence_routing(self, original_word: str, word_type: str) -> bool:
         """Offer to route sentence to translator. Returns True if routed."""
-        title = self._translator_title(self.language_config.target_to_eng)
+        target_config = self.language_config.target_to_eng
+        if not self.language_config.supports_translation or target_config is None:
+            return False
+        title = self._translator_title(target_config)
         route = self.ui.confirm(
             f"AI identified this as a sentence. Route to {title} instead?",
             default=True,
@@ -701,7 +707,7 @@ class WordEntryWorkflow:
             return False
 
         if not self.target_to_eng_translator:
-            alt_title = self._translator_title(self.language_config.target_to_eng)
+            alt_title = self._translator_title(target_config)
             self.ui.error(
                 f"{alt_title} is not available (initialization failed). "
                 "Proceeding in vocab mode."
