@@ -514,6 +514,40 @@ def test_clean_exit_snapshot_repairs_incremental_package_and_then_noops(
     assert len(_Package.payloads) == 5
 
 
+def test_clean_exit_snapshot_rebuilds_when_package_was_deleted(tmp_path, monkeypatch):
+    class _Package:
+        writes = 0
+
+        def __init__(self, _deck_or_decks):
+            pass
+
+        def write_to_file(self, path):
+            self.__class__.writes += 1
+            Path(path).write_bytes(b"stub apkg")
+
+    monkeypatch.setattr(genanki, "Package", _Package)
+    repo = _StubRepo()
+    repo.word_entries = {"alpha": _vocab_entry("alpha")}
+    manager = AnkiExportManager(
+        ui=_StubUI(),
+        language_config=get_language_config("fr"),
+        vocab_repo=repo,  # type: ignore[arg-type]
+        exported_words_file=tmp_path / "exported_words.json",
+        project_root=tmp_path,
+    )
+
+    initial = manager.export_snapshot_if_changed()
+    assert initial.path is not None
+    initial.path.unlink()
+
+    rebuilt = manager.export_snapshot_if_changed()
+
+    assert rebuilt.status == AnkiSnapshotStatus.EXPORTED
+    assert rebuilt.path == initial.path
+    assert rebuilt.path.is_file()
+    assert _Package.writes == 2
+
+
 def test_snapshot_preserves_mistake_deck_and_tracks_mistake_history_changes(
     tmp_path,
     monkeypatch,
@@ -754,6 +788,51 @@ def test_operator_export_directory_rejects_foreign_snapshot_metadata(
     assert manager._normalize_output_path(deck_name) == (
         configured / "French Vocabulary.apkg"
     ).resolve()
+
+
+def test_operator_export_directory_rebuilds_matching_foreign_snapshot(
+    tmp_path,
+    monkeypatch,
+):
+    class _Package:
+        def __init__(self, _deck_or_decks):
+            pass
+
+        def write_to_file(self, path):
+            Path(path).write_bytes(b"stub apkg")
+
+    monkeypatch.setattr(genanki, "Package", _Package)
+    configured = tmp_path / "server-exports"
+    monkeypatch.setenv("VOCABBUILDER_ANKI_EXPORT_DIR", str(configured))
+    repo = _StubRepo()
+    repo.word_entries = {"alpha": _vocab_entry("alpha")}
+    manager = AnkiExportManager(
+        ui=_StubUI(),
+        language_config=get_language_config("fr"),
+        vocab_repo=repo,  # type: ignore[arg-type]
+        exported_words_file=tmp_path / "state" / "exported_words.json",
+        project_root=tmp_path,
+    )
+    foreign_path = tmp_path / "old-machine" / "French Vocabulary.apkg"
+    foreign_path.parent.mkdir()
+    foreign_path.write_bytes(b"foreign package")
+    manager._snapshot_hash = manager._compute_snapshot_hash(
+        repo.word_entries,
+        include_mistake_deck=False,
+    )
+    manager._snapshot_export_metadata = {
+        "deck_name": "French Vocabulary",
+        "path": str(foreign_path),
+        "path_source": "explicit",
+    }
+
+    rebuilt = manager.export_snapshot_if_changed()
+
+    expected = (configured / "French Vocabulary.apkg").resolve()
+    assert rebuilt.status == AnkiSnapshotStatus.EXPORTED
+    assert rebuilt.path == expected
+    assert expected.is_file()
+    assert Path(manager.snapshot_export_metadata["path"]) == expected
 
 
 def test_selected_export_to_snapshot_path_is_repaired_on_exit(tmp_path, monkeypatch):

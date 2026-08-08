@@ -1414,6 +1414,28 @@ class AnkiExportManager:
                 quiet=quiet,
             )
 
+    def _snapshot_artifact_is_reusable(self) -> bool:
+        """Return whether snapshot metadata points to the current usable package."""
+        metadata = self._snapshot_export_metadata
+        if not isinstance(metadata, dict):
+            return False
+
+        normalized = self._normalize_loaded_export_metadata(metadata)
+        raw_path = normalized.get("path")
+        if not raw_path:
+            return False
+        try:
+            snapshot_path = Path(os.path.expanduser(str(raw_path))).resolve()
+        except (OSError, TypeError, ValueError):
+            return False
+
+        if (
+            self._export_directory_is_operator_configured
+            and not snapshot_path.is_relative_to(self._default_export_directory)
+        ):
+            return False
+        return snapshot_path.is_file()
+
     def _export_snapshot_if_changed_locked(
         self,
         *,
@@ -1437,7 +1459,7 @@ class AnkiExportManager:
             word_entries,
             include_mistake_deck=include_mistake_deck,
         )
-        if current_hash == self._snapshot_hash:
+        if current_hash == self._snapshot_hash and self._snapshot_artifact_is_reusable():
             return AnkiSnapshotResult(AnkiSnapshotStatus.UNCHANGED)
 
         deck_name, output_path = self._automatic_snapshot_destination()
