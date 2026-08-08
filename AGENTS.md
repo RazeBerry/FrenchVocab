@@ -160,7 +160,7 @@ pytest -k "anki"
 
 #### Mobile front end (`vocab_builder/mobile/static/`)
 - Plain HTML/CSS/JS with no build step and no external requests (Tailscale-only hosts may have no public egress).
-- The five views are Capture, Translate, Library, Practice, and Tools. English is monolingual, so capability data from `/api/status` removes Translate instead of presenting a dead workflow.
+- The five implemented views are Capture, Translate, Library, Practice, and Tools. The production navigation currently exposes only Capture and Translate; Library, Practice, Tools, and the secondary library link remain marked `hidden` until their presentation is ready. English is monolingual, so capability data from `/api/status` also removes Translate and leaves a single Capture tab. Hiding a view must not remove its tested backend capability or durable state.
 - `app.js` is only the shell and view dispatcher. `api.js`, `ui.js`, `entry-list.js`, and the `*-view.js` modules own transport, shared presentation, and one workflow each. Keep server rules on the server and keep view-local DOM/state out of the shell.
 - Every mutating flow is preview/confirm or an explicit tool action. Disable repeated submissions while a request is active, use idempotency tokens supplied by the server, and ignore stale responses after a language or view change.
 - Capture drafts persist locally per language. Provider keys never enter local or session storage; they are submitted directly to the private settings endpoint and the server response never echoes them.

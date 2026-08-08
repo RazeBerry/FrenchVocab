@@ -87,7 +87,7 @@
           </div>
           <p class="message" id="form-message" role="alert"></p>
           <section class="recent-strip">
-            <div class="section-heading"><h2>Recently kept</h2><button data-go="library" type="button">Open library</button></div>
+            <div class="section-heading"><h2>Recently kept</h2><button data-go="library" type="button" hidden>Open library</button></div>
             <div class="index compact" id="recent-list"></div>
             <p class="empty-state" id="recent-empty">Your recent additions will appear here.</p>
           </section>
@@ -195,9 +195,9 @@
       <nav class="tabbar" aria-label="Main navigation">
         <button class="tab is-active" data-tab="capture" type="button"><span aria-hidden="true">＋</span><small>Add</small></button>
         <button class="tab" data-tab="translate" type="button"><span aria-hidden="true">↔</span><small>Translate</small></button>
-        <button class="tab" data-tab="library" type="button"><span aria-hidden="true">≡</span><small>Library</small></button>
-        <button class="tab" data-tab="practice" type="button"><span aria-hidden="true">◇</span><small>Practice</small></button>
-        <button class="tab" data-tab="tools" type="button"><span aria-hidden="true">···</span><small>Tools</small></button>
+        <button class="tab" data-tab="library" type="button" hidden><span aria-hidden="true">≡</span><small>Library</small></button>
+        <button class="tab" data-tab="practice" type="button" hidden><span aria-hidden="true">◇</span><small>Practice</small></button>
+        <button class="tab" data-tab="tools" type="button" hidden><span aria-hidden="true">···</span><small>Tools</small></button>
       </nav>
     </div>
   </body>

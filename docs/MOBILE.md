@@ -18,8 +18,10 @@ Mac browser / SSH CLI ──┘
 - Capture has the same AI preview, spelling correction, duplicate rejection,
   explicit merge/variant choices, sentence routing, atomic save, history, and
   Anki ordering as the CLI. Translate, Library, Practice, and Tools expose the
-  remaining non-interactive workflows. English is monolingual and therefore
-  omits Translate.
+  remaining non-interactive workflows. For the current production presentation,
+  the bottom navigation shows only Add and Translate; the other implemented
+  views are hidden until their phone UI is ready. English is monolingual and
+  therefore presents Add alone.
 - On Mac, use the same website or run `vocab` for the Rich terminal interface.
   The remote CLI asks which language collection to open, then reads and writes
   the same authoritative files as the phone. Neither surface synchronizes a

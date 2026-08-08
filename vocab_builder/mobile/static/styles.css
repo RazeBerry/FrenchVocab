@@ -945,7 +945,7 @@ textarea:focus-visible {
   left: 0;
   z-index: 8;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   max-width: 620px;
   min-height: calc(62px + env(safe-area-inset-bottom));
   padding: 5px max(8px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(8px, env(safe-area-inset-left));
@@ -956,7 +956,7 @@ textarea:focus-visible {
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
-:root[data-translation="false"] .tabbar { grid-template-columns: repeat(4, 1fr); }
+:root[data-translation="false"] .tabbar { grid-template-columns: 1fr; }
 .tab {
   display: grid;
   place-items: center;

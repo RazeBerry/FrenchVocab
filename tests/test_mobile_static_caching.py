@@ -8,6 +8,7 @@ entirely on the response headers.
 from __future__ import annotations
 
 import asyncio
+import re
 
 import httpx
 
@@ -93,3 +94,19 @@ def test_static_assets_still_answer_conditional_requests(tmp_path, monkeypatch):
             return await client.get("/static/styles.css", headers={"If-None-Match": etag})
 
     assert asyncio.run(conditional()).status_code == 304
+
+
+def test_production_navigation_exposes_only_capture_and_translation(tmp_path, monkeypatch):
+    index = _get(_app(tmp_path, monkeypatch), "/").text
+    matches = re.findall(
+        r'<button class="tab[^\"]*"([^>]*)data-tab="([^\"]+)"([^>]*)>',
+        index,
+    )
+    tabs = {name: before + after for before, name, after in matches}
+
+    assert "hidden" not in tabs["capture"]
+    assert "hidden" not in tabs["translate"]
+    assert "hidden" in tabs["library"]
+    assert "hidden" in tabs["practice"]
+    assert "hidden" in tabs["tools"]
+    assert re.search(r'data-go="library"[^>]*hidden', index)
