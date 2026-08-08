@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import genanki
+import pytest
 
 import vocab_builder.anki_exporter as anki_exporter_module
 from vocab_builder.anki_exporter import AnkiExporter, AnkiExportEntry
@@ -139,6 +140,21 @@ def test_operator_export_directory_overrides_state_location(tmp_path, monkeypatc
     assert manager._normalize_output_path("French Vocabulary") == (
         configured / "French Vocabulary.apkg"
     ).resolve()
+
+
+def test_operator_export_directory_rejects_absolute_paths_outside_root(
+    tmp_path,
+    monkeypatch,
+):
+    configured = tmp_path / "server-exports"
+    monkeypatch.setenv("VOCABBUILDER_ANKI_EXPORT_DIR", str(configured))
+    manager = _manager(tmp_path / "state" / "exported_words.json")
+
+    with pytest.raises(ValueError, match="configured export directory"):
+        manager._normalize_output_path(tmp_path / "outside" / "Deck.apkg")
+
+    inside = configured / "nested" / "Deck.apkg"
+    assert manager._normalize_output_path(inside) == inside.resolve()
 
 
 def test_absolute_output_path_is_still_honored(tmp_path):

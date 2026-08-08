@@ -1702,6 +1702,14 @@ class AnkiExportManager:
                 )
         else:
             candidate = candidate.resolve()
+        if (
+            self._export_directory_is_operator_configured
+            and not candidate.is_relative_to(self._default_export_directory)
+        ):
+            raise ValueError(
+                "Anki export paths must stay inside the configured export directory: "
+                f"{self._default_export_directory}"
+            )
         return candidate
 
     def _determine_export_destination(self, default_deck: str) -> Tuple[str, Optional[Path], bool]:
