@@ -656,14 +656,14 @@ class AnkiExportManager:
         )
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
-    def register_entry_order(self, word: str) -> None:
+    def register_entry_order(self, word: str) -> bool:
         """Persist a newly saved word after existing order without re-sorting it."""
         with file_lock(self._exported_words_file):
             self._merge_current_export_state()
             self._vocab_repo.ensure_entries_loaded()
             key = self._entry_order_key(word)
             if not key or key in self._entry_order:
-                return
+                return True
 
             existing_entries = {
                 entry_key: entry
@@ -672,11 +672,13 @@ class AnkiExportManager:
             }
             self._sync_entry_order(existing_entries)
             self._entry_order.append(key)
-            if not self.save_exported_words():
+            saved = self.save_exported_words()
+            if not saved:
                 self._ui.warning(
                     "The vocabulary entry was saved, but its Anki acquisition order "
                     "could not be persisted."
                 )
+            return saved
 
     def _read_composition_history_records(self) -> List[Dict[str, Any]]:
         records: List[Dict[str, Any]] = []
@@ -1764,6 +1766,19 @@ class AnkiExportManager:
         in_exports_not_latex = exported_words - latex_entries
         return in_latex_not_exported, in_exports_not_latex
 
+    def remove_stale_export_tracking(self) -> int:
+        """Drop tracker entries absent from LaTeX and return the removed count."""
+        with file_lock(self._exported_words_file):
+            self._merge_current_export_state()
+            current_latex_entries = self._vocab_repo.get_all_latex_entries()
+            current_extras = self._exported_words - current_latex_entries
+            if not current_extras:
+                return 0
+            self._exported_words.difference_update(current_extras)
+            if not self.save_exported_words():
+                return 0
+            return len(current_extras)
+
     def generate_discrepancy_report(self) -> None:
         """Generate and display a discrepancy report."""
         in_latex_not_exported, in_exports_not_latex = self.compare_entries_and_exports()
@@ -1804,12 +1819,8 @@ class AnkiExportManager:
         # Remove extra exported words not present in LaTeX
         if in_exports_not_latex:
             if self._ui.confirm(f"Remove {len(in_exports_not_latex)} stale exported word(s) from tracking?", default=False):
-                with file_lock(self._exported_words_file):
-                    self._merge_current_export_state()
-                    current_latex_entries = self._vocab_repo.get_all_latex_entries()
-                    current_extras = self._exported_words - current_latex_entries
-                    self._exported_words.difference_update(current_extras)
-                    self.save_exported_words()
+                removed = self.remove_stale_export_tracking()
+                if removed:
                     self._ui.success("Updated exported words; removed stale entries.")
 
     # -------------------------------------------------------------------------

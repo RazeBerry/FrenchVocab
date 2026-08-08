@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+import importlib
 from importlib.resources import files
 import json
 import re
@@ -43,7 +44,7 @@ class FakeClient:
         self.response = response
         self.prompts: list[str] = []
 
-    def stream(self, prompt: str):
+    def stream(self, prompt: str, **_kwargs):
         self.prompts.append(prompt)
         yield self.response
         return {"usage": {"prompt_tokens": 1, "output_tokens": 1, "total_tokens": 2}}
@@ -63,7 +64,14 @@ def build_service(
     monkeypatch.setenv("VOCABBUILDER_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("VOCABBUILDER_HISTORY_DIR", str(tmp_path / "history"))
     builder = VocabBuilder(
-        latex_file=str(tmp_path / {"fr": "FrenchVocab.tex", "de": "GermanVocab.tex"}[language]),
+        latex_file=str(
+            tmp_path
+            / {
+                "fr": "FrenchVocab.tex",
+                "de": "GermanVocab.tex",
+                "en": "EnglishVocab.tex",
+            }[language]
+        ),
         provider="gemini",
         language=language,
         client=FakeClient(),
@@ -90,7 +98,7 @@ def test_preview_and_save_reuse_existing_workflow(tmp_path, monkeypatch):
     assert saved["word"] == "chrysanthème"
     assert re.search(r"\\entry\{Chrysanthème\}\{noun\}", content)
     assert service.search("flower")[0]["word"] == "Chrysanthème"
-    assert service.recent()[0]["word"] == "chrysanthème"
+    assert service.recent()[0]["word"] == "Chrysanthème"
 
 
 @pytest.mark.parametrize(
@@ -207,10 +215,11 @@ def test_degraded_preview_silently_restores_provider(tmp_path, monkeypatch):
         create_calls.append((provider, api_key))
         return FakeClient()
 
-    monkeypatch.setattr(
-        "vocab_builder.llm_client.ProviderFactory.create",
-        create_client,
-    )
+    # Other tests deliberately reload ``llm_client`` while exercising optional
+    # SDK imports. Patch the class currently owned by the module, not a stale
+    # class imported during collection.
+    current_llm_client = importlib.import_module("vocab_builder.llm_client")
+    monkeypatch.setattr(current_llm_client.ProviderFactory, "create", create_client)
 
     preview = service.preview("chrysantheme")
 
@@ -430,6 +439,7 @@ def test_catalog_routes_preview_tokens_and_state_by_language(tmp_path, monkeypat
     assert collections.json()["default_language"] == "fr"
     assert [item["language"] for item in collections.json()["collections"]] == ["fr", "de"]
     assert default_status.json()["language"] == "fr"
+    assert default_status.json()["supports_translation"] is True
     assert german_status.json()["language"] == "de"
     assert german_status.json()["data_file"] == "GermanVocab.tex"
     assert preview.json()["language"] == "fr"
@@ -459,7 +469,7 @@ def test_blocking_previews_run_in_worker_threads_per_language():
             self.builder = SimpleNamespace(language_code=language)
             self.language = language
 
-        def preview(self, _text):
+        def preview(self, _text, **_kwargs):
             rendezvous.wait(timeout=2)
             return PreviewResult(self.language)
 
@@ -518,4 +528,15 @@ def test_service_worker_precaches_the_unversioned_shell_assets():
     assert re.search(r'const SHELL_CACHE = "vocabbuilder-shell";', worker)
 
     assert 'document.addEventListener("visibilitychange"' in app_js
-    assert 'if (!el("search-input").value.trim()) loadRecent();' in app_js
+    assert "views.capture.refresh()" in app_js
+    for module in (
+        "api.js",
+        "ui.js",
+        "entry-list.js",
+        "capture-view.js",
+        "library-view.js",
+        "translation-view.js",
+        "practice-view.js",
+        "tools-view.js",
+    ):
+        assert f'"/static/{module}"' in worker

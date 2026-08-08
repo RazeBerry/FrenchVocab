@@ -92,8 +92,8 @@ printf '%s\n' \
   >/etc/vocabbuilder/mobile.env
 chmod 0600 /etc/vocabbuilder/mobile.env
 
-# This merely prepares private HTTPS routing.  The app intentionally remains
-# stopped until its provider key has been entered directly on the VM.
+# This merely prepares private HTTPS routing. The app intentionally remains
+# stopped until a provider is configured in /var/lib/vocabbuilder/.env on the VM.
 if command -v tailscale >/dev/null 2>&1; then
   tailscale serve --bg 8080 || \
     echo "Tailscale Serve still needs to be enabled after bootstrap." >&2

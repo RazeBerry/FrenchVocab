@@ -10,6 +10,7 @@ from vocab_builder.models import WordEntry
 
 from .bulk_add import BulkAddReport, DuplicatePolicy
 from .history_logger import TranslationLogger
+from .providers.manager import available_provider_ids
 
 
 class VocabCapturePort(Protocol):
@@ -20,8 +21,10 @@ class VocabCapturePort(Protocol):
     latex_file: Path
     max_word_length: int
     max_words: Optional[int]
+    route_sentences: bool
     sentence_examples_in_vocab: bool
     history_logger: Optional[TranslationLogger]
+    target_to_eng_translator: Any
     api_available: bool
     api_error_reason: Optional[str]
     word_entries: dict[str, dict[str, Any]]
@@ -56,7 +59,21 @@ class VocabCapturePort(Protocol):
         dry_run: bool = False,
     ) -> BulkAddReport: ...
 
-    def record_acquisition_order(self, word: str) -> None: ...
+    def record_acquisition_order(self, word: str) -> bool: ...
+
+    def get_composition_coach(self) -> Any: ...
+
+    def get_anki_manager(self) -> Any: ...
+
+    def provider_settings(self) -> dict[str, Any]: ...
+
+    def configure_provider_noninteractive(
+        self,
+        provider: str,
+        api_key: Optional[str] = None,
+    ) -> tuple[bool, str]: ...
+
+    def test_provider_connection(self) -> tuple[bool, str]: ...
 
 
 class VocabCaptureMixin:
@@ -85,5 +102,56 @@ class VocabCaptureMixin:
             dry_run=dry_run,
         )
 
-    def record_acquisition_order(self, word: str) -> None:
-        self._ensure_anki_manager().register_entry_order(word)
+    def record_acquisition_order(self, word: str) -> bool:
+        return self._ensure_anki_manager().register_entry_order(word)
+
+    def get_composition_coach(self) -> Any:
+        return self._ensure_composition_coach()
+
+    def get_anki_manager(self) -> Any:
+        return self._ensure_anki_manager()
+
+    def provider_settings(self) -> dict[str, Any]:
+        configured = []
+        for provider in available_provider_ids():
+            metadata = self.provider_manager.get_metadata(provider)
+            resolution = self.provider_manager.resolve_provider_silently(metadata)
+            configured.append(
+                {
+                    "id": provider,
+                    "name": metadata.display_name,
+                    "configured": resolution is not None,
+                    "documentation_url": metadata.doc_url,
+                }
+            )
+        return {
+            "active": self.provider,
+            "label": self.provider_label,
+            "available": self.api_available,
+            "error": self.api_error_reason,
+            "providers": configured,
+        }
+
+    def configure_provider_noninteractive(
+        self,
+        provider: str,
+        api_key: Optional[str] = None,
+    ) -> tuple[bool, str]:
+        metadata = self.provider_manager.get_metadata(provider)
+        if api_key is None:
+            resolution = self.provider_manager.resolve_provider_silently(metadata)
+            if resolution is None:
+                return False, f"No stored {metadata.display_name} credential was found."
+        else:
+            resolution, feedback = self.provider_manager.configure_noninteractive(
+                metadata,
+                api_key,
+            )
+            if resolution is None:
+                return False, feedback.message
+        if not self._llm.apply_resolution_noninteractive(resolution):
+            return False, self.api_error_reason or "The provider could not be initialized."
+        return True, f"{metadata.display_name} is connected."
+
+    def test_provider_connection(self) -> tuple[bool, str]:
+        return self._llm.test_connection()

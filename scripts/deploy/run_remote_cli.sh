@@ -19,8 +19,6 @@ exec runuser -u vocabbuilder -- env \
   VOCABBUILDER_CONFIG_DIR=/var/lib/vocabbuilder \
   VOCABBUILDER_HISTORY_DIR=/var/lib/vocabbuilder/history \
   VOCABBUILDER_SKIP_KEYRING=1 \
-  GEMINI_API_KEY="${GEMINI_API_KEY:-}" \
-  ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
   /opt/vocabbuilder/.venv/bin/vocabbuilder \
   --provider "$PROVIDER" \
   "$@"

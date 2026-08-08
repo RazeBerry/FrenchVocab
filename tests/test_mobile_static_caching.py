@@ -51,7 +51,17 @@ def _get(app, path: str) -> httpx.Response:
 def test_static_assets_revalidate(tmp_path, monkeypatch):
     app = _app(tmp_path, monkeypatch)
 
-    for path in ("/static/styles.css", "/static/app.js", "/static/icon.svg"):
+    for path in (
+        "/static/styles.css",
+        "/static/app.js",
+        "/static/api.js",
+        "/static/capture-view.js",
+        "/static/library-view.js",
+        "/static/translation-view.js",
+        "/static/practice-view.js",
+        "/static/tools-view.js",
+        "/static/icon.svg",
+    ):
         response = _get(app, path)
         assert response.status_code == 200, path
         assert response.headers.get("cache-control") == "no-cache", path

@@ -31,7 +31,7 @@ An optional private web interface (`vocabbuilder-mobile`, extras `[mobile]`) ser
 - `vocab_builder/` root modules (`models.py`, `anki_exporter.py`, `latex_repository.py`, `llm_client.py`, `ui_helper.py`) provide shared infrastructure.
 - `vocab_builder/compat.py` provides backward-compatible helpers for env vars, config paths, and keyring migration.
 - `vocab_builder/diagnostics/` contains ESC latency tracing tools.
-- `vocab_builder/mobile/` contains the optional FastAPI web interface and its static front end (`static/index.html`, `styles.css`, `app.js`, `service-worker.js`).
+- `vocab_builder/mobile/` contains the optional FastAPI web interface, headless mobile use-case adapters, durable request state, and its no-build static front end.
 - `FrenchVocab.py` is a deprecated shim that delegates to `vocab_builder.cli.main`.
 - `scripts/` contains utility and demo scripts, including `scripts/bulk_add.py` for operator-reviewed structured JSON vocabulary batches.
 - `scripts/deploy/` holds VM provisioning and backup scripts; `scripts/macos/vocab` is the Mac launcher for the remote CLI.
@@ -119,17 +119,20 @@ pytest -k "anki"
 
 ### Private Mobile Interface (`vocab_builder/mobile/`)
 - `cli.py` is the `vocabbuilder-mobile` entry point; it binds `127.0.0.1:8080` by default and never opens a public port.
-- `app.py` builds the FastAPI app and owns the JSON API (`/api/collections`, `/api/status`, `/api/preview`, `/api/save`, `/api/recent`, `/api/search`) plus the static shell.
-- `service.py` wraps one `VocabBuilder` per language with its own in-process lock, preview tokens, idempotent save receipts, and history.
+- `app.py` is an HTTP composition root: it validates private identity, maps requests to one language service, translates domain errors to JSON, and serves the static shell. Keep workflows out of route handlers.
+- `service.py` owns vocabulary capture and the durable transaction journal. `library.py`, `translations.py`, `practice.py`, `anki.py`, `settings.py`, and `storage.py` own the other phone workflows; do not grow another all-purpose mobile controller.
+- `state_store.py` atomically persists short-lived previews, idempotent receipts, practice attempts, and repairable auxiliary transactions. The LaTeX collections remain authoritative; mobile state is a recovery journal, not another vocabulary database.
 - `catalog.py` registers those per-language services and resolves the `?language=` parameter; `factory.py` constructs them.
 - The mobile surface constructs every builder with `interactive=False`; no code reachable from a request may prompt. `UIHelper` raises `NonInteractiveError` as a backstop if a future request path accidentally attempts console input.
 - Blocking provider and repository work is exposed through synchronous FastAPI handlers so Starlette runs it in worker threads; do not call those workflows directly from an `async def` route.
 - Tailscale Serve supplies private HTTPS and identity; provider credentials stay server-side and are never sent to the browser.
+- Run exactly one `vocabbuilder-mobile` process worker. Data-file writes remain safe against the separately launched SSH CLI through filesystem locks, but the mobile request journal is an intentionally single-worker state machine.
 
 #### Mobile product philosophy
-- The phone is a private capture surface for the authoritative VM collection,
-  not a second application or database. Optimize for the moment a reader meets
-  a word: open, type, review, keep, and return to the book.
+- The phone and remote Mac CLI are two interfaces to the same application and
+  authoritative VM collection, not separate applications or databases. The
+  phone should reproduce every meaningful non-interactive CLI capability while
+  adapting terminal prompts into touch-friendly preview/confirm steps.
 - Preserve one dominant path: capture -> preview -> save. The preview is the
   editorial checkpoint, not a separate destination, and secondary collection
   browsing must not compete with capture above the fold.
@@ -141,12 +144,27 @@ pytest -k "anki"
 - Progressive disclosure may hide detail, never discard it. The compact phone
   view can defer senses and examples, but save behavior must retain the complete
   structured result used by LaTeX and Anki.
+- Mobile capture preserves the CLI's duplicate policy: reject by default, then
+  let the user explicitly merge or create a labelled variant. It also preserves
+  sentence routing, spelling suggestions, translation history, composition
+  scoring, Anki acquisition order, and provider recovery. Do not create a
+  second implementation of those rules in JavaScript or route handlers; expose
+  headless methods from the shared core and adapt their typed outcomes.
+- Destructive vocabulary editing, deletion, and backup restoration are not CLI
+  workflows and are intentionally absent from the phone. Recovery artifacts are
+  allowlisted, read-only downloads. This is parity with the product's behavior,
+  not unrestricted file-system parity.
 - Privacy, connectivity, and installability should be legible but quiet:
   Tailscale remains the access boundary, secrets remain server-side, and the
   no-build shell remains usable as an iPhone home-screen app.
 
 #### Mobile front end (`vocab_builder/mobile/static/`)
 - Plain HTML/CSS/JS with no build step and no external requests (Tailscale-only hosts may have no public egress).
+- The five views are Capture, Translate, Library, Practice, and Tools. English is monolingual, so capability data from `/api/status` removes Translate instead of presenting a dead workflow.
+- `app.js` is only the shell and view dispatcher. `api.js`, `ui.js`, `entry-list.js`, and the `*-view.js` modules own transport, shared presentation, and one workflow each. Keep server rules on the server and keep view-local DOM/state out of the shell.
+- Every mutating flow is preview/confirm or an explicit tool action. Disable repeated submissions while a request is active, use idempotency tokens supplied by the server, and ignore stale responses after a language or view change.
+- Capture drafts persist locally per language. Provider keys never enter local or session storage; they are submitted directly to the private settings endpoint and the server response never echoes them.
+- Deployed provider credentials live in `/var/lib/vocabbuilder/.env`, where the non-interactive provider manager can rotate them atomically. `/etc/vocabbuilder/mobile.env` is reserved for the allowed Tailscale identity and non-secret service settings; putting a key there would override the rotatable credential on restart.
 - All colors are CSS custom properties on `:root`, re-declared in one `:root[data-theme="dark"]` rule. Style components through the tokens; never hardcode a color inside the dark rule, or it will not apply in light mode.
 - Theme is an explicit choice, not an ambient one. An inline script in `index.html` stamps `data-theme` on `<html>` before first paint (seeded from `prefers-color-scheme` only on a first visit, then from `localStorage`); the toggle writes that key. Keep the stamping inline and before the stylesheet, or the page flashes the wrong theme, and keep `THEME_BACKGROUND` in `app.js` matching `--bg` so the iOS status bar follows.
 - `/`, `/manifest.webmanifest`, `/service-worker.js` and everything under `/static` must send `Cache-Control: no-cache`. Unversioned documents otherwise fall back to heuristic freshness that grows with file age, so an installed home-screen app can serve a stale shell for days after a deploy. Assets under `/static` carry `?v=N` instead and may cache normally.
@@ -169,7 +187,11 @@ pytest -k "anki"
 - Cross-process lock files must remain beside the authoritative data/config root, never in the temporary directory. The systemd service uses `PrivateTmp=true`, so `/tmp` locks would split the phone and SSH CLI into different lock domains and reintroduce silent lost updates.
 - Reload authoritative disk state only after acquiring the commit lock. Duplicate checks, merge calculations, insertion decisions, and Anki state reconciliation must be recomputed inside that transaction rather than trusting pre-lock caches.
 - Keep a vocabulary mutation, its history append, and its Anki acquisition-order update inside one outer catalog transaction. Continue using atomic replacement for rewritten files and `flush` + `fsync` for append-only JSONL.
-- Mobile preview releases its service lock across provider recovery and generation, then re-validates duplicates after reacquiring it. Phone saves register Anki acquisition order inside the same catalog transaction as the vocabulary write and history append.
+- Each language service has a short-lived state lock and a dedicated AI lock. Provider calls are serialized within one language so mutable provider clients and usage counters cannot overlap; separate language services may still generate concurrently. Read-only library/status work remains responsive while capture AI is running.
+- Mobile preview releases its state lock across provider recovery and generation, then re-validates duplicates after reacquiring it. Phone saves register Anki acquisition order inside the same catalog transaction as the vocabulary write and history append.
+- A vocabulary or translation save is idempotent by its durable preview token. Persist the journal before the primary file mutation, record the primary commit before auxiliary work, and retain incomplete history/Anki steps for replay. A restart after the file write must reconstruct the same receipt rather than duplicate or lose the entry.
+- Practice grading records its generated feedback before appending attempt history, then repairs a missing append by stable attempt ID. Auxiliary history failures may produce a visible pending state, but they must never roll back or misreport an already committed primary file.
+- Never infer transaction ownership from the presence of a duplicate alone. Recovery may treat stored content as this operation only when the durable pre-write journal and exact/contained structured payload prove it; a competing session's duplicate must remain a conflict.
 - Anki tracker writes use a three-way merge of the manager's persisted baseline, current disk state, and local changes so concurrent additions and intentional removals do not overwrite one another.
 - `scripts/deploy/backup_mobile_data.sh` takes the same catalog lock with util-linux `flock` before archiving. Any new backup/export path that needs a coherent multi-file snapshot must join that lock domain.
 - Repository cache invalidation uses `(device, inode, mtime_ns, size)` signatures. Do not weaken it to timestamps alone.

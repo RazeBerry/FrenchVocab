@@ -137,6 +137,12 @@ class LLMCoordinator:
 
         # Client state (protected by _state_lock for thread safety)
         self._state_lock = threading.Lock()
+        # Provider clients are stateful and are not required to support two
+        # simultaneous streams. Keep lifecycle state independently readable,
+        # but serialize queries for one coordinator. Separate language builders
+        # still query in parallel because each owns its own coordinator.
+        self._query_lock = threading.Lock()
+        self._usage_lock = threading.Lock()
         self._client: Optional["LLMClient"] = client
         self._api_error_reason: Optional[str] = None
         self._init_generation: int = 0
@@ -263,12 +269,14 @@ class LLMCoordinator:
     @property
     def session_usage(self) -> Dict[str, int]:
         """Session token usage statistics."""
-        return self._session_usage
+        with self._usage_lock:
+            return dict(self._session_usage)
 
     @property
     def session_requests(self) -> int:
         """Number of AI requests in this session."""
-        return self._session_requests
+        with self._usage_lock:
+            return self._session_requests
 
     @property
     def llm_thread(self) -> Optional[threading.Thread]:
@@ -546,6 +554,38 @@ class LLMCoordinator:
             with self._state_lock:
                 self._silent_reinit_in_progress = False
 
+    def apply_resolution_noninteractive(self, resolution: "ProviderResolution") -> bool:
+        """Switch to a validated provider resolution without console prompts."""
+        self._invalidate_background_init(
+            "Non-interactive provider configuration superseded background initialization."
+        )
+        generation = self._start_init_attempt("Applying provider configuration.")
+        if not self._apply_provider_resolution(resolution, generation=generation):
+            return False
+        return self._initialize_client(
+            announce=False,
+            generation=generation,
+            api_key=resolution.api_key,
+        )
+
+    def test_connection(self) -> tuple[bool, str]:
+        """Verify the current provider without exposing its credential."""
+        with self._query_lock:
+            client = self.client
+            if client is None:
+                return False, self.api_error_reason or "The AI provider is unavailable."
+            verifier = getattr(client, "verify_credentials", None)
+            if not callable(verifier):
+                return True, f"{self.provider_label} is ready."
+            try:
+                verifier(timeout=self._CREDENTIAL_VERIFY_TIMEOUT_S)
+            except Exception as exc:
+                classified = self._classify_provider_error(self.provider, exc)
+                reason = classified[1] if classified is not None else str(exc)
+                self._enter_degraded_mode(reason)
+                return False, reason
+            return True, f"{self.provider_label} is connected."
+
     # -------------------------------------------------------------------------
     # Readiness & Reconfiguration
     # -------------------------------------------------------------------------
@@ -742,72 +782,73 @@ class LLMCoordinator:
         Returns:
             Tuple of (response_text, metrics_dict)
         """
-        label = progress_label or self.provider_label
+        with self._query_lock:
+            label = progress_label or self.provider_label
+            # Snapshot the client exactly once. A concurrent lifecycle change
+            # may affect the next query, but cannot turn a second property read
+            # in this request into ``None.stream``.
+            client = self.client
+            if client is None:
+                reason = self.api_error_reason or f"{label} client is not configured."
+                self._ui.error(f"Cannot query AI provider: {reason}")
+                self._ui.info("AI-powered suggestions are disabled. Retry provider setup to continue.")
+                return "", {}
 
-        if not self.client:
-            reason = self.api_error_reason or f"{label} client is not configured."
-            self._ui.error(f"Cannot query AI provider: {reason}")
-            self._ui.info("AI-powered suggestions are disabled. Retry provider setup to continue.")
-            return "", {}
+            metrics: Dict[str, Any] = {}
+            full_text = ""
 
-        metrics: Dict[str, Any] = {}
-        full_text = ""
+            interactive = getattr(self, "_interactive", True)
+            stdin_context = _suppress_stdin_echo() if interactive else nullcontext()
+            progress_context = Progress() if interactive else nullcontext(None)
+            with stdin_context, progress_context as progress:
+                task = (
+                    progress.add_task(f"[cyan]Querying {label}...", total=None)
+                    if progress is not None
+                    else None
+                )
 
-        interactive = getattr(self, "_interactive", True)
-        stdin_context = _suppress_stdin_echo() if interactive else nullcontext()
-        progress_context = Progress() if interactive else nullcontext(None)
-        with stdin_context, progress_context as progress:
-            task = (
-                progress.add_task(f"[cyan]Querying {label}...", total=None)
-                if progress is not None
-                else None
-            )
+                chunks: List[str] = []
+                generator = None
+                try:
+                    generator = client.stream(prompt)
+                    while True:
+                        try:
+                            text = next(generator)
+                            chunks.append(text)
+                            if progress is not None and task is not None:
+                                progress.advance(task)
+                        except StopIteration as e:
+                            metrics = e.value if e.value else {}
+                            break
+                except Exception as e:
+                    # Also catch providers that fail while constructing a stream.
+                    handled = False
+                    if on_exception:
+                        handled = on_exception(e, label)
+                    if not handled:
+                        classified = self._classify_provider_error(self.provider, e)
+                        if classified is not None:
+                            _, reason = classified
+                            self._enter_degraded_mode(reason)
+                            self._ui.error(f"{label} is unavailable: {reason}")
+                            handled = True
+                    if not handled:
+                        self._ui.error(f"Error during {label} stream: {e}")
+                    if generator is not None:
+                        generator.close()
+                    if not metrics:
+                        metrics = {'ttft': -1, 'tps': -1, 'tokens_out': -1}
+                    self._ui.display_metrics(metrics)
+                    return "", metrics
+                finally:
+                    if progress is not None and task is not None:
+                        progress.update(task, completed=True)
 
-            chunks: List[str] = []
-            generator = self.client.stream(prompt)
+                full_text = "".join(chunks)
 
-            try:
-                while True:
-                    try:
-                        text = next(generator)
-                        chunks.append(text)
-                        if progress is not None and task is not None:
-                            progress.advance(task)
-                    except StopIteration as e:
-                        # Generator is exhausted, capture the return value (metrics)
-                        metrics = e.value if e.value else {}
-                        break
-            except Exception as e:
-                # Handle potential errors during streaming
-                handled = False
-                if on_exception:
-                    handled = on_exception(e, label)
-                if not handled:
-                    classified = self._classify_provider_error(self.provider, e)
-                    if classified is not None:
-                        _, reason = classified
-                        self._enter_degraded_mode(reason)
-                        self._ui.error(f"{label} is unavailable: {reason}")
-                        handled = True
-                if not handled:
-                    self._ui.error(f"Error during {label} stream: {e}")
-                # Ensure generator cleanup runs
-                generator.close()
-                # Set default metrics if none were captured
-                if not metrics:
-                    metrics = {'ttft': -1, 'tps': -1, 'tokens_out': -1}
-                self._ui.display_metrics(metrics)
-                return "", metrics
-            finally:
-                if progress is not None and task is not None:
-                    progress.update(task, completed=True)
-
-            full_text = "".join(chunks)
-
-        self._ui.display_metrics(metrics)
-        self.record_usage(metrics.get("usage"))
-
-        return full_text, metrics
+            self._ui.display_metrics(metrics)
+            self.record_usage(metrics.get("usage"))
+            return full_text, metrics
 
     # -------------------------------------------------------------------------
     # Exception Handling
@@ -893,15 +934,18 @@ class LLMCoordinator:
         """Aggregate per-session token usage for the exit summary."""
         if not usage:
             return
-        self._session_requests += 1
-        for key, value in usage.items():
-            if value is None:
-                continue
-            self._session_usage[key] = self._session_usage.get(key, 0) + int(value)
+        with self._usage_lock:
+            self._session_requests += 1
+            for key, value in usage.items():
+                if value is None:
+                    continue
+                self._session_usage[key] = self._session_usage.get(key, 0) + int(value)
 
     def format_token_summary(self) -> str:
         """Format session token usage for display."""
-        tokens = {k: v for k, v in self._session_usage.items() if v}
+        with self._usage_lock:
+            tokens = {k: v for k, v in self._session_usage.items() if v}
+            request_count = self._session_requests
         if not tokens:
             return ""
 
@@ -922,7 +966,7 @@ class LLMCoordinator:
             friendly = key.replace("_", " ").title()
             parts.append(f"{friendly}: {value:,}")
 
-        prefix = f"Sessions: {self._session_requests} | " if self._session_requests else ""
+        prefix = f"Sessions: {request_count} | " if request_count else ""
         return prefix + " | ".join(parts)
 
     # -------------------------------------------------------------------------

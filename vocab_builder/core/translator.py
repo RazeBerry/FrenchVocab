@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import string
 import unicodedata
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
@@ -21,6 +22,24 @@ from vocab_builder.ui_helper import UIHelper, read_line
 from vocab_builder.core.history_logger import TranslationLogger
 from vocab_builder.core.file_safety import atomic_copy_file, atomic_write_text, file_lock
 from vocab_builder.latex_repository import parse_balanced_group
+
+
+@dataclass(frozen=True)
+class TranslationDraft:
+    source_text: str
+    target_text: str
+    normalized_key: str
+    suspicious: bool = False
+    dropped_fragment: Optional[str] = None
+    existing_entry: Optional[Dict[str, str]] = None
+
+
+@dataclass(frozen=True)
+class TranslationSaveResult:
+    status: str
+    source_text: str
+    target_text: str
+    existing_entry: Optional[Dict[str, str]] = None
 
 
 class TranslatorCLI:
@@ -372,7 +391,12 @@ class TranslatorCLI:
     # ------------------------------------------------------------------
     # AI interaction
     # ------------------------------------------------------------------
-    def query_ai_for_translation(self, source_text: str) -> Optional[str]:
+    def query_ai_for_translation(
+        self,
+        source_text: str,
+        *,
+        confirm_suspicious: bool = True,
+    ) -> Optional[str]:
         if not self.client:
             self.ui.error("Cannot query translation: LLM client not available.", with_panel=True)
             return None
@@ -402,7 +426,7 @@ class TranslatorCLI:
                 self.ui.error("Error: received empty response from AI.")
                 return None
 
-            if source_text.lower() in translation.lower():
+            if source_text.lower() in translation.lower() and confirm_suspicious:
                 self.ui.warning("AI response might be empty or suspicious:")
                 self.ui.info(f"> {translation}", accent="dim")
                 if not self.ui.confirm("Accept this response anyway?", default=False):
@@ -564,11 +588,23 @@ class TranslatorCLI:
                 return self.client.__class__.__name__
         return self.client.__class__.__name__
 
-    def _log_saved_translation(self, source_text: str, target_text: str, normalized_key: str) -> None:
+    def _log_saved_translation(
+        self,
+        source_text: str,
+        target_text: str,
+        normalized_key: str,
+        *,
+        operation_id: Optional[str] = None,
+    ) -> bool:
         if not self.logger or not self.logger.enabled:
-            return
+            return True
         try:
-            self.logger.log_translator_entry(
+            if operation_id and self.logger.has_operation(
+                operation_id,
+                flow="translator",
+            ):
+                return True
+            return self.logger.log_translator_entry(
                 direction=self.direction,
                 source_text=source_text,
                 target_text=target_text,
@@ -577,9 +613,14 @@ class TranslatorCLI:
                 latex_file=self.latex_file,
                 source_label=self.source_label,
                 target_label=self.target_label,
+                metadata=(
+                    {"surface": "mobile", "operation_id": operation_id}
+                    if operation_id
+                    else None
+                ),
             )
         except Exception:
-            pass
+            return False
 
     # ------------------------------------------------------------------
     # Public operations
@@ -594,49 +635,126 @@ class TranslatorCLI:
         if not source_text:
             return False
 
+        draft = self.preview_translation(
+            source_text,
+            provided_translation=provided_translation,
+            confirm_suspicious=True,
+        )
+        if draft is None:
+            return False
+        if draft.existing_entry:
+            self.display_duplicate_warning(draft.existing_entry)
+            return True
+        if not self.confirm_translation(draft.source_text, draft.target_text):
+            self.ui.warning("Save cancelled.")
+            return False
+        return self.save_translation(draft).status in {"saved", "duplicate"}
+
+    def preview_translation(
+        self,
+        source_text: str,
+        *,
+        provided_translation: Optional[str] = None,
+        confirm_suspicious: bool = False,
+    ) -> Optional[TranslationDraft]:
+        """Generate the same translation result without requesting a save."""
+        if not source_text or not source_text.strip():
+            return None
+        source_text = source_text.strip()
         sanitized, dropped_fragment = self._detect_truncated_input(source_text)
         if dropped_fragment is not None:
-            self.ui.warning(
-                f"Input ends mid-word with '{dropped_fragment}' — looks like a paste truncation. "
-                f"Trimming to the last whitespace boundary before translating."
-            )
             source_text = sanitized
 
         normalized = self.normalize_text(source_text)
+        self._entries_loaded = False
         existing_entry = self.check_duplicate(normalized)
         if existing_entry:
-            self.display_duplicate_warning(existing_entry)
-            return True
+            return TranslationDraft(
+                source_text=source_text,
+                target_text=existing_entry["target"],
+                normalized_key=normalized,
+                dropped_fragment=dropped_fragment,
+                existing_entry=dict(existing_entry),
+            )
 
-        if provided_translation is not None:
-            target_text = provided_translation.strip()
-        else:
-            target_text = self.query_ai_for_translation(source_text)
+        target_text = (
+            provided_translation.strip()
+            if provided_translation is not None
+            else self.query_ai_for_translation(
+                source_text,
+                confirm_suspicious=confirm_suspicious,
+            )
+        )
         if not target_text:
-            return False
+            return None
+        return TranslationDraft(
+            source_text=source_text,
+            target_text=target_text,
+            normalized_key=normalized,
+            suspicious=source_text.casefold() in target_text.casefold(),
+            dropped_fragment=dropped_fragment,
+        )
 
-        if self.confirm_translation(source_text, target_text):
-            with file_lock(self.latex_file):
-                # The AI request and confirmation may take minutes. Refresh and
-                # repeat duplicate validation only after acquiring the commit
-                # lock so two sessions cannot append the same pair.
-                self._entries_loaded = False
-                self._ensure_entries_loaded()
-                existing_entry = self.check_duplicate(normalized)
-                if existing_entry:
-                    self.display_duplicate_warning(existing_entry)
-                    return True
+    def save_translation(
+        self,
+        draft: TranslationDraft,
+        *,
+        operation_id: Optional[str] = None,
+    ) -> TranslationSaveResult:
+        """Commit a confirmed draft with the CLI's locked duplicate recheck."""
+        with file_lock(self.latex_file):
+            self._entries_loaded = False
+            self._ensure_entries_loaded()
+            existing_entry = self.check_duplicate(draft.normalized_key)
+            if existing_entry:
+                return TranslationSaveResult(
+                    status="duplicate",
+                    source_text=draft.source_text,
+                    target_text=existing_entry["target"],
+                    existing_entry=dict(existing_entry),
+                )
 
-                latex_entry = self._format_latex_entry(source_text, target_text)
-                if not self._add_entry_to_file(latex_entry):
-                    return False
-                self._add_entry_to_memory(source_text, target_text, normalized)
-                self._log_saved_translation(source_text, target_text, normalized)
-                self.ui.success("Translation saved successfully!")
-                return True
+            latex_entry = self._format_latex_entry(
+                draft.source_text,
+                draft.target_text,
+            )
+            if not self._add_entry_to_file(latex_entry):
+                return TranslationSaveResult(
+                    status="failed",
+                    source_text=draft.source_text,
+                    target_text=draft.target_text,
+                )
+            self._add_entry_to_memory(
+                draft.source_text,
+                draft.target_text,
+                draft.normalized_key,
+            )
+            self._log_saved_translation(
+                draft.source_text,
+                draft.target_text,
+                draft.normalized_key,
+                operation_id=operation_id,
+            )
+            self.ui.success("Translation saved successfully!")
+            return TranslationSaveResult(
+                status="saved",
+                source_text=draft.source_text,
+                target_text=draft.target_text,
+            )
 
-        self.ui.warning("Save cancelled.")
-        return False
+    def repair_translation_history(
+        self,
+        draft: TranslationDraft,
+        *,
+        operation_id: str,
+    ) -> bool:
+        """Idempotently finish mobile history after a committed file write."""
+        return self._log_saved_translation(
+            draft.source_text,
+            draft.target_text,
+            draft.normalized_key,
+            operation_id=operation_id,
+        )
 
     # ------------------------------------------------------------------
     # Compatibility helpers

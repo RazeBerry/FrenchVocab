@@ -1,5 +1,7 @@
 import os
 import stat
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from vocab_builder.core.providers import manager as manager_module
@@ -229,3 +231,46 @@ def test_write_env_file_updates_export_assignment_without_duplicate(tmp_path):
         "export GEMINI_API_KEY=AIza" + "q" * 36,
         "OTHER_VAR=value",
     ]
+
+
+def test_concurrent_env_updates_preserve_both_provider_keys(tmp_path, monkeypatch):
+    first, _ = _make_manager(tmp_path)
+    second, _ = _make_manager(tmp_path)
+    first_writing = threading.Event()
+    release_first = threading.Event()
+    second_reading = threading.Event()
+    original_first_write = first._atomic_write_env_lines
+    original_second_read = second._read_env_lines
+
+    def gated_first_write(path, lines):
+        first_writing.set()
+        assert release_first.wait(timeout=2)
+        return original_first_write(path, lines)
+
+    def observed_second_read(path):
+        second_reading.set()
+        return original_second_read(path)
+
+    monkeypatch.setattr(first, "_atomic_write_env_lines", gated_first_write)
+    monkeypatch.setattr(second, "_read_env_lines", observed_second_read)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        gemini = executor.submit(
+            first._write_env_file,
+            _get_provider_metadata("gemini"),
+            "AIza" + "g" * 36,
+        )
+        assert first_writing.wait(timeout=1)
+        claude = executor.submit(
+            second._write_env_file,
+            _get_provider_metadata("claude"),
+            "sk-ant-" + "c" * 40,
+        )
+        assert not second_reading.wait(timeout=0.1)
+        release_first.set()
+
+    assert gemini.result() is not None
+    assert claude.result() is not None
+    content = (tmp_path / ".env").read_text(encoding="utf-8")
+    assert "GEMINI_API_KEY=" in content
+    assert "ANTHROPIC_API_KEY=" in content

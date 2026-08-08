@@ -81,11 +81,7 @@ class AutoTranslator:
         if not source_text:
             return
 
-        response = self._query_auto_translation(source_text)
-        if response is None:
-            return
-
-        result = self._parse_response(response)
+        result = self.preview_translation(source_text)
         if result is None:
             self.ui.error("Unable to parse auto-translation response. Please retry or use manual direction.")
             return
@@ -97,7 +93,7 @@ class AutoTranslator:
         if not self._sanity_check(source_text, result.translation):
             return
 
-        translator = self._translator_for_direction(result.direction)
+        translator = self.translator_for_direction(result.direction)
         if translator is None:
             self.ui.error("Detected translation direction is unavailable. Check AI provider setup.")
             return
@@ -106,6 +102,32 @@ class AutoTranslator:
         ok = translator.translate_and_save(source_text, provided_translation=result.translation)
         if not ok:
             self.ui.warning("Auto-translation cancelled or failed.")
+
+    def preview_translation(self, source_text: str) -> Optional[AutoTranslationResult]:
+        """Detect direction and generate a translation without saving it."""
+        if not self._ready() or not source_text.strip():
+            return None
+        response = self._query_auto_translation(source_text.strip())
+        return self._parse_response(response) if response is not None else None
+
+    def translator_for_direction(self, direction: str) -> Optional[TranslatorCLI]:
+        """Resolve a detected direction to the configured directional writer."""
+        return self._translator_for_direction(direction)
+
+    @staticmethod
+    def translation_is_suspicious(source_text: str, translation: str) -> bool:
+        """Return whether source and translation are implausibly similar."""
+        src = source_text.strip().casefold()
+        tgt = translation.strip().casefold()
+        if src in tgt or tgt in src:
+            return True
+        src_words = src.split()
+        tgt_words = tgt.split()
+        return (
+            len(src_words) > 3
+            and len(tgt_words) > 3
+            and difflib.SequenceMatcher(None, src_words, tgt_words).ratio() > 0.7
+        )
 
     # ------------------------------------------------------------------ #
     # Helpers
@@ -271,21 +293,7 @@ class AutoTranslator:
 
     def _sanity_check(self, source_text: str, translation: str) -> bool:
         """Return True if the translation looks like a different language from the input."""
-        src = source_text.strip().lower()
-        tgt = translation.strip().lower()
-
-        suspicious = False
-        if src in tgt or tgt in src:
-            suspicious = True
-        else:
-            src_words = src.split()
-            tgt_words = tgt.split()
-            if len(src_words) > 3 and len(tgt_words) > 3:
-                ratio = difflib.SequenceMatcher(None, src_words, tgt_words).ratio()
-                if ratio > 0.7:
-                    suspicious = True
-
-        if not suspicious:
+        if not self.translation_is_suspicious(source_text, translation):
             return True
 
         self.ui.warning(

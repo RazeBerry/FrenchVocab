@@ -67,7 +67,7 @@ class TranslationLogger:
         latex_file: Path,
         action: str = "new",
         metadata: Optional[MutableMapping[str, Any]] = None,
-    ) -> None:
+    ) -> bool:
         payload: Dict[str, Any] = {
             "action": action,
             "word": word,
@@ -81,7 +81,7 @@ class TranslationLogger:
         }
         if metadata:
             payload["metadata"] = dict(metadata)
-        self._append_record("vocab", payload)
+        return self._append_record("vocab", payload)
 
     def log_merge_entry(
         self,
@@ -95,7 +95,7 @@ class TranslationLogger:
         added_definitions: Sequence[str],
         added_examples: Sequence[Tuple[str, str]],
         normalized_key: str,
-    ) -> None:
+    ) -> bool:
         payload: Dict[str, Any] = {
             "action": "merge",
             "word": word,
@@ -110,7 +110,7 @@ class TranslationLogger:
                 "added_examples": _normalize_examples(added_examples),
             },
         }
-        self._append_record("vocab", payload)
+        return self._append_record("vocab", payload)
 
     def log_translator_entry(
         self,
@@ -123,7 +123,8 @@ class TranslationLogger:
         latex_file: Path,
         source_label: str,
         target_label: str,
-    ) -> None:
+        metadata: Optional[MutableMapping[str, Any]] = None,
+    ) -> bool:
         payload = {
             "direction": direction,
             "source_text": source_text,
@@ -134,7 +135,36 @@ class TranslationLogger:
             "source_label": source_label,
             "target_label": target_label,
         }
-        self._append_record("translator", payload)
+        if metadata:
+            payload["metadata"] = dict(metadata)
+        return self._append_record("translator", payload)
+
+    def has_operation(self, operation_id: str, *, flow: str = "vocab") -> bool:
+        """Return whether an idempotent operation is already in history."""
+        if not operation_id:
+            return False
+        for path in self._record_paths_for_read():
+            if not path.exists():
+                continue
+            try:
+                with file_lock(path):
+                    with path.open("r", encoding="utf-8") as handle:
+                        for line in handle:
+                            try:
+                                record = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                            if record.get("flow") != flow:
+                                continue
+                            metadata = record.get("metadata")
+                            if (
+                                isinstance(metadata, dict)
+                                and metadata.get("operation_id") == operation_id
+                            ):
+                                return True
+            except OSError:
+                continue
+        return False
 
     # --------------------------------------------------------------------- #
     # Read helpers
@@ -208,9 +238,9 @@ class TranslationLogger:
             deduped.append(path)
         return tuple(deduped)
 
-    def _append_record(self, flow: str, payload: Dict[str, Any]) -> None:
+    def _append_record(self, flow: str, payload: Dict[str, Any]) -> bool:
         if not self.enabled:
-            return
+            return True
         record: Dict[str, Any] = {
             "timestamp": _timestamp(),
             "language": self.language_code,
@@ -220,9 +250,11 @@ class TranslationLogger:
         try:
             path = _ensure_path(self._record_path())
             _append_jsonl_record(path, record)
+            return True
         except Exception as exc:  # pragma: no cover - defensive path
             if self.on_error:
                 self.on_error(f"Failed to write translation history: {exc}")
+            return False
 
 
 @dataclass
@@ -258,15 +290,37 @@ class CompositionLogger:
             deduped.append(path)
         return tuple(deduped)
 
-    def log_attempt(self, record: MutableMapping[str, Any]) -> None:
+    def log_attempt(self, record: MutableMapping[str, Any]) -> bool:
         if not self.enabled:
-            return
+            return True
         try:
             path = _ensure_path(self.record_path())
             _append_jsonl_record(path, dict(record))
+            return True
         except Exception as exc:  # pragma: no cover - defensive path
             if self.on_error:
                 self.on_error(f"Failed to write composition history: {exc}")
+            return False
+
+    def has_attempt(self, attempt_id: str) -> bool:
+        if not attempt_id:
+            return False
+        for path in self.record_paths_for_read():
+            if not path.exists():
+                continue
+            try:
+                with file_lock(path):
+                    with path.open("r", encoding="utf-8") as handle:
+                        for line in handle:
+                            try:
+                                record = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                            if record.get("attempt_id") == attempt_id:
+                                return True
+            except OSError:
+                continue
+        return False
 
 
 def _append_jsonl_record(path: Path, record: Dict[str, Any]) -> None:

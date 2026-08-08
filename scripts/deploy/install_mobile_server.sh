@@ -54,17 +54,43 @@ install -m 0755 "$APP_DIR/scripts/deploy/run_remote_cli.sh" /usr/local/sbin/voca
 if [ ! -e "$CONFIG_DIR/mobile.env" ]; then
   install -m 0600 -o root -g root /dev/null "$CONFIG_DIR/mobile.env"
   printf '%s\n' \
-    '# Set GEMINI_API_KEY or ANTHROPIC_API_KEY before starting the service.' \
+    '# Tailscale identity and non-secret service settings only.' \
     '# VOCABBUILDER_ALLOWED_TAILSCALE_USER=you@example.com' \
     > "$CONFIG_DIR/mobile.env"
+fi
+
+# Early installations kept provider keys in the root-owned systemd environment
+# file. Move each one into the service user's normal config file once, so a key
+# changed through the private web UI remains authoritative after a restart.
+# The root-owned file continues to hold only identity and non-secret settings.
+CREDENTIAL_FILE="$DATA_DIR/.env"
+if grep -Eq '^(GEMINI_API_KEY|ANTHROPIC_API_KEY)=' "$CONFIG_DIR/mobile.env"; then
+  if [ ! -e "$CREDENTIAL_FILE" ]; then
+    install -m 0600 -o vocabbuilder -g vocabbuilder /dev/null "$CREDENTIAL_FILE"
+  fi
+  for variable in GEMINI_API_KEY ANTHROPIC_API_KEY; do
+    if ! grep -q "^${variable}=" "$CREDENTIAL_FILE"; then
+      grep -m 1 "^${variable}=" "$CONFIG_DIR/mobile.env" >> "$CREDENTIAL_FILE" || true
+    fi
+  done
+  chown vocabbuilder:vocabbuilder "$CREDENTIAL_FILE"
+  chmod 0600 "$CREDENTIAL_FILE"
+
+  filtered_env=$(mktemp "$CONFIG_DIR/.mobile.env.XXXXXX")
+  grep -Ev '^(GEMINI_API_KEY|ANTHROPIC_API_KEY)=' \
+    "$CONFIG_DIR/mobile.env" > "$filtered_env" || true
+  chown root:root "$filtered_env"
+  chmod 0600 "$filtered_env"
+  mv -f "$filtered_env" "$CONFIG_DIR/mobile.env"
 fi
 
 systemctl daemon-reload
 systemctl enable vocabbuilder-mobile.service vocabbuilder-backup.timer
 systemctl start vocabbuilder-backup.timer
 
-if grep -Eq '^(GEMINI_API_KEY|ANTHROPIC_API_KEY)=' "$CONFIG_DIR/mobile.env"; then
+if [ -f "$CREDENTIAL_FILE" ] && \
+   grep -Eq '^(GEMINI_API_KEY|ANTHROPIC_API_KEY)=.+' "$CREDENTIAL_FILE"; then
   systemctl restart vocabbuilder-mobile.service
 else
-  echo "Installed, but not started: add the provider key to $CONFIG_DIR/mobile.env first." >&2
+  echo "Installed, but not started: configure a provider in $CREDENTIAL_FILE first." >&2
 fi

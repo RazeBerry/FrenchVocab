@@ -33,6 +33,22 @@ class CompositionAttemptResult:
     unknown_candidates: list[dict[str, str]]
 
 
+@dataclass(frozen=True)
+class CompositionPrompt:
+    mode: str
+    words: tuple[ScheduledWord, ...]
+    source_english: Optional[str] = None
+    reference_target: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CompositionFeedback:
+    parsed: ParsedCompositionResponse
+    history_saved: bool
+    attempt_id: str
+    history_record: dict[str, Any]
+
+
 class CompositionCoach:
     """Composition-practice CLI shaped like the existing translator flows."""
 
@@ -240,6 +256,78 @@ class CompositionCoach:
             if len(words) >= self.words_per_attempt:
                 break
         return words
+
+    def create_prompt(
+        self,
+        mode: str,
+        *,
+        exclude_keys: Optional[set[str]] = None,
+    ) -> Optional[CompositionPrompt]:
+        """Select the next CLI-equivalent practice prompt without rendering it."""
+        excluded = set(exclude_keys or ())
+        if mode == "use_words":
+            words = self._next_words(excluded)
+            if not words:
+                return None
+            return CompositionPrompt(mode=mode, words=tuple(words))
+        if mode == "reverse":
+            word = self.scheduler.sample_reverse_word(exclude_keys=excluded)
+            if word is None:
+                return None
+            reference_target, source_english = word.examples[0]
+            return CompositionPrompt(
+                mode=mode,
+                words=(word,),
+                source_english=source_english,
+                reference_target=reference_target,
+            )
+        raise ValueError("Unsupported composition practice mode.")
+
+    def grade_prompt(
+        self,
+        prompt: CompositionPrompt,
+        user_text: str,
+        *,
+        session_id: Optional[str] = None,
+        record_history: bool = True,
+    ) -> Optional[CompositionFeedback]:
+        """Grade and record one confirmed practice response."""
+        text = (user_text or "").strip()
+        if not text:
+            return None
+        if prompt.mode == "use_words":
+            parsed = self._grade_attempt(list(prompt.words), text)
+        elif prompt.mode == "reverse":
+            word = prompt.words[0]
+            parsed = self._grade_reverse_attempt(
+                word,
+                source_english=prompt.source_english or "",
+                reference_target=prompt.reference_target or "",
+                user_text=text,
+            )
+        else:
+            raise ValueError("Unsupported composition practice mode.")
+        if parsed is None:
+            return None
+
+        resolved_session_id = session_id or str(uuid4())
+        record = self._build_history_record(
+            session_id=resolved_session_id,
+            words=list(prompt.words),
+            user_text=text,
+            parsed=parsed,
+            mode=prompt.mode,
+            source_english=prompt.source_english,
+            reference_target=prompt.reference_target,
+        )
+        history_saved = self.logger.log_attempt(record) if record_history else False
+        self.scheduler.invalidate()
+        return CompositionFeedback(
+            parsed=parsed,
+            history_saved=history_saved,
+            attempt_id=str(record["attempt_id"]),
+            history_record=record,
+        )
 
     def _show_target_words(self, words: list[ScheduledWord], attempt_number: int) -> None:
         lines = []

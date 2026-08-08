@@ -30,6 +30,7 @@ from vocab_builder.compat import (
 )
 from vocab_builder.llm_client import ProviderFactory
 from vocab_builder.ui_helper import UIHelper
+from vocab_builder.core.file_safety import file_lock
 
 
 def get_password(service: str, name: str) -> Optional[str]:
@@ -295,6 +296,36 @@ class ProviderManager:
         os.environ[metadata.env_var] = api_key
         self.ui.info(f"Key stored via {storage}.")
         return ProviderResolution(metadata=metadata, api_key=api_key, source=storage)
+
+    def configure_noninteractive(
+        self,
+        metadata: ProviderMetadata,
+        api_key: str,
+    ) -> tuple[Optional[ProviderResolution], ValidationFeedback]:
+        """Validate and persist a provider key without opening console UI."""
+        cleaned = (api_key or "").strip()
+        feedback = self._validate_api_key(
+            metadata,
+            cleaned,
+            perform_connection_test=True,
+        )
+        if not feedback.valid:
+            return None, feedback
+        storage = self._write_env_file(metadata, cleaned)
+        if storage is None:
+            return None, ValidationFeedback(
+                False,
+                "The server could not persist the provider credential.",
+            )
+        os.environ[metadata.env_var] = cleaned
+        return (
+            ProviderResolution(
+                metadata=metadata,
+                api_key=cleaned,
+                source=storage,
+            ),
+            feedback,
+        )
 
     # Private helpers ----------------------------------------------------
     def _load_env_file(self) -> Optional[Path]:
@@ -700,21 +731,21 @@ class ProviderManager:
 
     def _write_env_file(self, metadata: ProviderMetadata, api_key: str) -> Optional[str]:
         env_path = self._env_path
-        if not self._ensure_env_file_path(env_path):
-            return None
-
         if not self._ensure_parent_dir(env_path):
             return None
-
-        lines = self._read_env_lines(env_path)
-        if lines is None:
-            return None
-
-        new_lines = self._upsert_env_var(lines, metadata.env_var, api_key)
-
-        if not self._atomic_write_env_lines(env_path, new_lines):
-            return None
-        self._remove_env_backup_best_effort(env_path)
+        with file_lock(env_path):
+            # Provider changes from different phone language sessions share
+            # this file. Keep the read/upsert/replace sequence in one catalog
+            # transaction so two valid key rotations cannot lose each other.
+            if not self._ensure_env_file_path(env_path):
+                return None
+            lines = self._read_env_lines(env_path)
+            if lines is None:
+                return None
+            new_lines = self._upsert_env_var(lines, metadata.env_var, api_key)
+            if not self._atomic_write_env_lines(env_path, new_lines):
+                return None
+            self._remove_env_backup_best_effort(env_path)
 
         self.ui.success(f"Saved key to {env_path}.")
         self.ui.info("Future runs will automatically reuse this key from the app .env file.")

@@ -18,6 +18,14 @@ from vocab_builder.core.text_utils import sanitize_user_text
 from vocab_builder.core.vocab_application import VocabCapturePort
 from vocab_builder.models import WordEntry
 
+from .state_store import MobileStateStore
+from .library import MobileLibrary, entry_for_json
+from .translations import MobileTranslations
+from .practice import MobilePractice
+from .anki import MobileAnki
+from .settings import MobileSettings
+from .storage import MobileStorage
+
 
 class MobileServiceError(RuntimeError):
     """Base class for errors safe to expose through the mobile API."""
@@ -75,6 +83,9 @@ class MobilePreview:
     examples: list[tuple[str, str]]
     spelling_suggestion: Optional[str]
     created_at: datetime
+    duplicate_action: str = "new"
+    existing_word: Optional[str] = None
+    route_recommended: bool = False
 
     def as_json(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -85,6 +96,37 @@ class MobilePreview:
         ]
         return payload
 
+    @classmethod
+    def from_json(cls, payload: dict[str, Any]) -> "MobilePreview":
+        examples = [
+            (str(item.get("source", "")), str(item.get("target", "")))
+            for item in payload.get("examples", [])
+            if isinstance(item, dict)
+        ]
+        return cls(
+            token=str(payload["token"]),
+            language=str(payload["language"]),
+            original_input=str(payload["original_input"]),
+            word=str(payload["word"]),
+            input_type=str(payload.get("input_type", "word")),
+            word_type=str(payload.get("word_type", "Unknown")),
+            definitions=[str(value) for value in payload.get("definitions", [])],
+            examples=examples,
+            spelling_suggestion=(
+                str(payload["spelling_suggestion"])
+                if payload.get("spelling_suggestion")
+                else None
+            ),
+            created_at=datetime.fromisoformat(str(payload["created_at"])),
+            duplicate_action=str(payload.get("duplicate_action", "new")),
+            existing_word=(
+                str(payload["existing_word"])
+                if payload.get("existing_word")
+                else None
+            ),
+            route_recommended=bool(payload.get("route_recommended", False)),
+        )
+
 
 class MobileVocabService:
     """Thread-safe, non-interactive facade around the existing vocab workflow."""
@@ -94,45 +136,97 @@ class MobileVocabService:
         builder: VocabCapturePort,
         *,
         preview_ttl: timedelta = timedelta(minutes=20),
+        workflow_ttl: timedelta = timedelta(days=1),
         token_factory: Callable[[], str] = lambda: secrets.token_urlsafe(24),
     ):
         self.builder = builder
         self.preview_ttl = preview_ttl
+        self.workflow_ttl = workflow_ttl
         self._token_factory = token_factory
         self._previews: dict[str, MobilePreview] = {}
         self._saved_receipts: dict[str, tuple[datetime, dict[str, Any]]] = {}
+        self._transactions: dict[str, dict[str, Any]] = {}
+        self._practice_attempts: dict[str, dict[str, Any]] = {}
+        self._translation_previews: dict[str, dict[str, Any]] = {}
+        self._state_store = MobileStateStore(
+            self.builder.latex_file.parent,
+            self.builder.language_code,
+        )
         # Protect preview/receipt state and repository access. Provider calls
         # deliberately release this lock so status and search remain responsive.
         self._lock = threading.RLock()
+        self._ai_lock = threading.Lock()
+        self.library = MobileLibrary(builder, state_lock=self._lock)
+        self._restore_state()
+        self.translations = MobileTranslations(
+            builder,
+            previews=self._translation_previews,
+            token_factory=self._token_factory,
+            persist=self._persist_state,
+            ai_lock=self._ai_lock,
+            state_lock=self._lock,
+        )
+        self.practice = MobilePractice(
+            builder,
+            attempts=self._practice_attempts,
+            token_factory=self._token_factory,
+            persist=self._persist_state,
+            ai_lock=self._ai_lock,
+            state_lock=self._lock,
+        )
+        self.anki = MobileAnki(
+            builder,
+            token_factory=self._token_factory,
+            state_lock=self._lock,
+        )
+        self.settings = MobileSettings(builder, ai_lock=self._ai_lock)
+        self.storage = MobileStorage(builder, state_lock=self._lock)
+        self._repair_transactions()
 
     def status(self) -> dict[str, Any]:
         with self._lock:
+            self._repair_transactions()
             entries = self.builder.word_entries
             return {
                 "language": self.builder.language_code,
                 "language_name": self.builder.language_config.display_name,
                 "provider": self.builder.provider_label,
                 "ai_available": bool(self.builder.api_available),
+                "supports_translation": bool(
+                    self.builder.language_config.supports_translation
+                ),
+                "supports_practice": bool(self.builder.enable_composition),
                 "entry_count": len(entries),
                 "data_file": self.builder.latex_file.name,
+                "sync_pending": len(self._transactions),
             }
 
-    def preview(self, raw_text: str) -> MobilePreview:
+    def preview(
+        self,
+        raw_text: str,
+        *,
+        duplicate_action: str = "reject",
+    ) -> MobilePreview:
+        if duplicate_action not in {"reject", "merge", "variant"}:
+            raise InvalidInputError("Choose merge or variant for an existing entry.")
         with self._lock:
             self._prune_previews()
             original = self._validate_input(raw_text)
-            self._raise_if_duplicate(original)
+            existing_word = self._existing_word(original)
+            if existing_word and duplicate_action == "reject":
+                self._raise_if_duplicate(original)
             ai_ready = bool(self.builder.api_available)
 
         # Provider recovery and generation are slow and do not touch repository
         # state, so same-language status and search requests remain available.
-        if not ai_ready and not self.builder.try_restore_ai():
-            raise AIUnavailableError(
-                self.builder.api_error_reason
-                or "The AI provider is not configured."
-            )
+        with self._ai_lock:
+            if not ai_ready and not self.builder.try_restore_ai():
+                raise AIUnavailableError(
+                    self.builder.api_error_reason
+                    or "The AI provider is not configured."
+                )
 
-        response = self.builder.query_ai(original)
+            response = self.builder.query_ai(original)
 
         with self._lock:
             if not response:
@@ -148,7 +242,10 @@ class MobileVocabService:
             input_type = self.builder.detect_input_type(original)
             suggestion = self._spelling_suggestion(original, response, input_type)
             final_word = suggestion or original
-            self._raise_if_duplicate(final_word)
+            corrected_existing = self._existing_word(final_word)
+            if corrected_existing and duplicate_action == "reject":
+                self._raise_if_duplicate(final_word)
+            existing_word = corrected_existing or existing_word
 
             word_type = next(
                 (value.strip() for value in word_type if value.strip()),
@@ -169,8 +266,18 @@ class MobileVocabService:
                 examples=examples,
                 spelling_suggestion=suggestion,
                 created_at=datetime.now(timezone.utc),
+                duplicate_action=(duplicate_action if existing_word else "new"),
+                existing_word=existing_word,
+                route_recommended=bool(
+                    input_type == "sentence"
+                    and word_type.casefold() == "sentence"
+                    and self.builder.route_sentences
+                    and self.builder.language_config.supports_translation
+                    and self.builder.target_to_eng_translator is not None
+                ),
             )
             self._previews[preview.token] = preview
+            self._persist_state()
             return preview
 
     def save(self, token: str, *, use_original: bool = False) -> dict[str, Any]:
@@ -188,44 +295,121 @@ class MobileVocabService:
 
             with file_lock(self.builder.latex_file):
                 word = preview.original_input if use_original else preview.word
-                self._raise_if_duplicate(word)
-                report = self.builder.add_vocab_entries(
-                    [
-                        WordEntry(
-                            word=word,
-                            type=preview.word_type,
-                            definitions=list(preview.definitions),
-                            examples=list(preview.examples),
-                        )
-                    ],
-                    on_duplicate="error",
-                )
-                if not report.ok:
-                    self._raise_if_duplicate(word)
-                    detail = report.outcomes[0].detail if report.outcomes else ""
-                    raise SaveFailedError(detail or "The vocabulary file could not be updated.")
-                if report.count("added") != 1:
-                    raise SaveFailedError("The vocabulary entry was not saved.")
+                action = preview.duplicate_action
+                if action == "variant":
+                    word = self._unique_variant(word)
+                elif action == "merge" and preview.existing_word:
+                    word = preview.existing_word
 
-                self._log_history(preview, saved_word=word)
+                transaction = {
+                    "operation_id": token,
+                    "preview": preview.as_json(),
+                    "word": word,
+                    "action": action,
+                    "primary_committed": False,
+                    "history_done": False,
+                    "anki_done": action == "merge",
+                    "created_at": datetime.now(timezone.utc).isoformat(),
+                }
+                self._transactions[token] = transaction
+                # A journal entry must reach disk before the authoritative file
+                # changes.  A process failure can then replay every remaining
+                # coupled step without guessing whether the request existed.
+                self._persist_state()
+
+                try:
+                    self._commit_transaction_primary(transaction)
+                except DuplicateEntryError:
+                    # A competing session won before this operation changed
+                    # the file. Do not leave a journal that recovery could
+                    # later mistake for our own committed write.
+                    self._transactions.pop(token, None)
+                    self._persist_state()
+                    raise
                 receipt = {
                     "word": word,
+                    "action": "merged" if action == "merge" else "added",
                     "entry_count": len(self.builder.word_entries),
                     "saved_at": datetime.now(timezone.utc).isoformat(),
+                    "sync_pending": True,
                 }
+                transaction["receipt"] = receipt
+                transaction["primary_committed"] = True
+                self._persist_state()
+
+                self._complete_transaction_auxiliary(transaction)
+                receipt["sync_pending"] = not self._transaction_complete(transaction)
                 self._saved_receipts[token] = (datetime.now(timezone.utc), receipt)
                 del self._previews[token]
-                try:
-                    self.builder.record_acquisition_order(word)
-                except Exception as exc:
-                    # The committed vocabulary write must still succeed.
-                    ui = getattr(self.builder, "ui", None)
-                    if ui is not None:
-                        ui.warning(
-                            "The vocabulary entry was saved, but its Anki acquisition "
-                            f"order could not be registered: {exc}"
-                        )
+                if self._transaction_complete(transaction):
+                    del self._transactions[token]
+                self._persist_state()
                 return dict(receipt)
+
+    def _commit_transaction_primary(self, transaction: dict[str, Any]) -> None:
+        preview = MobilePreview.from_json(transaction["preview"])
+        word = str(transaction["word"])
+        action = str(transaction["action"])
+        entry = WordEntry(
+            word=word,
+            type=preview.word_type,
+            definitions=list(preview.definitions),
+            examples=list(preview.examples),
+        )
+
+        if action == "merge":
+            if not preview.existing_word:
+                raise SaveFailedError("The existing entry selected for merge no longer exists.")
+            # Use the corrected/existing spelling so the repository's atomic
+            # merge planner resolves the intended normalized entry.
+            entry = WordEntry(
+                word=preview.existing_word,
+                type=entry.type,
+                definitions=entry.definitions,
+                examples=entry.examples,
+            )
+            report = self.builder.add_vocab_entries([entry], on_duplicate="merge")
+            expected = "merged"
+        else:
+            self._raise_if_duplicate(word)
+            report = self.builder.add_vocab_entries([entry], on_duplicate="error")
+            expected = "added"
+
+        if not report.ok or report.count(expected) != 1:
+            if action != "merge":
+                self._raise_if_duplicate(word)
+            detail = report.outcomes[0].detail if report.outcomes else ""
+            raise SaveFailedError(detail or "The vocabulary file could not be updated.")
+
+    def _complete_transaction_auxiliary(self, transaction: dict[str, Any]) -> None:
+        preview = MobilePreview.from_json(transaction["preview"])
+        word = str(transaction["word"])
+        operation_id = str(transaction["operation_id"])
+
+        if not transaction.get("history_done"):
+            transaction["history_done"] = self._log_history(
+                preview,
+                saved_word=word,
+                operation_id=operation_id,
+                action=("merge" if transaction.get("action") == "merge" else "new"),
+            )
+        if not transaction.get("anki_done"):
+            try:
+                transaction["anki_done"] = bool(
+                    self.builder.record_acquisition_order(word)
+                )
+            except Exception as exc:
+                transaction["anki_done"] = False
+                ui = getattr(self.builder, "ui", None)
+                if ui is not None:
+                    ui.warning(
+                        "The vocabulary entry was saved, but its Anki acquisition "
+                        f"order is queued for repair: {exc}"
+                    )
+
+    @staticmethod
+    def _transaction_complete(transaction: dict[str, Any]) -> bool:
+        return bool(transaction.get("history_done") and transaction.get("anki_done"))
 
     def recent(self, limit: int = 8) -> list[dict[str, Any]]:
         safe_limit = max(1, min(limit, 30))
@@ -233,34 +417,47 @@ class MobileVocabService:
         if not logger or not logger.enabled:
             return []
         records = logger.read_recent_vocab_entries(limit=safe_limit)
-        return [self._history_record_for_json(record) for record in records]
+        with self._lock:
+            return [
+                self._reconcile_with_stored_entry(self._history_record_for_json(record))
+                for record in records
+            ]
+
+    def _reconcile_with_stored_entry(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Let history supply the order and the vocabulary file supply the content.
+
+        A history record keeps the word exactly as it was typed, while the
+        vocabulary file capitalizes on write, so the same entry would otherwise
+        appear in two different cases depending on which endpoint produced the
+        row. Reading the stored entry also keeps definitions and examples from
+        going stale after a later merge. Records whose entry has since been
+        removed fall back to the history copy.
+        """
+        existing_key = self.builder.check_duplicate(str(row.get("word", "")))
+        if not existing_key:
+            return row
+        entry = self.builder.word_entries.get(existing_key)
+        if not entry:
+            return row
+        row["word"] = str(entry.get("word") or row.get("word", ""))
+        row["word_type"] = str(entry.get("type") or row.get("word_type", ""))
+        row["definitions"] = list(entry.get("definitions_list", [])) or row.get("definitions", [])
+        stored_examples = [
+            {"source": source, "target": target}
+            for source, target in entry.get("examples_list", [])
+        ]
+        if stored_examples:
+            row["examples"] = stored_examples
+        return row
 
     def search(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
-        needle = sanitize_user_text(query).casefold()
-        if not needle:
-            return []
-        safe_limit = max(1, min(limit, 50))
         with self._lock:
-            matches: list[dict[str, Any]] = []
-            for entry in self.builder.word_entries.values():
-                word = str(entry.get("word", ""))
-                definitions = list(entry.get("definitions_list", []))
-                searchable = " ".join([word, *definitions]).casefold()
-                if needle not in searchable:
-                    continue
-                matches.append(
-                    {
-                        "word": word,
-                        "word_type": str(entry.get("type", "")),
-                        "definitions": definitions,
-                        "examples": [
-                            {"source": source, "target": target}
-                            for source, target in entry.get("examples_list", [])
-                        ],
-                    }
-                )
-            matches.sort(key=lambda item: item["word"].casefold())
-            return matches[:safe_limit]
+            if not sanitize_user_text(query):
+                return []
+            return self.library.page(
+                query=query,
+                page_size=max(1, min(limit, 50)),
+            )["items"]
 
     def _validate_input(self, raw_text: str) -> str:
         text = sanitize_user_text(raw_text or "")
@@ -289,8 +486,34 @@ class MobileVocabService:
         existing_word = str(existing.get("word") or existing_key)
         raise DuplicateEntryError(
             f"{existing_word} is already in your vocabulary.",
-            details={"existing_word": existing_word},
+            details={
+                "existing_word": existing_word,
+                "existing_entry": self._entry_for_json(existing),
+                "actions": ["merge", "variant", "skip"],
+            },
         )
+
+    def _existing_word(self, word: str) -> Optional[str]:
+        existing_key = self.builder.check_duplicate(word)
+        if not existing_key:
+            return None
+        existing = self.builder.word_entries.get(existing_key, {})
+        return str(existing.get("word") or existing_key)
+
+    def _unique_variant(self, base_word: str) -> str:
+        candidate = f"{base_word} - alt"
+        if not self.builder.check_duplicate(candidate):
+            return candidate
+        for suffix in "abcdefghijklmnopqrstuvwxyz":
+            candidate = f"{base_word} - alt {suffix}"
+            if not self.builder.check_duplicate(candidate):
+                return candidate
+        index = 2
+        while True:
+            candidate = f"{base_word} - alt x{index}"
+            if not self.builder.check_duplicate(candidate):
+                return candidate
+            index += 1
 
     def _spelling_suggestion(
         self,
@@ -303,11 +526,23 @@ class MobileVocabService:
         suggestion = self.builder.suggest_spelling(original, response)
         return suggestion if suggestion and suggestion != original else None
 
-    def _log_history(self, preview: MobilePreview, *, saved_word: str) -> None:
+    def _log_history(
+        self,
+        preview: MobilePreview,
+        *,
+        saved_word: str,
+        operation_id: str,
+        action: str,
+    ) -> bool:
         logger = self.builder.history_logger
         if not logger or not logger.enabled:
-            return
-        metadata: dict[str, Any] = {"surface": "mobile"}
+            return True
+        if logger.has_operation(operation_id, flow="vocab"):
+            return True
+        metadata: dict[str, Any] = {
+            "surface": "mobile",
+            "operation_id": operation_id,
+        }
         if saved_word != preview.original_input:
             metadata.update(
                 {
@@ -316,8 +551,8 @@ class MobileVocabService:
                     "corrected_word": preview.word,
                 }
             )
-        logger.log_vocab_entry(
-            action="new",
+        return logger.log_vocab_entry(
+            action=action,
             word=saved_word,
             word_type=preview.word_type,
             definitions=preview.definitions,
@@ -345,6 +580,180 @@ class MobileVocabService:
         ]
         for token in expired_receipts:
             del self._saved_receipts[token]
+
+    def _restore_state(self) -> None:
+        payload = self._state_store.read()
+        for token, raw_preview in payload["previews"].items():
+            try:
+                self._previews[token] = MobilePreview.from_json(raw_preview)
+            except (KeyError, TypeError, ValueError):
+                continue
+        for token, stored in payload["receipts"].items():
+            if not isinstance(stored, dict):
+                continue
+            try:
+                saved_at = datetime.fromisoformat(str(stored["saved_at"]))
+                receipt = dict(stored["receipt"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            self._saved_receipts[token] = (saved_at, receipt)
+        self._transactions = {
+            str(token): dict(value)
+            for token, value in payload["transactions"].items()
+            if isinstance(value, dict)
+        }
+        self._practice_attempts = {
+            str(token): dict(value)
+            for token, value in payload["practice"].items()
+            if isinstance(value, dict)
+        }
+        self._translation_previews = {
+            str(token): dict(value)
+            for token, value in payload["translations"].items()
+            if isinstance(value, dict)
+        }
+        self._prune_previews()
+        self._prune_auxiliary_state()
+
+    def _persist_state(self) -> None:
+        with self._lock:
+            self._prune_auxiliary_state()
+            self._state_store.write(
+                {
+                    "previews": {
+                        token: preview.as_json()
+                        for token, preview in self._previews.items()
+                    },
+                    "receipts": {
+                        token: {
+                            "saved_at": saved_at.isoformat(),
+                            "receipt": receipt,
+                        }
+                        for token, (saved_at, receipt) in self._saved_receipts.items()
+                    },
+                    "transactions": self._transactions,
+                    "practice": self._practice_attempts,
+                    "translations": self._translation_previews,
+                }
+            )
+
+    def _prune_auxiliary_state(self) -> None:
+        cutoff = datetime.now(timezone.utc) - self.workflow_ttl
+
+        def expired(payload: dict[str, Any]) -> bool:
+            try:
+                return datetime.fromisoformat(str(payload["created_at"])) < cutoff
+            except (KeyError, TypeError, ValueError):
+                return True
+
+        for token, payload in list(self._translation_previews.items()):
+            receipt = payload.get("saved_receipt")
+            pending = bool(
+                isinstance(receipt, dict) and receipt.get("history_pending")
+            )
+            if expired(payload) and not pending:
+                self._translation_previews.pop(token, None)
+        for token, payload in list(self._practice_attempts.items()):
+            feedback = payload.get("feedback")
+            pending = bool(
+                isinstance(feedback, dict) and feedback.get("history_pending")
+            )
+            if expired(payload) and not pending:
+                self._practice_attempts.pop(token, None)
+
+    def _repair_transactions(self) -> None:
+        changed = False
+        for token, transaction in list(self._transactions.items()):
+            try:
+                if not transaction.get("primary_committed"):
+                    word = str(transaction["word"])
+                    if transaction.get("action") == "merge":
+                        if not self._stored_entry_contains(transaction):
+                            self._commit_transaction_primary(transaction)
+                    elif not self.builder.check_duplicate(word):
+                        self._commit_transaction_primary(transaction)
+                    elif not self._stored_entry_matches(transaction):
+                        # Another writer committed different content for this
+                        # normalized word. This journal never owned the primary
+                        # mutation, so it must not fabricate history or Anki
+                        # acquisition state for it.
+                        self._transactions.pop(token, None)
+                        changed = True
+                        continue
+                    transaction["primary_committed"] = True
+
+                if not isinstance(transaction.get("receipt"), dict):
+                    transaction["receipt"] = {
+                        "word": str(transaction["word"]),
+                        "action": (
+                            "merged"
+                            if transaction.get("action") == "merge"
+                            else "added"
+                        ),
+                        "entry_count": len(self.builder.word_entries),
+                        "saved_at": datetime.now(timezone.utc).isoformat(),
+                        "sync_pending": True,
+                    }
+                self._complete_transaction_auxiliary(transaction)
+                receipt = transaction.get("receipt")
+                if isinstance(receipt, dict):
+                    receipt["sync_pending"] = not self._transaction_complete(transaction)
+                    saved_at = datetime.fromisoformat(
+                        str(receipt.get("saved_at") or datetime.now(timezone.utc).isoformat())
+                    )
+                    self._saved_receipts[token] = (saved_at, receipt)
+                    self._previews.pop(token, None)
+                if self._transaction_complete(transaction):
+                    self._transactions.pop(token, None)
+                changed = True
+            except Exception:
+                # The journal remains durable and a later request can retry.
+                continue
+        if changed:
+            self._persist_state()
+
+    def _stored_entry_matches(self, transaction: dict[str, Any]) -> bool:
+        stored, preview = self._stored_entry_and_preview(transaction)
+        if stored is None or preview is None:
+            return False
+        return (
+            stored["word_type"].casefold() == preview.word_type.casefold()
+            and stored["definitions"] == preview.definitions
+            and stored["examples"]
+            == [
+                {"source": source, "target": target}
+                for source, target in preview.examples
+            ]
+        )
+
+    def _stored_entry_contains(self, transaction: dict[str, Any]) -> bool:
+        stored, preview = self._stored_entry_and_preview(transaction)
+        if stored is None or preview is None:
+            return False
+        expected_examples = [
+            {"source": source, "target": target}
+            for source, target in preview.examples
+        ]
+        return all(
+            definition in stored["definitions"] for definition in preview.definitions
+        ) and all(example in stored["examples"] for example in expected_examples)
+
+    def _stored_entry_and_preview(
+        self,
+        transaction: dict[str, Any],
+    ) -> tuple[Optional[dict[str, Any]], Optional[MobilePreview]]:
+        preview = MobilePreview.from_json(transaction["preview"])
+        existing_key = self.builder.check_duplicate(str(transaction["word"]))
+        if not existing_key:
+            return None, None
+        existing = self.builder.word_entries.get(existing_key)
+        if not existing:
+            return None, None
+        return entry_for_json(existing), preview
+
+    @staticmethod
+    def _entry_for_json(entry: dict[str, Any]) -> dict[str, Any]:
+        return entry_for_json(entry)
 
     @staticmethod
     def _history_record_for_json(record: dict[str, Any]) -> dict[str, Any]:

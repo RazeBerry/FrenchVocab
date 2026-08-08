@@ -19,6 +19,8 @@ class _RejectingClient:
 def _make_minimal_coordinator(provider: str = "gemini") -> LLMCoordinator:
     coordinator = object.__new__(LLMCoordinator)
     coordinator._state_lock = threading.Lock()
+    coordinator._query_lock = threading.Lock()
+    coordinator._usage_lock = threading.Lock()
     coordinator._init_event = threading.Event()
     coordinator._ui = type(
         "_UI",
@@ -141,6 +143,8 @@ def test_ensure_llm_ready_skip_returns_false(monkeypatch, tmp_path):
 def test_background_init_wait_timeout_does_not_block_forever(monkeypatch):
     coordinator = object.__new__(LLMCoordinator)
     coordinator._state_lock = threading.Lock()
+    coordinator._query_lock = threading.Lock()
+    coordinator._usage_lock = threading.Lock()
     coordinator._init_state = InitState.IN_PROGRESS
     coordinator._init_event = type(
         "_Event",

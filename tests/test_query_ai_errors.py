@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+import threading
 from types import SimpleNamespace
 
 from vocab_builder.core import VocabBuilder
@@ -70,6 +72,8 @@ def test_query_ai_surfaces_provider_error_label():
     coordinator._ui = ui
     coordinator._client = client
     coordinator._state_lock = threading.Lock()
+    coordinator._query_lock = threading.Lock()
+    coordinator._usage_lock = threading.Lock()
     coordinator._api_error_reason = None
     coordinator._provider_metadata = _MockProviderMetadata()
     coordinator._session_usage = {}
@@ -102,6 +106,8 @@ def test_handle_ai_exception_degrades_cleanly_on_quota_failure(monkeypatch):
     coordinator._ui = ui
     coordinator._client = _FailingClient()
     coordinator._state_lock = threading.Lock()
+    coordinator._query_lock = threading.Lock()
+    coordinator._usage_lock = threading.Lock()
     coordinator._init_event = threading.Event()
     coordinator._init_generation = 1
     coordinator._init_state = InitState.READY
@@ -122,3 +128,79 @@ def test_handle_ai_exception_degrades_cleanly_on_quota_failure(monkeypatch):
     assert handled is True
     assert coordinator.api_available is False
     assert "quota" in (coordinator.api_error_reason or "").lower()
+
+
+def test_queries_on_one_coordinator_are_serialized():
+    first_started = threading.Event()
+    release_first = threading.Event()
+    active_lock = threading.Lock()
+    active = 0
+    maximum_active = 0
+
+    class GatedClient:
+        def model_label(self):
+            return "Serialized provider"
+
+        def stream(self, prompt):
+            nonlocal active, maximum_active
+            with active_lock:
+                active += 1
+                maximum_active = max(maximum_active, active)
+            try:
+                if prompt == "first":
+                    first_started.set()
+                    assert release_first.wait(timeout=2)
+                yield prompt
+                return {}
+            finally:
+                with active_lock:
+                    active -= 1
+
+    coordinator = LLMCoordinator(
+        _CaptureUI(),
+        provider_manager=SimpleNamespace(),
+        provider_metadata=_MockProviderMetadata(),
+        client=GatedClient(),
+        interactive=False,
+    )
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(coordinator.query, "first")
+        assert first_started.wait(timeout=1)
+        second = executor.submit(coordinator.query, "second")
+        assert not second.done()
+        release_first.set()
+
+    assert first.result()[0] == "first"
+    assert second.result()[0] == "second"
+    assert maximum_active == 1
+
+
+def test_inflight_query_keeps_its_client_snapshot_when_provider_degrades():
+    started = threading.Event()
+    release = threading.Event()
+
+    class GatedClient:
+        def model_label(self):
+            return "Snapshot provider"
+
+        def stream(self, _prompt):
+            started.set()
+            assert release.wait(timeout=2)
+            yield "completed"
+            return {}
+
+    coordinator = LLMCoordinator(
+        _CaptureUI(),
+        provider_manager=SimpleNamespace(),
+        provider_metadata=_MockProviderMetadata(),
+        client=GatedClient(),
+        interactive=False,
+    )
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        result = executor.submit(coordinator.query, "prompt")
+        assert started.wait(timeout=1)
+        coordinator._enter_degraded_mode("another request failed")
+        release.set()
+
+    assert result.result()[0] == "completed"
+    assert coordinator.client is None

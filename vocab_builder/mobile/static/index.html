@@ -24,7 +24,7 @@
       })();
     </script>
     <link rel="stylesheet" href="/static/styles.css">
-    <script src="/static/app.js" defer></script>
+    <script src="/static/app.js" type="module"></script>
   </head>
   <body>
     <div class="app">
@@ -39,63 +39,145 @@
         </button>
       </header>
 
-      <main class="stage">
-        <div class="deck" id="deck">
-          <article class="slip is-capturing" id="slip">
-            <div class="slip-head">
-              <label class="sr-only" id="entry-label" for="entry-input">Word or phrase</label>
-              <textarea
-                id="entry-input"
-                class="hw hw--s1"
-                rows="1"
-                maxlength="1000"
-                placeholder="Type a word"
-                enterkeyhint="go"
-                autocapitalize="off"
-                autocomplete="off"
-                autocorrect="off"
-                spellcheck="false"
-              ></textarea>
-              <h2 class="hw hw--s1" id="preview-word" hidden></h2>
-              <div class="short"></div>
-              <p class="pos" id="slip-pos">&nbsp;</p>
+      <main class="views">
+        <section class="view is-active" id="view-capture" data-view="capture">
+          <div class="stage">
+            <div class="deck" id="deck">
+              <article class="slip is-capturing" id="slip">
+                <div class="slip-head">
+                  <label class="sr-only" id="entry-label" for="entry-input">Word or phrase</label>
+                  <textarea
+                    id="entry-input"
+                    class="hw hw--s1"
+                    rows="1"
+                    maxlength="1000"
+                    placeholder="Type a word"
+                    enterkeyhint="go"
+                    autocapitalize="off"
+                    autocomplete="off"
+                    autocorrect="off"
+                    spellcheck="false"
+                  ></textarea>
+                  <h2 class="hw hw--s1" id="preview-word" hidden></h2>
+                  <div class="short"></div>
+                  <p class="pos" id="slip-pos">&nbsp;</p>
+                </div>
+                <div class="slip-body" id="slip-body">
+                  <p class="mean" id="slip-mean">The meaning will appear here.</p>
+                  <div id="slip-example"></div>
+                  <ol class="senses" id="slip-senses" hidden></ol>
+                  <div id="slip-examples" hidden></div>
+                  <button class="more" id="more-button" type="button" aria-expanded="false" hidden>
+                    <span id="more-label"></span><i class="chev" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </article>
             </div>
+          </div>
+          <div class="acts">
+            <button class="ghost-button" id="discard-button" type="button" hidden>Discard</button>
+            <button class="solid-button" id="primary-button" type="button" disabled>
+              <span class="button-label" id="primary-label">Look it up</span>
+              <span class="button-loader" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="duplicate-actions" id="duplicate-actions" hidden>
+            <button class="quiet-button" id="merge-button" type="button">Add new senses</button>
+            <button class="quiet-button" id="variant-button" type="button">Keep as a variant</button>
+          </div>
+          <p class="message" id="form-message" role="alert"></p>
+          <section class="recent-strip">
+            <div class="section-heading"><h2>Recently kept</h2><button data-go="library" type="button">Open library</button></div>
+            <div class="index compact" id="recent-list"></div>
+            <p class="empty-state" id="recent-empty">Your recent additions will appear here.</p>
+          </section>
+        </section>
 
-            <div class="slip-body" id="slip-body">
-              <p class="mean" id="slip-mean">The meaning will appear here.</p>
-              <div id="slip-example"></div>
-              <ol class="senses" id="slip-senses" hidden></ol>
-              <div id="slip-examples" hidden></div>
-              <button class="more" id="more-button" type="button" aria-expanded="false" hidden>
-                <span id="more-label"></span>
-                <i class="chev" aria-hidden="true"></i>
-              </button>
-            </div>
+        <section class="view" id="view-translate" data-view="translate" hidden>
+          <div class="page-heading"><p class="eyebrow">Translator</p><h1>Turn a passage around</h1><p>Same prompts and translation files as the terminal.</p></div>
+          <div class="segmented" id="translation-directions" role="group" aria-label="Translation direction"></div>
+          <label class="field-label" for="translation-input">Text to translate</label>
+          <textarea class="paper-input" id="translation-input" rows="5" maxlength="10000" placeholder="Type or paste a sentence"></textarea>
+          <button class="solid-button full" id="translate-button" type="button">Translate</button>
+          <article class="result-card" id="translation-result" hidden>
+            <p class="eyebrow" id="translation-route"></p>
+            <p class="translation-source" id="translation-source"></p>
+            <div class="rule"></div>
+            <p class="translation-target" id="translation-target"></p>
+            <p class="note" id="translation-note" hidden></p>
+            <div class="inline-actions"><button class="ghost-button" id="translation-discard" type="button">Discard</button><button class="solid-button" id="translation-save" type="button">Save pair</button></div>
           </article>
-        </div>
+          <p class="message" id="translation-message" role="alert"></p>
+          <div class="section-heading"><h2>Saved translations</h2></div>
+          <div class="pair-list" id="translation-pairs"></div>
+        </section>
+
+        <section class="view" id="view-library" data-view="library" hidden>
+          <div class="page-heading"><p class="eyebrow">Library</p><h1>Your whole collection</h1><p id="library-summary">Search every word, type, meaning, and example.</p></div>
+          <label class="search library-search"><span aria-hidden="true">&#8981;</span><span class="sr-only">Search collection</span><input id="search-input" type="search" placeholder="Search everything" autocomplete="off"></label>
+          <div class="type-chips" id="type-chips"></div>
+          <div class="library-actions"><button class="quiet-button" id="random-button" type="button">Random flashcard</button><button class="quiet-button" id="stats-button" type="button">Collection stats</button></div>
+          <div class="stats-panel" id="stats-panel" hidden></div>
+          <div class="index" id="entry-list" aria-live="polite"></div>
+          <p class="empty-state" id="empty-state">No entries match that search.</p>
+          <button class="quiet-button load-more" id="library-more" type="button" hidden>Load more</button>
+          <p class="index-foot" id="index-foot" hidden></p>
+        </section>
+
+        <section class="view" id="view-practice" data-view="practice" hidden>
+          <div class="page-heading"><p class="eyebrow">Practice</p><h1>Move words into use</h1><p id="practice-debt">Preparing your production queue.</p></div>
+          <div class="mode-grid" id="practice-modes"></div>
+          <article class="practice-card" id="practice-card" hidden>
+            <p class="eyebrow" id="practice-mode-label"></p>
+            <div id="practice-prompt"></div>
+            <textarea class="paper-input" id="practice-input" rows="6" maxlength="10000" placeholder="Write your answer"></textarea>
+            <button class="solid-button full" id="practice-submit" type="button">Ask the coach</button>
+          </article>
+          <article class="feedback-card" id="practice-feedback" hidden></article>
+          <p class="message" id="practice-message" role="alert"></p>
+          <button class="quiet-button full" id="practice-next" type="button" hidden>Next attempt</button>
+        </section>
+
+        <section class="view" id="view-tools" data-view="tools" hidden>
+          <div class="page-heading"><p class="eyebrow">Tools</p><h1>Exports and connection</h1><p>Operational controls stay quiet until you need them.</p></div>
+          <section class="tool-card">
+            <div class="section-heading"><div><p class="eyebrow">Anki</p><h2>Deck export</h2></div><span class="status-pill" id="anki-status">Loading</span></div>
+            <p id="anki-copy">Checking export state.</p>
+            <div class="mode-grid compact-grid">
+              <button class="quiet-button anki-export" data-mode="incremental" type="button">New words</button>
+              <button class="quiet-button anki-export" data-mode="rebuild" type="button">Full rebuild</button>
+              <button class="quiet-button anki-export" data-mode="selected" type="button">Selected words</button>
+              <button class="quiet-button anki-export" data-mode="reconcile" type="button">Reconcile</button>
+            </div>
+            <div class="anki-options">
+              <label class="field-label" for="anki-selected">Selected words <span>(comma-separated)</span></label>
+              <input class="paper-input single" id="anki-selected" type="text" autocomplete="off" placeholder="bonjour, néanmoins">
+              <label class="check-row"><input id="anki-mistakes" type="checkbox"><span>Include the composition-mistakes deck when available</span></label>
+            </div>
+            <a class="solid-button download" id="anki-download" hidden>Download deck</a>
+            <button class="danger-link" id="anki-remove-stale" type="button" hidden>Remove stale tracking</button>
+            <p class="message" id="anki-message" role="alert"></p>
+          </section>
+          <section class="tool-card">
+            <div class="section-heading"><div><p class="eyebrow">AI provider</p><h2 id="provider-label">Connection</h2></div><span class="status-pill" id="provider-status">Loading</span></div>
+            <div class="segmented" id="provider-options" role="group" aria-label="Provider"></div>
+            <label class="field-label" for="provider-key">New API key <span>(optional)</span></label>
+            <input class="paper-input single" id="provider-key" type="password" autocomplete="new-password" placeholder="Leave blank to use the stored key">
+            <div class="inline-actions"><button class="ghost-button" id="provider-test" type="button">Test connection</button><button class="solid-button" id="provider-save" type="button">Apply provider</button></div>
+            <p class="message" id="provider-message" role="alert"></p>
+          </section>
+          <section class="tool-card">
+            <p class="eyebrow">Storage</p>
+            <h2>Authoritative files</h2>
+            <div class="file-list" id="file-list"></div>
+            <details class="backup-drawer">
+              <summary>Download recovery copies</summary>
+              <div class="file-list" id="backup-list"></div>
+            </details>
+            <p>Your phone never stores these files or your API key. It only keeps unsent text drafts on this device.</p>
+          </section>
+        </section>
       </main>
-
-      <div class="acts">
-        <button class="ghost-button" id="discard-button" type="button" hidden>Discard</button>
-        <button class="solid-button" id="primary-button" type="button" disabled>
-          <span class="button-label" id="primary-label">Look it up</span>
-          <span class="button-loader" aria-hidden="true"></span>
-        </button>
-      </div>
-
-      <p class="message" id="form-message" role="alert"></p>
-
-      <section class="collection">
-        <h2>Your collection</h2>
-        <label class="search">
-          <span aria-hidden="true">&#8981;</span>
-          <span class="sr-only">Search your collection</span>
-          <input id="search-input" type="search" placeholder="Search words or meanings" autocomplete="off">
-        </label>
-        <div class="index" id="entry-list" aria-live="polite"></div>
-        <p class="empty-state" id="empty-state">Your most recent additions will appear here.</p>
-        <p class="index-foot" id="index-foot" hidden></p>
-      </section>
 
       <aside class="install-tip" id="install-tip" hidden>
         <div>
@@ -105,11 +187,18 @@
         <button id="dismiss-install" type="button" aria-label="Dismiss">&times;</button>
       </aside>
 
-      <footer>
+      <footer class="privacy-footer">
         <span>Private through Tailscale</span>
         <span aria-hidden="true">&middot;</span>
         <span id="data-file">&mdash;</span>
       </footer>
+      <nav class="tabbar" aria-label="Main navigation">
+        <button class="tab is-active" data-tab="capture" type="button"><span aria-hidden="true">＋</span><small>Add</small></button>
+        <button class="tab" data-tab="translate" type="button"><span aria-hidden="true">↔</span><small>Translate</small></button>
+        <button class="tab" data-tab="library" type="button"><span aria-hidden="true">≡</span><small>Library</small></button>
+        <button class="tab" data-tab="practice" type="button"><span aria-hidden="true">◇</span><small>Practice</small></button>
+        <button class="tab" data-tab="tools" type="button"><span aria-hidden="true">···</span><small>Tools</small></button>
+      </nav>
     </div>
   </body>
 </html>
