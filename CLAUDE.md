@@ -112,7 +112,10 @@ pytest -k "anki"
 #### Mobile front end (`vocab_builder/mobile/static/`)
 - Plain HTML/CSS/JS with no build step and no external requests (Tailscale-only hosts may have no public egress).
 - All colors are CSS custom properties on `:root`, re-declared in one `@media (prefers-color-scheme: dark)` block. Style components through the tokens; never hardcode a color inside the dark block, or that rule will not apply in light mode.
-- The language picker and the connection chip share one pill rule; keep their metrics identical when editing either.
+- The interface is a single "specimen slip": one card carries capture and preview. `.slip.is-capturing` is the blank state (the `textarea` is the headword), and the same slip fills in with the preview rather than swapping to another component.
+- Each collection owns a hue, selected by `data-language` on `<html>` and read through `--hue`/`--on-hue`. Any new accent must come from those tokens so a new language only adds a hue.
+- Headword sizing steps through `.hw--s1/2/3` at 14 and 28 characters. The breakpoints come from the stored collections (87% of French headwords are <= 14 characters, 2% are long expressions); re-measure before changing them.
+- Long AI responses are deferred, never dropped: the collapsed slip shows the first sense plus one example, and `#more-button` expands the rest, pinning the headword and scrolling `.slip-body`. `/api/save` still commits every definition and example.
 - When changing `styles.css` or `app.js`, bump the `?v=N` query in `index.html` **and** the matching `SHELL_CACHE`/`SHELL_FILES` entries in `service-worker.js`, or installed home-screen apps keep serving the old assets.
 - User-visible copy is generated in `app.js` (article agreement, singular/plural); keep it grammatical for every registered language name.
 

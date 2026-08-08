@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f7f1e7">
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#151a18">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#efeae3">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#151310">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="VocabBuilder">
@@ -12,135 +12,88 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/static/icon.svg">
-    <link rel="stylesheet" href="/static/styles.css?v=3">
-    <script src="/static/app.js?v=3" defer></script>
+    <link rel="stylesheet" href="/static/styles.css?v=4">
+    <script src="/static/app.js?v=4" defer></script>
   </head>
   <body>
-    <div class="page-shell">
-      <header class="topbar">
-        <div class="topbar-title">
-          <p class="eyebrow">Your private collection</p>
-          <h1>VocabBuilder</h1>
-        </div>
-        <div class="topbar-actions">
-          <label class="language-picker">
-            <span class="sr-only">Vocabulary language</span>
-            <select id="language-select" aria-label="Vocabulary language">
-              <option value="fr">French</option>
-              <option value="de">German</option>
-              <option value="en">English</option>
-            </select>
-          </label>
-          <button class="connection" id="connection" type="button" aria-live="polite">
-            <span class="connection-dot"></span>
-            <span id="connection-label">Connecting</span>
-          </button>
-        </div>
+    <div class="app">
+      <header class="bar">
+        <div class="langs" id="languages" role="group" aria-label="Collection"></div>
+        <p class="count"><strong id="entry-count">&mdash;</strong> <span id="entry-noun">collected</span></p>
+        <button class="conn" id="connection" type="button">
+          <span class="sr-only" id="connection-label">Connecting</span>
+        </button>
       </header>
 
-      <main>
-        <section class="capture-card" aria-labelledby="capture-title">
-          <div class="capture-heading">
-            <div>
-              <p class="section-label">Quick capture</p>
-              <h2 id="capture-title">What did you find?</h2>
+      <main class="stage">
+        <div class="deck" id="deck">
+          <article class="slip is-capturing" id="slip">
+            <div class="slip-head">
+              <label class="sr-only" id="entry-label" for="entry-input">Word or phrase</label>
+              <textarea
+                id="entry-input"
+                class="hw hw--s1"
+                rows="1"
+                maxlength="1000"
+                placeholder="Type a word"
+                enterkeyhint="go"
+                autocapitalize="off"
+                autocomplete="off"
+                autocorrect="off"
+                spellcheck="false"
+              ></textarea>
+              <h2 class="hw hw--s1" id="preview-word" hidden></h2>
+              <div class="short"></div>
+              <p class="pos" id="slip-pos">&nbsp;</p>
             </div>
-            <p class="count"><strong id="entry-count">—</strong> <span id="entry-noun">entries</span></p>
-          </div>
 
-          <form id="capture-form">
-            <label class="sr-only" id="entry-label" for="entry-input">French word or phrase</label>
-            <textarea
-              id="entry-input"
-              name="entry"
-              rows="3"
-              maxlength="1000"
-              placeholder="Type a French word or phrase…"
-              enterkeyhint="done"
-              autocapitalize="sentences"
-              required
-            ></textarea>
-            <button class="primary-button" id="preview-button" type="submit">
-              <span class="button-label">Create preview</span>
-              <span class="button-loader" aria-hidden="true"></span>
-            </button>
-          </form>
-          <p class="form-message" id="form-message" role="alert"></p>
-        </section>
-
-        <section class="preview-card hidden" id="preview-card" aria-live="polite">
-          <div class="preview-title-row">
-            <div>
-              <p class="section-label" id="preview-kind">Preview</p>
-              <h2 id="preview-word"></h2>
+            <div class="slip-body" id="slip-body">
+              <p class="mean" id="slip-mean">The meaning will appear here.</p>
+              <div id="slip-example"></div>
+              <ol class="senses" id="slip-senses" hidden></ol>
+              <div id="slip-examples" hidden></div>
+              <button class="more" id="more-button" type="button" aria-expanded="false" hidden>
+                <span id="more-label"></span>
+                <i class="chev" aria-hidden="true"></i>
+              </button>
             </div>
-            <span class="word-type" id="preview-type"></span>
-          </div>
-
-          <div class="correction hidden" id="correction-row">
-            <span>Spelling suggestion</span>
-            <label class="switch-label">
-              <input id="use-suggestion" type="checkbox" checked>
-              <span>Use <strong id="suggested-word"></strong></span>
-            </label>
-          </div>
-
-          <div class="preview-section">
-            <h3>Meaning</h3>
-            <ol id="preview-definitions"></ol>
-          </div>
-          <div class="preview-section" id="examples-section">
-            <h3>In context</h3>
-            <div id="preview-examples"></div>
-          </div>
-
-          <div class="preview-actions">
-            <button class="secondary-button" id="discard-button" type="button">Discard</button>
-            <button class="primary-button compact" id="save-button" type="button">
-              <span class="button-label">Save entry</span>
-              <span class="button-loader" aria-hidden="true"></span>
-            </button>
-          </div>
-        </section>
-
-        <section class="success-card hidden" id="success-card" aria-live="polite">
-          <span class="success-mark">✓</span>
-          <div>
-            <p>Saved to your collection</p>
-            <strong id="saved-word"></strong>
-          </div>
-        </section>
-
-        <section class="library-section">
-          <div class="library-heading">
-            <div>
-              <p class="section-label">Your collection</p>
-              <h2>Find an entry</h2>
-            </div>
-          </div>
-          <label class="search-box">
-            <span aria-hidden="true">⌕</span>
-            <input id="search-input" type="search" placeholder="Search words or meanings" autocomplete="off">
-          </label>
-          <div class="entry-list" id="entry-list" aria-live="polite"></div>
-          <p class="empty-state" id="empty-state">Your most recent additions will appear here.</p>
-        </section>
+          </article>
+        </div>
       </main>
 
-      <aside class="install-tip hidden" id="install-tip">
+      <div class="acts">
+        <button class="ghost-button" id="discard-button" type="button" hidden>Discard</button>
+        <button class="solid-button" id="primary-button" type="button" disabled>
+          <span class="button-label" id="primary-label">Look it up</span>
+          <span class="button-loader" aria-hidden="true"></span>
+        </button>
+      </div>
+
+      <p class="message" id="form-message" role="alert"></p>
+
+      <section class="collection">
+        <h2>Your collection</h2>
+        <label class="search">
+          <span aria-hidden="true">&#8981;</span>
+          <span class="sr-only">Search your collection</span>
+          <input id="search-input" type="search" placeholder="Search words or meanings" autocomplete="off">
+        </label>
+        <div class="entry-list" id="entry-list" aria-live="polite"></div>
+        <p class="empty-state" id="empty-state">Your most recent additions will appear here.</p>
+      </section>
+
+      <aside class="install-tip" id="install-tip" hidden>
         <div>
           <strong>Keep it one tap away</strong>
-          <p>Tap Share, then “Add to Home Screen”.</p>
+          <p>Tap Share, then &ldquo;Add to Home Screen&rdquo;.</p>
         </div>
-        <button id="dismiss-install" type="button" aria-label="Dismiss">×</button>
+        <button id="dismiss-install" type="button" aria-label="Dismiss">&times;</button>
       </aside>
 
       <footer>
         <span>Private through Tailscale</span>
-        <span aria-hidden="true">·</span>
-        <span id="active-language">French</span>
-        <span aria-hidden="true">·</span>
-        <span id="data-file">FrenchVocab.tex</span>
+        <span aria-hidden="true">&middot;</span>
+        <span id="data-file">&mdash;</span>
       </footer>
     </div>
   </body>

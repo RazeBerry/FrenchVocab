@@ -1,8 +1,8 @@
-const SHELL_CACHE = "vocabbuilder-shell-v3";
+const SHELL_CACHE = "vocabbuilder-shell-v4";
 const SHELL_FILES = [
   "/",
-  "/static/styles.css?v=3",
-  "/static/app.js?v=3",
+  "/static/styles.css?v=4",
+  "/static/app.js?v=4",
   "/static/icon.svg",
   "/manifest.webmanifest",
 ];

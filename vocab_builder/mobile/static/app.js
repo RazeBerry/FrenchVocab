@@ -1,22 +1,73 @@
 const LANGUAGE_STORAGE_KEY = "vocabbuilder-language";
+const INSTALL_TIP_KEY = "vocabbuilder-install-tip-dismissed";
 const RETRY_DELAY_MS = 15000;
-const state = { language: "fr", preview: null, searchTimer: null, retryTimer: null };
-const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
+// Headword sizes come from the real distribution of the stored collections:
+// of 571 French headwords, 87% are <=14 characters and 2% are long expressions.
+const HEADWORD_STEPS = [
+  { max: 14, className: "hw--s1" },
+  { max: 28, className: "hw--s2" },
+  { max: Infinity, className: "hw--s3" },
+];
+
+const state = {
+  language: "fr",
+  languageName: "",
+  preview: null,
+  searchTimer: null,
+  retryTimer: null,
+  expanded: false,
+  collapsedLabel: "",
+};
+
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const el = (id) => document.getElementById(id);
-const captureForm = el("capture-form");
+
+const slip = el("slip");
+const deck = el("deck");
 const entryInput = el("entry-input");
-const previewButton = el("preview-button");
-const saveButton = el("save-button");
-const previewCard = el("preview-card");
-const successCard = el("success-card");
+const previewWord = el("preview-word");
+const primaryButton = el("primary-button");
+const discardButton = el("discard-button");
+const moreButton = el("more-button");
 const formMessage = el("form-message");
 const entryList = el("entry-list");
 const emptyState = el("empty-state");
 
-// "a French word" but "an English word" — the language list is user-visible copy.
+/* ------------------------------ helpers ------------------------------ */
+
+// "a French word" but "an English word".
 function withArticle(name) {
   return `${/^[aeiou]/i.test(name) ? "an" : "a"} ${name}`;
+}
+
+function headwordClass(text) {
+  const length = (text || "").trim().length;
+  return HEADWORD_STEPS.find((step) => length <= step.max).className;
+}
+
+function applyHeadwordScale(node, text) {
+  HEADWORD_STEPS.forEach((step) => node.classList.remove(step.className));
+  node.classList.add(headwordClass(text));
+}
+
+function autoGrow(node) {
+  node.style.height = "auto";
+  node.style.height = `${node.scrollHeight}px`;
+}
+
+function clearChildren(node) {
+  while (node.firstChild) node.removeChild(node.firstChild);
+}
+
+function setMessage(text, { ok = false } = {}) {
+  formMessage.textContent = text;
+  formMessage.classList.toggle("is-ok", Boolean(text) && ok);
+}
+
+function setLoading(button, loading) {
+  button.disabled = loading;
+  button.classList.toggle("is-loading", loading);
 }
 
 function languagePath(path, language) {
@@ -41,26 +92,134 @@ async function api(path, options = {}, language = state.language) {
   return payload;
 }
 
-async function loadCollections() {
-  const payload = await api("/api/collections", {}, null);
-  const select = el("language-select");
-  const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
-  const available = new Set(payload.collections.map(({ language }) => language));
-  state.language = available.has(stored) ? stored : payload.default_language;
+/* ------------------------------ slip states ------------------------------ */
 
-  clearChildren(select);
-  payload.collections.forEach(({ language, language_name: languageName }) => {
-    const option = document.createElement("option");
-    option.value = language;
-    option.textContent = languageName;
-    select.appendChild(option);
-  });
-  select.value = state.language;
+function showCaptureState() {
+  state.preview = null;
+  state.expanded = false;
+  slip.classList.add("is-capturing");
+  slip.classList.remove("is-expanded");
+  entryInput.hidden = false;
+  previewWord.hidden = true;
+  discardButton.hidden = true;
+  moreButton.hidden = true;
+  moreButton.setAttribute("aria-expanded", "false");
+  el("slip-senses").hidden = true;
+  el("slip-examples").hidden = true;
+  clearChildren(el("slip-example"));
+  el("slip-mean").textContent = "The meaning will appear here.";
+  el("slip-pos").textContent = state.languageName || " ";
+  el("primary-label").textContent = "Look it up";
+  primaryButton.disabled = !entryInput.value.trim() || !isOnline();
+  applyHeadwordScale(entryInput, entryInput.value);
+  autoGrow(entryInput);
 }
 
-function setLoading(button, loading) {
-  button.disabled = loading;
-  button.classList.toggle("is-loading", loading);
+function renderExample(container, example) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "example";
+  const source = document.createElement("p");
+  source.className = "source";
+  source.textContent = `« ${example.source} »`;
+  wrapper.appendChild(source);
+  if (example.target) {
+    const target = document.createElement("p");
+    target.className = "target";
+    target.textContent = example.target;
+    wrapper.appendChild(target);
+  }
+  container.appendChild(wrapper);
+}
+
+function showPreviewState(preview) {
+  state.preview = preview;
+  state.expanded = false;
+  slip.classList.remove("is-capturing", "is-expanded");
+  entryInput.hidden = true;
+  previewWord.hidden = false;
+  previewWord.textContent = preview.word;
+  applyHeadwordScale(previewWord, preview.word);
+
+  el("slip-pos").textContent = preview.word_type || "";
+  el("slip-mean").textContent = preview.definitions[0] || "";
+
+  const firstExample = el("slip-example");
+  clearChildren(firstExample);
+  if (preview.examples.length) renderExample(firstExample, preview.examples[0]);
+
+  // The rest is deferred, never discarded: save still sends everything.
+  const extraSenses = Math.max(0, preview.definitions.length - 1);
+  const extraExamples = Math.max(0, preview.examples.length - 1);
+  if (extraSenses || extraExamples) {
+    const parts = [];
+    if (extraSenses) parts.push(`${extraSenses} more sense${extraSenses === 1 ? "" : "s"}`);
+    if (extraExamples) parts.push(`${extraExamples} more example${extraExamples === 1 ? "" : "s"}`);
+    state.collapsedLabel = parts.join(" · ");
+    el("more-label").textContent = state.collapsedLabel;
+    moreButton.hidden = false;
+    moreButton.setAttribute("aria-expanded", "false");
+  } else {
+    moreButton.hidden = true;
+  }
+
+  // A spelling suggestion still needs a way to be refused, so the ghost button
+  // becomes the override rather than a plain discard.
+  discardButton.hidden = false;
+  discardButton.textContent = preview.spelling_suggestion
+    ? `Keep "${preview.original_input}"`
+    : "Discard";
+  el("primary-label").textContent = "Keep it";
+  primaryButton.disabled = false;
+  setMessage(
+    preview.spelling_suggestion
+      ? `Corrected to "${preview.word}".`
+      : "",
+  );
+}
+
+function toggleExpanded() {
+  const preview = state.preview;
+  if (!preview) return;
+  state.expanded = !state.expanded;
+  slip.classList.toggle("is-expanded", state.expanded);
+  moreButton.setAttribute("aria-expanded", String(state.expanded));
+
+  const senses = el("slip-senses");
+  const examples = el("slip-examples");
+  const firstExample = el("slip-example");
+
+  if (!state.expanded) {
+    senses.hidden = true;
+    examples.hidden = true;
+    el("slip-mean").hidden = false;
+    firstExample.hidden = false;
+    el("more-label").textContent = state.collapsedLabel;
+    applyHeadwordScale(previewWord, preview.word);
+    return;
+  }
+
+  el("slip-mean").hidden = true;
+  firstExample.hidden = true;
+
+  clearChildren(senses);
+  preview.definitions.forEach((definition) => {
+    const item = document.createElement("li");
+    item.textContent = definition;
+    senses.appendChild(item);
+  });
+  senses.hidden = false;
+
+  clearChildren(examples);
+  preview.examples.forEach((example) => renderExample(examples, example));
+  examples.hidden = !preview.examples.length;
+
+  el("more-label").textContent = "Show less";
+}
+
+/* ------------------------------ connection ------------------------------ */
+
+function isOnline() {
+  return !el("connection").classList.contains("offline");
 }
 
 function setConnection(online, label) {
@@ -68,12 +227,46 @@ function setConnection(online, label) {
   node.classList.toggle("online", online);
   node.classList.toggle("offline", !online);
   el("connection-label").textContent = label;
-  node.title = online ? "" : "Tap to retry";
-  previewButton.disabled = !online;
+  node.title = online ? label : `${label} — tap to retry`;
+  if (!state.preview) primaryButton.disabled = !online || !entryInput.value.trim();
   window.clearTimeout(state.retryTimer);
   if (!online) {
     state.retryTimer = window.setTimeout(() => { loadStatus(); loadRecent(); }, RETRY_DELAY_MS);
   }
+}
+
+/* ------------------------------ data ------------------------------ */
+
+function setEntryCount(count) {
+  const total = Number(count);
+  el("entry-count").textContent = total.toLocaleString();
+  // The deck behind the slip is the collection; with nothing collected there is
+  // no deck to draw.
+  deck.classList.toggle("is-empty", total === 0);
+}
+
+async function loadCollections() {
+  const payload = await api("/api/collections", {}, null);
+  const stored = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+  const available = new Set(payload.collections.map(({ language }) => language));
+  state.language = available.has(stored) ? stored : payload.default_language;
+
+  const container = el("languages");
+  clearChildren(container);
+  payload.collections.forEach(({ language, language_name: languageName }) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "lang";
+    button.dataset.lang = language;
+    button.setAttribute("aria-pressed", String(language === state.language));
+    const name = document.createElement("span");
+    name.className = "sr-only";
+    name.textContent = languageName;
+    button.appendChild(name);
+    button.addEventListener("click", () => selectLanguage(language));
+    container.appendChild(button);
+  });
+  document.documentElement.dataset.language = state.language;
 }
 
 async function loadStatus() {
@@ -85,160 +278,43 @@ async function loadStatus() {
   try {
     const status = await api("/api/status", {}, language);
     if (language !== state.language) return;
+    state.languageName = status.language_name;
     setEntryCount(status.entry_count);
     el("data-file").textContent = status.data_file;
-    el("active-language").textContent = status.language_name;
     el("entry-label").textContent = `${status.language_name} word or phrase`;
-    entryInput.placeholder = `Type ${withArticle(status.language_name)} word or phrase…`;
-    setConnection(true, "Private & connected");
+    entryInput.placeholder = `Type ${withArticle(status.language_name)} word`;
+    if (!state.preview) el("slip-pos").textContent = status.language_name;
+    setConnection(true, "Private and connected");
   } catch (error) {
     if (language !== state.language) return;
     setConnection(false, "Server unavailable");
-    formMessage.textContent = error.message;
+    setMessage(error.message);
   }
 }
-
-function clearChildren(node) {
-  while (node.firstChild) node.removeChild(node.firstChild);
-}
-
-function setEntryCount(count) {
-  const total = Number(count);
-  el("entry-count").textContent = total.toLocaleString();
-  el("entry-noun").textContent = total === 1 ? "entry" : "entries";
-}
-
-function renderPreview(preview) {
-  state.preview = preview;
-  successCard.classList.add("hidden");
-  el("preview-word").textContent = preview.word;
-  el("preview-type").textContent = preview.word_type;
-  el("preview-kind").textContent = preview.input_type === "word" ? "Word preview" : "Phrase preview";
-
-  const correctionRow = el("correction-row");
-  if (preview.spelling_suggestion) {
-    correctionRow.classList.remove("hidden");
-    el("suggested-word").textContent = preview.spelling_suggestion;
-    el("use-suggestion").checked = true;
-  } else {
-    correctionRow.classList.add("hidden");
-  }
-
-  const definitions = el("preview-definitions");
-  clearChildren(definitions);
-  preview.definitions.forEach((definition) => {
-    const item = document.createElement("li");
-    item.textContent = definition;
-    definitions.appendChild(item);
-  });
-
-  const examples = el("preview-examples");
-  clearChildren(examples);
-  const examplesSection = el("examples-section");
-  examplesSection.classList.toggle("hidden", !preview.examples.length);
-  preview.examples.forEach(({ source, target }) => {
-    const wrapper = document.createElement("div");
-    wrapper.className = "example";
-    const sourceNode = document.createElement("p");
-    sourceNode.textContent = source;
-    const targetNode = document.createElement("p");
-    targetNode.className = "translation";
-    targetNode.textContent = target;
-    wrapper.append(sourceNode, targetNode);
-    examples.appendChild(wrapper);
-  });
-
-  previewCard.classList.remove("hidden");
-  previewCard.scrollIntoView({
-    behavior: reducedMotion.matches ? "auto" : "smooth",
-    block: "start",
-  });
-}
-
-function hidePreview() {
-  state.preview = null;
-  previewCard.classList.add("hidden");
-}
-
-captureForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  formMessage.textContent = "";
-  successCard.classList.add("hidden");
-  hidePreview();
-  if (!navigator.onLine) {
-    formMessage.textContent = "Reconnect to Tailscale before creating an entry.";
-    return;
-  }
-  setLoading(previewButton, true);
-  const language = state.language;
-  try {
-    const preview = await api("/api/preview", {
-      method: "POST",
-      body: JSON.stringify({ text: entryInput.value }),
-    }, language);
-    if (language === state.language) renderPreview(preview);
-  } catch (error) {
-    formMessage.textContent = error.message;
-  } finally {
-    setLoading(previewButton, false);
-  }
-});
-
-el("discard-button").addEventListener("click", () => {
-  hidePreview();
-  entryInput.focus();
-});
-
-saveButton.addEventListener("click", async () => {
-  if (!state.preview) return;
-  const preview = state.preview;
-  setLoading(saveButton, true);
-  formMessage.textContent = "";
-  try {
-    const hasSuggestion = Boolean(preview.spelling_suggestion);
-    const useOriginal = hasSuggestion && !el("use-suggestion").checked;
-    const saved = await api("/api/save", {
-      method: "POST",
-      body: JSON.stringify({ token: preview.token, use_original: useOriginal }),
-    }, preview.language);
-    if (state.language !== preview.language) return;
-    el("saved-word").textContent = saved.word;
-    setEntryCount(saved.entry_count);
-    hidePreview();
-    successCard.classList.remove("hidden");
-    entryInput.value = "";
-    entryInput.focus();
-    await loadRecent();
-  } catch (error) {
-    formMessage.textContent = error.message;
-  } finally {
-    setLoading(saveButton, false);
-  }
-});
 
 function renderEntries(entries) {
   clearChildren(entryList);
-  emptyState.classList.toggle("hidden", entries.length > 0);
+  emptyState.hidden = entries.length > 0;
   entries.forEach((entry) => {
-    const wrapper = document.createElement("article");
-    wrapper.className = "entry-item";
-    const meta = document.createElement("div");
-    meta.className = "entry-meta";
+    const article = document.createElement("article");
+    article.className = "entry";
+    const top = document.createElement("div");
+    top.className = "entry-top";
     const word = document.createElement("strong");
     word.className = "entry-word";
     word.textContent = entry.word;
     const type = document.createElement("span");
     type.className = "entry-type";
     type.textContent = entry.word_type || "";
-    meta.append(word, type);
-    wrapper.appendChild(meta);
+    top.append(word, type);
+    article.appendChild(top);
     if (entry.definitions?.length) {
       const definition = document.createElement("p");
-      definition.className = "entry-definition";
+      definition.className = "entry-def";
       definition.textContent = entry.definitions[0];
-      wrapper.appendChild(definition);
+      article.appendChild(definition);
     }
-    entryList.appendChild(wrapper);
+    entryList.appendChild(article);
   });
 }
 
@@ -247,8 +323,110 @@ async function loadRecent() {
   try {
     const entries = await api("/api/recent?limit=8", {}, language);
     if (language === state.language) renderEntries(entries);
-  } catch (_) { /* status surface already reports connection failures */ }
+  } catch (_) { /* the connection dot already reports failures */ }
 }
+
+async function selectLanguage(language) {
+  if (language === state.language) return;
+  state.language = language;
+  localStorage.setItem(LANGUAGE_STORAGE_KEY, language);
+  document.documentElement.dataset.language = language;
+  document.querySelectorAll(".lang").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.dataset.lang === language));
+  });
+  window.clearTimeout(state.searchTimer);
+  entryInput.value = "";
+  el("search-input").value = "";
+  setMessage("");
+  showCaptureState();
+  renderEntries([]);
+  await Promise.all([loadStatus(), loadRecent()]);
+}
+
+/* ------------------------------ actions ------------------------------ */
+
+async function lookUp() {
+  if (!navigator.onLine) {
+    setMessage("Reconnect to Tailscale before looking a word up.");
+    return;
+  }
+  setMessage("");
+  setLoading(primaryButton, true);
+  const language = state.language;
+  try {
+    const preview = await api("/api/preview", {
+      method: "POST",
+      body: JSON.stringify({ text: entryInput.value }),
+    }, language);
+    if (language === state.language) showPreviewState(preview);
+  } catch (error) {
+    setMessage(error.message);
+  } finally {
+    setLoading(primaryButton, false);
+  }
+}
+
+async function keepIt(useOriginal = false) {
+  const preview = state.preview;
+  if (!preview) return;
+  setLoading(primaryButton, true);
+  setMessage("");
+  try {
+    const saved = await api("/api/save", {
+      method: "POST",
+      body: JSON.stringify({ token: preview.token, use_original: useOriginal }),
+    }, preview.language);
+    if (state.language !== preview.language) return;
+    setEntryCount(saved.entry_count);
+    entryInput.value = "";
+    showCaptureState();
+    setMessage(`${saved.word} is in your collection.`, { ok: true });
+    await loadRecent();
+  } catch (error) {
+    setMessage(error.message);
+  } finally {
+    setLoading(primaryButton, false);
+  }
+}
+
+/* ------------------------------ wiring ------------------------------ */
+
+entryInput.addEventListener("input", () => {
+  applyHeadwordScale(entryInput, entryInput.value);
+  autoGrow(entryInput);
+  primaryButton.disabled = !entryInput.value.trim() || !isOnline();
+});
+
+entryInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    if (!primaryButton.disabled) lookUp();
+  }
+});
+
+primaryButton.addEventListener("click", () => {
+  if (state.preview) keepIt(); else lookUp();
+});
+
+discardButton.addEventListener("click", () => {
+  // With a spelling suggestion on screen this button saves the original instead.
+  if (state.preview?.spelling_suggestion) {
+    keepIt(true);
+    return;
+  }
+  showCaptureState();
+  setMessage("");
+  entryInput.focus();
+});
+
+moreButton.addEventListener("click", toggleExpanded);
+
+el("connection").addEventListener("click", () => {
+  if (isOnline()) return;
+  el("connection-label").textContent = "Reconnecting";
+  loadStatus();
+  loadRecent();
+});
 
 el("search-input").addEventListener("input", (event) => {
   window.clearTimeout(state.searchTimer);
@@ -269,34 +447,13 @@ el("search-input").addEventListener("input", (event) => {
         renderEntries(entries);
       }
     } catch (error) {
-      if (language === state.language) formMessage.textContent = error.message;
+      if (language === state.language) setMessage(error.message);
     }
   }, 220);
 });
 
-el("language-select").addEventListener("change", async (event) => {
-  state.language = event.target.value;
-  localStorage.setItem(LANGUAGE_STORAGE_KEY, state.language);
-  window.clearTimeout(state.searchTimer);
-  hidePreview();
-  successCard.classList.add("hidden");
-  formMessage.textContent = "";
-  entryInput.value = "";
-  el("search-input").value = "";
-  renderEntries([]);
-  await Promise.all([loadStatus(), loadRecent()]);
-  entryInput.focus();
-});
-
 window.addEventListener("online", () => { loadStatus(); loadRecent(); });
 window.addEventListener("offline", () => setConnection(false, "Offline"));
-
-el("connection").addEventListener("click", () => {
-  if (el("connection").classList.contains("online")) return;
-  el("connection-label").textContent = "Reconnecting";
-  loadStatus();
-  loadRecent();
-});
 
 const installTip = el("install-tip");
 const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
@@ -304,12 +461,12 @@ const standalone = window.matchMedia("(display-mode: standalone)").matches || wi
 const iosDevice = /iPad|iPhone|iPod/.test(navigator.userAgent)
   || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const iosSafari = iosDevice && !/CriOS|FxiOS|EdgiOS|OPiOS/.test(navigator.userAgent);
-if (iosSafari && !standalone && !localStorage.getItem("vocabbuilder-install-tip-dismissed")) {
-  window.setTimeout(() => installTip.classList.remove("hidden"), 1200);
+if (iosSafari && !standalone && !localStorage.getItem(INSTALL_TIP_KEY)) {
+  window.setTimeout(() => { installTip.hidden = false; }, 1200);
 }
 el("dismiss-install").addEventListener("click", () => {
-  installTip.classList.add("hidden");
-  localStorage.setItem("vocabbuilder-install-tip-dismissed", "1");
+  installTip.hidden = true;
+  localStorage.setItem(INSTALL_TIP_KEY, "1");
 });
 
 if ("serviceWorker" in navigator) {
@@ -317,12 +474,13 @@ if ("serviceWorker" in navigator) {
 }
 
 async function bootstrap() {
+  showCaptureState();
   try {
     await loadCollections();
     await Promise.all([loadStatus(), loadRecent()]);
   } catch (error) {
     setConnection(false, "Server unavailable");
-    formMessage.textContent = error.message;
+    setMessage(error.message);
   }
 }
 
