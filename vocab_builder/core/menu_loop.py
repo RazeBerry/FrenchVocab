@@ -7,14 +7,15 @@ from vocab_builder.core.protocols import VocabAppProtocol
 
 def main_menu_loop(app: VocabAppProtocol) -> None:
     """Interactive menu loop driving the CLI session."""
+    _refresh_menu_counts(app)
     app.welcome_screen()
     while True:
-        _refresh_menu_counts(app)
-
         choice = app.show_menu()
 
         if not _handle_main_choice(app, choice):
             break
+
+        _refresh_menu_counts(app)
 
 
 def _refresh_menu_counts(app: VocabAppProtocol) -> None:
