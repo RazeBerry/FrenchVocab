@@ -10,15 +10,36 @@ This module handles:
 
 from __future__ import annotations
 
+import math
 import os
 import sys
 import threading
-from contextlib import contextmanager
+import time
+from contextlib import contextmanager, nullcontext
 from enum import Enum, auto
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 from rich.progress import Progress
+
+from vocab_builder.compat import get_env
+
+
+_PROVIDER_RETRY_COOLDOWN_S = 30.0
+
+
+def _provider_retry_cooldown() -> float:
+    """Return the minimum delay between silent provider recovery attempts."""
+    raw = get_env("VOCABBUILDER_PROVIDER_RETRY_COOLDOWN")
+    if raw is None:
+        return _PROVIDER_RETRY_COOLDOWN_S
+    try:
+        value = float(raw.strip())
+    except (AttributeError, TypeError, ValueError):
+        return _PROVIDER_RETRY_COOLDOWN_S
+    if not math.isfinite(value) or value < 0:
+        return _PROVIDER_RETRY_COOLDOWN_S
+    return value
 
 
 class InitState(Enum):
@@ -83,6 +104,8 @@ class LLMCoordinator:
         client: Optional["LLMClient"] = None,
         eager: bool = False,
         project_root: Optional[Path] = None,
+        *,
+        interactive: bool = True,
     ):
         """Initialize the LLM coordinator.
 
@@ -93,6 +116,7 @@ class LLMCoordinator:
             verbose: Enable verbose output
             client: Optional pre-configured LLM client (for testing/injection)
             eager: If True, initialize client immediately; otherwise defer
+            interactive: Whether console prompts and progress rendering are allowed
         """
         self._ui = ui
         if provider_manager is None:
@@ -109,12 +133,15 @@ class LLMCoordinator:
         self._provider_manager = provider_manager
         self._provider_metadata = provider_metadata or self._provider_manager.get_metadata(None)
         self._verbose = verbose
+        self._interactive = interactive
 
         # Client state (protected by _state_lock for thread safety)
         self._state_lock = threading.Lock()
         self._client: Optional["LLMClient"] = client
         self._api_error_reason: Optional[str] = None
         self._init_generation: int = 0
+        self._last_silent_reinit_attempt: Optional[float] = None
+        self._silent_reinit_in_progress = False
 
         # Initialization state machine (single source of truth)
         self._init_state: InitState = InitState.READY if client else InitState.NOT_STARTED
@@ -337,12 +364,14 @@ class LLMCoordinator:
         announce: bool = True,
         on_success: Optional[Callable[[], None]] = None,
         generation: Optional[int] = None,
+        api_key: Optional[str] = None,
     ) -> bool:
         """Create the LLM client for the active provider.
 
         Args:
             announce: Show success message to user
             on_success: Callback invoked after successful initialization
+            api_key: Resolved credential to pass directly to the provider factory
 
         Returns:
             True if client was successfully created
@@ -351,7 +380,10 @@ class LLMCoordinator:
 
         metadata = self._provider_metadata
         try:
-            new_client = ProviderFactory.create(metadata.identifier)
+            if api_key is None:
+                new_client = ProviderFactory.create(metadata.identifier)
+            else:
+                new_client = ProviderFactory.create(metadata.identifier, api_key)
             verifier = getattr(new_client, "verify_credentials", None)
             if callable(verifier):
                 verifier(timeout=self._CREDENTIAL_VERIFY_TIMEOUT_S)
@@ -470,6 +502,49 @@ class LLMCoordinator:
         dependent components (e.g., translators) to be initialized.
         """
         self._on_client_ready = callback
+
+    def try_silent_reinit(self) -> bool:
+        """Attempt bounded, non-interactive recovery of a degraded provider."""
+        with self._state_lock:
+            if self._init_state == InitState.READY:
+                return True
+
+        now = time.monotonic()
+        cooldown = _provider_retry_cooldown()
+        with self._state_lock:
+            # The provider may have recovered while configuration was read.
+            if self._init_state == InitState.READY:
+                return True
+            if getattr(self, "_silent_reinit_in_progress", False):
+                return False
+
+            last_attempt = getattr(self, "_last_silent_reinit_attempt", None)
+            if last_attempt is not None and now - last_attempt < cooldown:
+                return False
+
+            self._last_silent_reinit_attempt = now
+            self._silent_reinit_in_progress = True
+            self._init_generation = getattr(self, "_init_generation", 0) + 1
+            generation = self._init_generation
+            metadata = self._provider_metadata
+
+        try:
+            resolution = self._provider_manager.resolve_provider_silently(metadata)
+            if resolution is None:
+                return False
+            if not self._apply_provider_resolution(
+                resolution,
+                generation=generation,
+            ):
+                return False
+            return self._initialize_client(
+                announce=False,
+                generation=generation,
+                api_key=resolution.api_key,
+            )
+        finally:
+            with self._state_lock:
+                self._silent_reinit_in_progress = False
 
     # -------------------------------------------------------------------------
     # Readiness & Reconfiguration
@@ -678,10 +753,15 @@ class LLMCoordinator:
         metrics: Dict[str, Any] = {}
         full_text = ""
 
-        # Suppress stdin echo to prevent Enter keypresses from creating
-        # duplicate spinner lines during the query
-        with _suppress_stdin_echo(), Progress() as progress:
-            task = progress.add_task(f"[cyan]Querying {label}...", total=None)
+        interactive = getattr(self, "_interactive", True)
+        stdin_context = _suppress_stdin_echo() if interactive else nullcontext()
+        progress_context = Progress() if interactive else nullcontext(None)
+        with stdin_context, progress_context as progress:
+            task = (
+                progress.add_task(f"[cyan]Querying {label}...", total=None)
+                if progress is not None
+                else None
+            )
 
             chunks: List[str] = []
             generator = self.client.stream(prompt)
@@ -691,7 +771,8 @@ class LLMCoordinator:
                     try:
                         text = next(generator)
                         chunks.append(text)
-                        progress.advance(task)
+                        if progress is not None and task is not None:
+                            progress.advance(task)
                     except StopIteration as e:
                         # Generator is exhausted, capture the return value (metrics)
                         metrics = e.value if e.value else {}
@@ -718,7 +799,8 @@ class LLMCoordinator:
                 self._ui.display_metrics(metrics)
                 return "", metrics
             finally:
-                progress.update(task, completed=True)
+                if progress is not None and task is not None:
+                    progress.update(task, completed=True)
 
             full_text = "".join(chunks)
 
@@ -762,6 +844,8 @@ class LLMCoordinator:
                 "Switch to another provider (Anthropic Claude is recommended) or retry from a supported location.",
                 with_panel=True,
             )
+            if not getattr(self, "_interactive", True):
+                return True
             options = [
                 ("switch", "Switch provider (Claude recommended)"),
                 ("settings", "Open AI settings"),
@@ -775,6 +859,8 @@ class LLMCoordinator:
                 "Update the API key, switch providers, or retry setup after fixing the account issue.",
                 with_panel=True,
             )
+            if not getattr(self, "_interactive", True):
+                return True
             options = [
                 ("retry", "Retry provider setup now"),
                 ("switch", "Switch provider"),

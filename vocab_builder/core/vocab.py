@@ -218,9 +218,12 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
         language: Optional[str] = None,
         language_config: Optional[LanguageConfig] = None,
         eager_provider: bool = False,
+        *,
+        interactive: bool = True,
     ):
         init_start = time.time()
         self._verbose_fallback = bool(verbose)
+        self._interactive = interactive
         self._configure_language(language=language, language_config=language_config)
         self._initialize_context()
         self._configure_file_paths(latex_file)
@@ -265,7 +268,7 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
         from vocab_builder.compat import runtime_root
 
         self.console = Console()
-        self.ui = UIHelper(self.console)
+        self.ui = UIHelper(self.console, interactive=self._interactive)
         module_dir = Path(__file__).resolve().parent
         self.source_root = module_dir.parent.parent
         self.project_root = runtime_root(self.source_root, create=True)
@@ -352,6 +355,7 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
             verbose=verbose,
             client=client,
             eager=self.eager_provider,
+            interactive=self._interactive,
         )
         self._llm.set_degraded_mode_callback(self._on_llm_degraded)
         self._llm.set_client_ready_callback(self._init_translators)

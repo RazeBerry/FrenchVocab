@@ -32,8 +32,9 @@ class _Models:
 
 
 class _Client:
-    def __init__(self, api_key=None, stream_factory=None):
+    def __init__(self, api_key=None, stream_factory=None, http_options=None):
         self.api_key = api_key
+        self.http_options = http_options
         self.models = _Models(stream_factory)
 
 
@@ -65,6 +66,11 @@ class _ThinkingLevel:
     HIGH = "HIGH"
 
 
+class _HttpOptions:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+
 def _install_google_stub(stream_factory=None):
     saved = {
         name: sys.modules.get(name)
@@ -79,8 +85,13 @@ def _install_google_stub(stream_factory=None):
     types_mod.GenerateContentConfig = _GenerateContentConfig
     types_mod.ThinkingConfig = _ThinkingConfig
     types_mod.ThinkingLevel = _ThinkingLevel
+    types_mod.HttpOptions = _HttpOptions
 
-    genai_mod.Client = lambda api_key=None: _Client(api_key=api_key, stream_factory=stream_factory)
+    genai_mod.Client = lambda api_key=None, http_options=None: _Client(
+        api_key=api_key,
+        stream_factory=stream_factory,
+        http_options=http_options,
+    )
     genai_mod.types = types_mod
 
     sys.modules["google"] = google_mod
@@ -129,8 +140,9 @@ class _ClaudeModels:
 
 
 class _ClaudeClient:
-    def __init__(self, api_key=None):
+    def __init__(self, api_key=None, timeout=None):
         self.api_key = api_key
+        self.timeout = timeout
         self.messages = _ClaudeMessages()
         self.models = _ClaudeModels()
 
@@ -141,8 +153,8 @@ def _install_anthropic_stub():
 
     anthropic_mod = types.ModuleType("anthropic")
 
-    def _create_client(api_key=None):
-        client = _ClaudeClient(api_key=api_key)
+    def _create_client(api_key=None, timeout=None):
+        client = _ClaudeClient(api_key=api_key, timeout=timeout)
         clients.append(client)
         return client
 
@@ -232,6 +244,24 @@ def test_model_labels_use_default_models_when_env_unset(monkeypatch):
 
         assert gemini.model_label() == "Google Gemini (gemini-3-flash-preview)"
         assert claude.model_label() == "Anthropic Claude (claude-sonnet-4-6)"
+    finally:
+        _restore_google_stub(google_saved)
+        _restore_anthropic_stub(anthropic_saved)
+
+
+def test_provider_clients_receive_configured_request_deadline(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
+    monkeypatch.setenv("VOCABBUILDER_PROVIDER_TIMEOUT", "7.5")
+    google_saved = _install_google_stub()
+    anthropic_saved, clients = _install_anthropic_stub()
+    try:
+        llm_client = _load_real_llm_client()
+
+        gemini = llm_client.GeminiClient()
+        llm_client.ClaudeClient(api_key="sk-ant-" + "x" * 40)
+
+        assert gemini._client.http_options.kwargs["timeout"] == 7500
+        assert clients[0].timeout == 7.5
     finally:
         _restore_google_stub(google_saved)
         _restore_anthropic_stub(anthropic_saved)

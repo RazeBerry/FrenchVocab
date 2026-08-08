@@ -163,20 +163,24 @@ class TranslationLogger:
         try:
             vocab_records: List[Dict[str, Any]] = []
             for path in paths:
-                with path.open("r", encoding="utf-8") as fh:
-                    for line in fh:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            record = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        if record.get("flow") != "vocab":
-                            continue
-                        if allowed_actions is not None and record.get("action", "new") not in allowed_actions:
-                            continue
-                        vocab_records.append(record)
+                with file_lock(path):
+                    with path.open("r", encoding="utf-8") as fh:
+                        for line in fh:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            try:
+                                record = json.loads(line)
+                            except json.JSONDecodeError:
+                                continue
+                            if record.get("flow") != "vocab":
+                                continue
+                            if (
+                                allowed_actions is not None
+                                and record.get("action", "new") not in allowed_actions
+                            ):
+                                continue
+                            vocab_records.append(record)
             vocab_records.sort(key=lambda record: str(record.get("timestamp", "")))
             if limit is not None:
                 vocab_records = vocab_records[-limit:]

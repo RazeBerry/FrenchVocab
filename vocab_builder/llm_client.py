@@ -1,11 +1,31 @@
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
+import logging
+import math
+import os
 from pathlib import Path
 from time import perf_counter
-import logging
-import os
 from typing import Any, Dict, Optional, Tuple
+
+from vocab_builder.compat import get_env
+
+
+_PROVIDER_TIMEOUT_S = 120.0
+
+
+def _provider_timeout_seconds() -> float:
+    """Return a positive provider request deadline from configuration."""
+    raw = get_env("VOCABBUILDER_PROVIDER_TIMEOUT")
+    if raw is None:
+        return _PROVIDER_TIMEOUT_S
+    try:
+        value = float(raw.strip())
+    except (AttributeError, TypeError, ValueError):
+        return _PROVIDER_TIMEOUT_S
+    if not math.isfinite(value) or value <= 0:
+        return _PROVIDER_TIMEOUT_S
+    return value
 
 
 class _SuppressGenAIWarnings(logging.Filter):
@@ -208,7 +228,14 @@ class GeminiClient(LLMClient):
         from google.genai import types
 
         self._types = types
-        self._client = genai.Client(api_key=key)
+        try:
+            http_options = types.HttpOptions(
+                timeout=int(_provider_timeout_seconds() * 1000)
+            )
+            self._client = genai.Client(api_key=key, http_options=http_options)
+        except (AttributeError, TypeError, ValueError):
+            # Older google-genai releases may not accept HttpOptions/timeout.
+            self._client = genai.Client(api_key=key)
         self._model_name = _resolve_model_name(
             "VOCABBUILDER_GEMINI_MODEL",
             self.MODEL_NAME,
@@ -486,7 +513,14 @@ class ClaudeClient(LLMClient):
         key = api_key or os.getenv("ANTHROPIC_API_KEY")
         if not key:
             raise RuntimeError("ANTHROPIC_API_KEY is not set")
-        self._client = anthropic.Anthropic(api_key=key)
+        try:
+            self._client = anthropic.Anthropic(
+                api_key=key,
+                timeout=_provider_timeout_seconds(),
+            )
+        except (TypeError, ValueError):
+            # Preserve compatibility with SDK releases predating this option.
+            self._client = anthropic.Anthropic(api_key=key)
         self._model_name = _resolve_model_name(
             "VOCABBUILDER_CLAUDE_MODEL",
             self.MODEL_NAME,

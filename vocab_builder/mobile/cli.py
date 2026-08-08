@@ -7,7 +7,10 @@ import os
 from pathlib import Path
 from typing import Optional, Sequence
 
+from rich.console import Console
+
 from vocab_builder.languages import get_language_config
+from vocab_builder.ui_helper import UIHelper
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -31,6 +34,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--provider", default="gemini", choices=("gemini", "claude"))
     parser.add_argument("--latex-file", type=Path)
     parser.add_argument("--config-dir", type=Path)
+    parser.add_argument(
+        "--allowed-tailscale-user",
+        default=None,
+        help="Only accept requests from this Tailscale login.",
+    )
     return parser
 
 
@@ -65,7 +73,24 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
             config_dir=config_dir,
             default_language=args.language or args.default_language,
         )
-    app = create_app(mobile_backend)
+    app = create_app(
+        mobile_backend,
+        allowed_tailscale_user=args.allowed_tailscale_user,
+    )
+    configured_user = (
+        args.allowed_tailscale_user
+        if args.allowed_tailscale_user is not None
+        else os.environ.get("VOCABBUILDER_ALLOWED_TAILSCALE_USER", "")
+    ).strip()
+    ui = UIHelper(Console(), interactive=False)
+    if configured_user:
+        ui.info(f"Tailscale identity check accepts only {configured_user}.")
+    else:
+        ui.warning(
+            "Requests are not identity-checked. Configure "
+            "--allowed-tailscale-user or "
+            "VOCABBUILDER_ALLOWED_TAILSCALE_USER to restrict access."
+        )
     run(app, host=args.host, port=args.port, proxy_headers=True, forwarded_allow_ips="127.0.0.1")
 
 

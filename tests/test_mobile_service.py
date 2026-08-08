@@ -1,19 +1,28 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from importlib.resources import files
+import json
 import re
+import sys
+import threading
+from types import SimpleNamespace
 
 import httpx
 import pytest
+from rich.console import Console
 
+from vocab_builder.core.llm_coordinator import LLMCoordinator
 from vocab_builder.core.vocab import VocabBuilder
 from vocab_builder.mobile.app import create_app
 from vocab_builder.mobile.catalog import MobileVocabCatalog
 from vocab_builder.mobile.service import (
+    AIUnavailableError,
     DuplicateEntryError,
     MobileVocabService,
 )
+from vocab_builder.ui_helper import NonInteractiveError, UIHelper
 
 
 AI_RESPONSE = """Correctly Spelt Word: chrysanthème
@@ -58,6 +67,7 @@ def build_service(
         provider="gemini",
         language=language,
         client=FakeClient(),
+        interactive=False,
     )
     return MobileVocabService(builder, preview_ttl=ttl, token_factory=lambda: "preview-token-123")
 
@@ -81,6 +91,179 @@ def test_preview_and_save_reuse_existing_workflow(tmp_path, monkeypatch):
     assert re.search(r"\\entry\{Chrysanthème\}\{noun\}", content)
     assert service.search("flower")[0]["word"] == "Chrysanthème"
     assert service.recent()[0]["word"] == "chrysanthème"
+
+
+@pytest.mark.parametrize(
+    ("method_name", "args"),
+    [
+        ("interactive_menu", ("Choose", [("one", "One")], "Select one")),
+        ("prompt", ("Type something",)),
+        ("confirm", ("Continue?",)),
+    ],
+)
+def test_noninteractive_ui_backstop_rejects_prompts(method_name, args):
+    ui = UIHelper(Console(), interactive=False)
+
+    with pytest.raises(NonInteractiveError, match=rf"{method_name}.*no console"):
+        getattr(ui, method_name)(*args)
+
+
+def test_classified_provider_error_is_503_without_reading_stdin(
+    tmp_path,
+    monkeypatch,
+):
+    class FailingClient:
+        def stream(self, _prompt):
+            raise RuntimeError("quota exceeded")
+            yield ""  # pragma: no cover - keeps this a generator
+
+        def model_label(self):
+            return "Test provider"
+
+    class ExplodingStdin:
+        def isatty(self):
+            return True
+
+        def read(self, *_args, **_kwargs):
+            raise AssertionError("headless request attempted to read stdin")
+
+        readline = read
+
+        def fileno(self):
+            raise AssertionError("headless request attempted to inspect stdin")
+
+    service = build_service(tmp_path, monkeypatch)
+    service.builder.client = FailingClient()
+    monkeypatch.setattr(sys, "stdin", ExplodingStdin())
+    monkeypatch.setattr(
+        LLMCoordinator,
+        "_classify_provider_error",
+        staticmethod(lambda _provider, _exc: ("quota", "Provider quota is exhausted.")),
+    )
+    app = create_app(service)
+
+    async def exercise_app():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.post("/api/preview", json={"text": "chrysantheme"})
+
+    import asyncio
+
+    response = asyncio.run(exercise_app())
+    assert response.status_code == 503
+    assert response.json()["error"] == {
+        "code": "ai_unavailable",
+        "message": "Provider quota is exhausted.",
+    }
+
+
+def test_inflight_preview_does_not_block_same_service_status(tmp_path, monkeypatch):
+    started = threading.Event()
+    release = threading.Event()
+
+    class EventGatedClient(FakeClient):
+        def stream(self, prompt):
+            self.prompts.append(prompt)
+            started.set()
+            if not release.wait(timeout=2):
+                raise TimeoutError("test provider gate was not released")
+            yield self.response
+            return {"usage": {"prompt_tokens": 1, "output_tokens": 1, "total_tokens": 2}}
+
+    service = build_service(tmp_path, monkeypatch)
+    service.builder.client = EventGatedClient()
+    executor = ThreadPoolExecutor(max_workers=2)
+    preview_future = executor.submit(service.preview, "chrysantheme")
+    try:
+        assert started.wait(timeout=1)
+        status_future = executor.submit(service.status)
+        status = status_future.result(timeout=0.25)
+        assert status["language"] == "fr"
+        assert not preview_future.done()
+    finally:
+        release.set()
+        executor.shutdown(wait=True, cancel_futures=True)
+
+    assert preview_future.result(timeout=0).word == "chrysanthème"
+
+
+def test_degraded_preview_silently_restores_provider(tmp_path, monkeypatch):
+    service = build_service(tmp_path, monkeypatch)
+    coordinator = service.builder._llm
+    coordinator._enter_degraded_mode("Temporary provider failure.")
+    resolution = SimpleNamespace(
+        metadata=coordinator.provider_metadata,
+        api_key="resolved-test-key",
+    )
+    resolve_calls = []
+    create_calls = []
+    monkeypatch.setattr(
+        coordinator._provider_manager,
+        "resolve_provider_silently",
+        lambda metadata: resolve_calls.append(metadata) or resolution,
+    )
+
+    def create_client(provider, api_key=None):
+        create_calls.append((provider, api_key))
+        return FakeClient()
+
+    monkeypatch.setattr(
+        "vocab_builder.llm_client.ProviderFactory.create",
+        create_client,
+    )
+
+    preview = service.preview("chrysantheme")
+
+    assert preview.word == "chrysanthème"
+    assert len(resolve_calls) == 1
+    assert create_calls == [("gemini", "resolved-test-key")]
+    assert service.builder.api_available is True
+
+
+def test_silent_provider_recovery_obeys_cooldown(tmp_path, monkeypatch):
+    monkeypatch.setenv("VOCABBUILDER_PROVIDER_RETRY_COOLDOWN", "30")
+    service = build_service(tmp_path, monkeypatch)
+    coordinator = service.builder._llm
+    coordinator._enter_degraded_mode("Keep this diagnostic.")
+    resolve_calls = []
+    monkeypatch.setattr(
+        coordinator._provider_manager,
+        "resolve_provider_silently",
+        lambda metadata: resolve_calls.append(metadata) or None,
+    )
+
+    with pytest.raises(AIUnavailableError, match="Keep this diagnostic"):
+        service.preview("chrysantheme")
+    with pytest.raises(AIUnavailableError, match="Keep this diagnostic"):
+        service.preview("chrysantheme")
+
+    assert len(resolve_calls) == 1
+
+
+def test_phone_saves_persist_acquisition_order_without_history(tmp_path, monkeypatch):
+    monkeypatch.setenv("VOCABBUILDER_HISTORY_DISABLED", "1")
+    service = build_service(tmp_path, monkeypatch)
+    tokens = iter(("preview-token-alpha", "preview-token-beta"))
+    service._token_factory = lambda: next(tokens)
+
+    def response_for(word):
+        return f"""Correctly Spelt Word: {word}
+Word Type: noun
+Definitions:
+a. Definition of {word}.
+Examples:
+1. Example with {word}.
+   [Example explanation.]
+"""
+
+    service.builder.client.response = response_for("alpha")
+    service.save(service.preview("alpha").token)
+    service.builder.client.response = response_for("beta")
+    service.save(service.preview("beta").token)
+
+    payload = json.loads(service.builder.exported_words_file.read_text(encoding="utf-8"))
+    assert payload["entry_order"][-2:] == ["alpha", "beta"]
+    assert service.builder.history_logger.enabled is False
 
 
 def test_duplicate_is_rejected_before_ai_query(tmp_path, monkeypatch):
@@ -317,6 +500,7 @@ def test_blocking_previews_run_in_worker_threads_per_language():
 def test_service_worker_precaches_the_versioned_shell_assets():
     static = files("vocab_builder.mobile").joinpath("static")
     html = static.joinpath("index.html").read_text(encoding="utf-8")
+    app_js = static.joinpath("app.js").read_text(encoding="utf-8")
     worker = static.joinpath("service-worker.js").read_text(encoding="utf-8")
     shell_assets = set(
         re.findall(r'/(static/(?:app\.js|styles\.css)\?v=[^"\s]+)', html)
@@ -326,5 +510,16 @@ def test_service_worker_precaches_the_versioned_shell_assets():
         "static/app.js",
         "static/styles.css",
     }
-    assert len({asset.split("?", 1)[1] for asset in shell_assets}) == 1
+    asset_versions = {asset.split("?", 1)[1] for asset in shell_assets}
+    assert len(asset_versions) == 1
     assert all(f'"/{asset}"' in worker for asset in shell_assets)
+    shell_cache_version = re.search(
+        r'const SHELL_CACHE = "vocabbuilder-shell-(v\d+)";',
+        worker,
+    )
+    assert shell_cache_version is not None
+    assert {version.replace("=", "") for version in asset_versions} == {
+        shell_cache_version.group(1)
+    }
+    assert 'document.addEventListener("visibilitychange"' in app_js
+    assert 'if (!el("search-input").value.trim()) loadRecent();' in app_js

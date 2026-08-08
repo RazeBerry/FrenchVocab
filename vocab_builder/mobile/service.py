@@ -101,8 +101,8 @@ class MobileVocabService:
         self._token_factory = token_factory
         self._previews: dict[str, MobilePreview] = {}
         self._saved_receipts: dict[str, tuple[datetime, dict[str, Any]]] = {}
-        # Provider clients and the repository are stateful. A single lock keeps
-        # one user's phone and laptop requests deterministic.
+        # Protect preview/receipt state and repository access. Provider calls
+        # deliberately release this lock so status and search remain responsive.
         self._lock = threading.RLock()
 
     def status(self) -> dict[str, Any]:
@@ -122,12 +122,19 @@ class MobileVocabService:
             self._prune_previews()
             original = self._validate_input(raw_text)
             self._raise_if_duplicate(original)
+            ai_ready = bool(self.builder.api_available)
 
-            if not self.builder.api_available:
-                reason = self.builder.api_error_reason or "The AI provider is not configured."
-                raise AIUnavailableError(reason)
+        # Provider recovery and generation are slow and do not touch repository
+        # state, so same-language status and search requests remain available.
+        if not ai_ready and not self.builder.try_restore_ai():
+            raise AIUnavailableError(
+                self.builder.api_error_reason
+                or "The AI provider is not configured."
+            )
 
-            response = self.builder.query_ai(original)
+        response = self.builder.query_ai(original)
+
+        with self._lock:
             if not response:
                 reason = self.builder.api_error_reason or "The AI provider returned no result."
                 raise AIUnavailableError(reason)
@@ -208,6 +215,16 @@ class MobileVocabService:
                 }
                 self._saved_receipts[token] = (datetime.now(timezone.utc), receipt)
                 del self._previews[token]
+                try:
+                    self.builder.record_acquisition_order(word)
+                except Exception as exc:
+                    # The committed vocabulary write must still succeed.
+                    ui = getattr(self.builder, "ui", None)
+                    if ui is not None:
+                        ui.warning(
+                            "The vocabulary entry was saved, but its Anki acquisition "
+                            f"order could not be registered: {exc}"
+                        )
                 return dict(receipt)
 
     def recent(self, limit: int = 8) -> list[dict[str, Any]]:

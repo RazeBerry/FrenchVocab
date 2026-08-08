@@ -302,6 +302,60 @@ def test_sync_entry_order_with_no_available_entries_preserves_persisted_order(tm
     assert manager.entry_order == ("alpha", "beta")
 
 
+def test_collect_entries_skips_stale_order_keys_with_gapless_due_order(tmp_path):
+    repo = _StubRepo()
+    repo.word_entries = {
+        "alpha": _vocab_entry("alpha"),
+        "beta": _vocab_entry("beta"),
+    }
+    manager = AnkiExportManager(
+        ui=_StubUI(),
+        language_config=get_language_config("fr"),
+        vocab_repo=repo,  # type: ignore[arg-type]
+        exported_words_file=tmp_path / "exported_words.json",
+        project_root=tmp_path,
+    )
+    manager._entry_order = ["missing", "alpha", "beta"]
+    manager._sync_entry_order = lambda _entries: None  # type: ignore[method-assign]
+
+    entries = manager._collect_entries_for_export(
+        word_entries=repo.word_entries,
+        selected_words=None,
+        include_all=True,
+        all_exported_words=set(),
+    )
+
+    assert [item[0] for item in entries] == ["alpha", "beta"]
+    assert [item[2].order for item in entries] == [1, 2]
+
+
+def test_export_to_anki_reports_empty_vocabulary_without_writing(tmp_path):
+    repo = _StubRepo()
+    repo.word_entries = {}
+    tracker = tmp_path / "exported_words.json"
+    tracker.write_text(
+        json.dumps({"words": [], "deck_version": None, "entry_order": ["alpha"]}),
+        encoding="utf-8",
+    )
+    ui = _StubUI()
+    manager = AnkiExportManager(
+        ui=ui,
+        language_config=get_language_config("fr"),
+        vocab_repo=repo,  # type: ignore[arg-type]
+        exported_words_file=tracker,
+        project_root=tmp_path,
+    )
+    output_path = tmp_path / "empty.apkg"
+
+    manager.export_to_anki("Empty", output_path=output_path, quiet=True)
+
+    assert not output_path.exists()
+    assert any(
+        "there are no vocabulary entries to export" in message.lower()
+        for message in ui.warnings
+    )
+
+
 def test_registering_first_word_ever_sets_acquisition_order(tmp_path):
     repo = _StubRepo()
     repo.word_entries = {"thatword": _vocab_entry("thatword")}

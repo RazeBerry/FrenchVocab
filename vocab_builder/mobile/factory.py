@@ -61,7 +61,10 @@ def build_mobile_catalog(
 
 
 def _resolve_api_key(*, provider: str, runtime_dir: Path) -> str:
-    provider_manager = ProviderManager(UIHelper(Console()), runtime_dir)
+    provider_manager = ProviderManager(
+        UIHelper(Console(), interactive=False),
+        runtime_dir,
+    )
     metadata = provider_manager.get_metadata(provider)
     resolution = provider_manager.resolve_provider_silently(metadata)
     if resolution is None:
@@ -84,6 +87,7 @@ def _build_service(
         provider=provider,
         language=language,
         client=ProviderFactory.create(provider, api_key),
+        interactive=False,
     )
     return MobileVocabService(builder)
 

@@ -494,15 +494,22 @@ class AnkiExportManager:
             for key, entry in word_entries.items()
         }
 
-        for export_order, normalized_word in enumerate(self._entry_order, start=1):
-            key, entry = entries_by_key[normalized_word]
+        ordered_entries: List[Tuple[str, str, Any, bool]] = []
+        for normalized_word in self._entry_order:
+            stored_entry = entries_by_key.get(normalized_word)
+            if stored_entry is None:
+                continue
+            key, entry = stored_entry
             already_exported = normalized_word in all_exported_words
             if selected_words is not None:
                 if key not in selected_words:
                     continue
             elif already_exported and not include_all:
                 continue
+            ordered_entries.append((normalized_word, key, entry, already_exported))
 
+        for export_order, item in enumerate(ordered_entries, start=1):
+            normalized_word, _key, entry, already_exported = item
             export_entry = AnkiExportEntry(
                 word=entry["word"],
                 word_type=self._coerce_word_type(entry),
@@ -549,6 +556,8 @@ class AnkiExportManager:
     def _sync_entry_order(self, word_entries: Dict[str, Any]) -> None:
         available = {self._entry_order_key(key) for key in word_entries}
         if not available:
+            # A transiently empty or unparseable vocabulary must not erase the
+            # persisted acquisition order on the next tracker save.
             return
 
         retained = [key for key in self._entry_order if key in available]
@@ -1233,6 +1242,9 @@ class AnkiExportManager:
 
         exporter = AnkiExporter(deck_title, anki_config)
         word_entries = self._vocab_repo.word_entries
+        if not word_entries:
+            self._ui.warning("There are no vocabulary entries to export.")
+            return
         latex_words = set(word_entries.keys())
         all_exported_words = set(self._exported_words)
         include_all, auto_due_to_version = self._resolve_include_all(

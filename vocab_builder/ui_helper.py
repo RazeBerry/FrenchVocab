@@ -18,6 +18,11 @@ except ImportError:  # pragma: no cover - diagnostics are optional
 _ESCAPE_SENTINEL = "\x1b"
 _ESC_SEQUENCE_TIMEOUT = read_esc_sequence_timeout()
 
+
+class NonInteractiveError(RuntimeError):
+    """Raised when headless code attempts to request console input."""
+
+
 def _configure_timeout(app) -> None:
     """Force prompt_toolkit to dispatch ESC immediately."""
     try:
@@ -168,8 +173,14 @@ DEFAULT_MENU_INSTRUCTIONS = (
 class UIHelper:
     """Centralized UI helper for all console output operations"""
     
-    def __init__(self, console: Optional[Console] = None):
+    def __init__(
+        self,
+        console: Optional[Console] = None,
+        *,
+        interactive: bool = True,
+    ):
         self.console = console or Console()
+        self.interactive = interactive
         self._message_indent = 2  # Consistent gutter for inline status text
     
     # ========== Basic Message Methods ==========
@@ -365,6 +376,11 @@ class UIHelper:
 
         Returns the key associated with the selected option.
         """
+        if not self.interactive:
+            raise NonInteractiveError(
+                "UIHelper.interactive_menu cannot run because this process has no console."
+            )
+
         from vocab_builder.cli.navigation import interactive_select
 
         final_instructions = instructions or DEFAULT_MENU_INSTRUCTIONS
@@ -450,6 +466,11 @@ class UIHelper:
         default: Optional[str] = None,
     ) -> str:
         """Prompt for input using shared input helper."""
+        if not self.interactive:
+            raise NonInteractiveError(
+                "UIHelper.prompt cannot run because this process has no console."
+            )
+
         suffix = f" [{default}]" if default else ""
         label = f"{prompt}{suffix}".strip()
         if style and prompt:
@@ -475,6 +496,11 @@ class UIHelper:
 
     def confirm(self, message: str, *, default: bool = True) -> bool:
         """Prompt user for a yes/no confirmation using visual selector."""
+        if not self.interactive:
+            raise NonInteractiveError(
+                "UIHelper.confirm cannot run because this process has no console."
+            )
+
         from vocab_builder.cli.navigation import interactive_confirm
 
         return interactive_confirm(self.console, message, default=default)

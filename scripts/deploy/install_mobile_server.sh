@@ -53,6 +53,10 @@ install -m 0755 "$APP_DIR/scripts/deploy/run_remote_cli.sh" /usr/local/sbin/voca
 
 if [ ! -e "$CONFIG_DIR/mobile.env" ]; then
   install -m 0600 -o root -g root /dev/null "$CONFIG_DIR/mobile.env"
+  printf '%s\n' \
+    '# Set GEMINI_API_KEY or ANTHROPIC_API_KEY before starting the service.' \
+    '# VOCABBUILDER_ALLOWED_TAILSCALE_USER=you@example.com' \
+    > "$CONFIG_DIR/mobile.env"
 fi
 
 systemctl daemon-reload
