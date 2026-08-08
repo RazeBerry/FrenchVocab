@@ -88,7 +88,12 @@ function expand(detail) {
     if (event.propertyName !== "height") return;
     detail.removeEventListener("transitionend", settle);
     detail.style.height = "auto";
-    detail.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    detail.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? "auto"
+        : "smooth",
+      block: "nearest",
+    });
   });
 }
 

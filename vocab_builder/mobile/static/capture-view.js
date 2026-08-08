@@ -189,6 +189,44 @@ export class CaptureView {
 
   toggleExpanded() {
     if (!this.preview) return;
+    // Measure, mutate, then let CSS settle the new layout and measure again.
+    // Reading the settled height rather than scrollHeight matters because the
+    // expanded body is flex-sized inside the slip; releasing the inline height
+    // afterwards lands on exactly the value we animated to, so nothing snaps.
+    const body = el("slip-body");
+    const from = body.getBoundingClientRect().height;
+    this.applyExpandedState();
+    body.style.height = "";
+    void body.offsetHeight;
+    const to = body.getBoundingClientRect().height;
+
+    body.classList.add("is-animating");
+    body.style.opacity = "0";
+    body.style.height = `${from}px`;
+    void body.offsetHeight;
+    body.style.opacity = "1";
+    body.style.height = `${to}px`;
+
+    // transitionend is not guaranteed: a zero-duration tween under reduced
+    // motion, a hidden tab, or a second tap mid-flight can all swallow it, and
+    // leaving `is-animating` behind would pin the body at a stale fixed height.
+    // Always release, whichever arrives first.
+    const release = () => {
+      window.clearTimeout(this.expandTimer);
+      body.removeEventListener("transitionend", onEnd);
+      body.classList.remove("is-animating");
+      body.style.height = "";
+    };
+    const onEnd = (event) => {
+      if (event.propertyName !== "height") return;
+      release();
+    };
+    window.clearTimeout(this.expandTimer);
+    body.addEventListener("transitionend", onEnd);
+    this.expandTimer = window.setTimeout(release, 420);
+  }
+
+  applyExpandedState() {
     this.expanded = !this.expanded;
     this.slip.classList.toggle("is-expanded", this.expanded);
     this.more.setAttribute("aria-expanded", String(this.expanded));

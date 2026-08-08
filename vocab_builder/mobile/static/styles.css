@@ -275,7 +275,12 @@ button { -webkit-tap-highlight-color: transparent; }
   outline-offset: -1.5px;
 }
 
-.slip-head { padding: 22px 20px 0; }
+.slip-head {
+  padding: 22px 20px 0;
+  border-bottom: 1px solid transparent;
+  transition: padding-bottom 240ms cubic-bezier(.32, .72, 0, 1),
+              border-color 200ms ease;
+}
 
 /* ---------------- the headword, scaled to real data ----------------
    Measured across 571 French headwords: 87% are <=14 characters,
@@ -292,6 +297,9 @@ button { -webkit-tap-highlight-color: transparent; }
   letter-spacing: -0.015em;
   overflow-wrap: break-word;
 }
+/* Smooths both the expand collapse of the headword and the step down through
+   the size scale while a long word is being typed. */
+.hw { transition: font-size 240ms cubic-bezier(.32, .72, 0, 1); }
 .hw--s1 { font-size: clamp(2rem, 9vw, 2.4rem); }
 .hw--s2 { font-size: clamp(1.35rem, 6vw, 1.6rem); }
 .hw--s3 { font-size: 1.06rem; font-style: italic; line-height: 1.35; }
@@ -311,7 +319,9 @@ textarea.hw::placeholder { color: var(--ghost); }
   height: 2px;
   margin: 14px 0 10px;
   background: var(--hue);
-  transition: opacity 140ms ease;
+  transition: height 240ms cubic-bezier(.32,.72,0,1),
+              margin 240ms cubic-bezier(.32,.72,0,1),
+              opacity 180ms ease;
 }
 .slip.is-capturing .short { opacity: 0.32; }
 
@@ -325,7 +335,20 @@ textarea.hw::placeholder { color: var(--ghost); }
 }
 .slip.is-capturing .pos { color: var(--ghost); }
 
-.slip-body { padding: 13px 20px 20px; overflow: hidden; }
+.slip-body {
+  padding: 13px 20px 20px;
+  overflow: hidden;
+  transition: height 300ms cubic-bezier(.32, .72, 0, 1), opacity 220ms ease;
+}
+/* Once expanded the body is `flex: 1 1 0%`, so flex layout owns its main size
+   and the height property is ignored. Opt out of flex growth for the duration
+   of the tween; the value we animate to is the flex-resolved one, so handing
+   it back afterwards changes nothing. */
+.slip-body.is-animating,
+.slip.is-expanded .slip-body.is-animating {
+  flex: 0 0 auto;
+  overflow: hidden;
+}
 
 .mean { margin: 0; font-size: 0.94rem; line-height: 1.5; }
 .slip.is-capturing .mean { color: var(--ghost); }
@@ -373,7 +396,7 @@ textarea.hw::placeholder { color: var(--ghost); }
   border-bottom: 1px solid var(--line);
 }
 .slip.is-expanded .hw { font-size: 1.25rem; font-style: normal; }
-.slip.is-expanded .short { display: none; }
+.slip.is-expanded .short { height: 0; margin: 0; opacity: 0; }
 .slip.is-expanded .pos { margin-top: 7px; }
 .slip.is-expanded .slip-body {
   flex: 1;
