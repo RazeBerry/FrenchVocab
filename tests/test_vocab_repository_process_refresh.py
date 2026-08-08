@@ -25,6 +25,7 @@ def test_repository_refreshes_after_another_process_writes(tmp_path):
     second = _repo(path)
     first.ensure_entries_loaded()
     second.ensure_entries_loaded()
+    initial_count = first.entry_count
 
     block = second.format_latex_entry(
         "éphémère",
@@ -42,6 +43,32 @@ def test_repository_refreshes_after_another_process_writes(tmp_path):
     )
 
     assert first.check_duplicate("ephemere") == "éphémère"
+    assert first.count_entries() == initial_count + 1
+    assert first.entry_count == initial_count + 1
+
+
+def test_count_entries_ignores_commented_entry_examples(tmp_path):
+    path = tmp_path / "FrenchVocab.tex"
+    repo = _repo(path)
+    repo.create_initial_tex_file()
+    block = repo.format_latex_entry(
+        "éphémère",
+        "adjective",
+        ["Lasting for a very short time."],
+        [("Une joie éphémère.", "A fleeting joy.")],
+        entry_command=repo.entry_command,
+    )
+    assert repo.insert_entry_alphabetically(block, "éphémère")
+    content = path.read_text(encoding="utf-8")
+    path.write_text(
+        "% Example only: \\entry{Commented}{noun}{definitions}{examples}\n"
+        + content,
+        encoding="utf-8",
+    )
+
+    assert repo.count_entries() == len(repo.word_entries)
+    assert "commented" not in repo.word_entries
+    assert "éphémère" in repo.word_entries
 
 
 def test_own_insert_does_not_mask_an_entry_from_another_process(tmp_path):

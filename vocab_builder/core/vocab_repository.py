@@ -90,8 +90,6 @@ class VocabRepository:
         self._entries_ready = threading.Event()
         self._loaded_file_signature: Optional[Tuple[int, int, int, int]] = None
 
-        # Caching for count_entries
-        self._entry_count_snapshot: Optional[Tuple[Tuple[int, int, int, int], int]] = None
         self._reported_load_issues: Set[str] = set()
 
     def _get_entry_command(self) -> str:
@@ -306,29 +304,12 @@ class VocabRepository:
             suffix += 1
 
     def count_entries(self) -> int:
-        """Count entries with file stat caching for performance."""
-        try:
-            stat = self.latex_file.stat()
-        except FileNotFoundError:
+        """Return the authoritative parsed entry count."""
+        if not self.latex_file.exists():
             self.ui.error(f"File not found - {self.latex_file}", with_panel=True)
-            self._entry_count_snapshot = None
             return 0
-
-        signature = (stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_size)
-        if (
-            self._entry_count_snapshot is not None
-            and self._entry_count_snapshot[0] == signature
-        ):
-            return self._entry_count_snapshot[1]
-
-        content = self._read_text_for_scan()
-        if content is None:
-            return 0
-
-        entry_cmd = self._get_entry_command()
-        count = content.count(f"{entry_cmd}{{")
-        self._entry_count_snapshot = (signature, count)
-        return count
+        self.ensure_entries_loaded()
+        return len(self.word_entries)
 
     # -------------------------------------------------------------------------
     # Normalization & Lookup

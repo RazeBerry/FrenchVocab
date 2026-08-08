@@ -442,11 +442,7 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
 
     @entry_count.setter
     def entry_count(self, value: int) -> None:
-        """Allow callers to cache a fast count without forcing a full parse.
-
-        Some startup paths compute an approximate count via regex scanning
-        (see VocabRepository.count_entries) and store it for UI display.
-        """
+        """Allow orchestration and test doubles to publish a refreshed count."""
         count = int(value or 0)
         if hasattr(self, "_vocab_repo") and self._vocab_repo is not None:
             self._vocab_repo.entry_count = count

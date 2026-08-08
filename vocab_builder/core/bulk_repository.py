@@ -69,7 +69,6 @@ def bulk_add_entries_for_repo(
         except OSError as exc:
             return _write_failed_report(outcomes, dry_run=dry_run, error=exc)
 
-        repo._entry_count_snapshot = None
         repo.load_existing_entries()
         return report
 
