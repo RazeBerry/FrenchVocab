@@ -130,6 +130,17 @@ def test_default_output_path_uses_export_state_directory_not_cwd(tmp_path, monke
     ).resolve()
 
 
+def test_operator_export_directory_overrides_state_location(tmp_path, monkeypatch):
+    configured = tmp_path / "server-exports"
+    monkeypatch.setenv("VOCABBUILDER_ANKI_EXPORT_DIR", str(configured))
+
+    manager = _manager(tmp_path / "state" / "exported_words.json")
+
+    assert manager._normalize_output_path("French Vocabulary") == (
+        configured / "French Vocabulary.apkg"
+    ).resolve()
+
+
 def test_absolute_output_path_is_still_honored(tmp_path):
     manager = _manager(tmp_path / "exported_words.json")
     destination = tmp_path / "custom" / "Deck.apkg"
@@ -705,6 +716,28 @@ def test_automatic_snapshot_destination_does_not_mutate_metadata(tmp_path):
     assert deck_name == "French Vocabulary"
     assert output_path is None
     assert manager.snapshot_export_metadata == original
+
+
+def test_operator_export_directory_rejects_foreign_snapshot_metadata(
+    tmp_path,
+    monkeypatch,
+):
+    configured = tmp_path / "server-exports"
+    monkeypatch.setenv("VOCABBUILDER_ANKI_EXPORT_DIR", str(configured))
+    manager = _manager(tmp_path / "exported_words.json")
+    manager._snapshot_export_metadata = {
+        "deck_name": "French Vocabulary",
+        "path": "/Users/example/old-project/anki_exports/French Vocabulary.apkg",
+        "path_source": "explicit",
+    }
+
+    deck_name, output_path = manager._automatic_snapshot_destination()
+
+    assert deck_name == "French Vocabulary"
+    assert output_path is None
+    assert manager._normalize_output_path(deck_name) == (
+        configured / "French Vocabulary.apkg"
+    ).resolve()
 
 
 def test_selected_export_to_snapshot_path_is_repaired_on_exit(tmp_path, monkeypatch):

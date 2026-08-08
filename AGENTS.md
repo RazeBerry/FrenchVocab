@@ -271,6 +271,7 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 - `VOCABBUILDER_AUTO_TRANSLATOR`: Enable/disable intelligent translator option.
 - `VOCABBUILDER_COMPOSITION`: Enable/disable composition practice (default on).
 - `VOCABBUILDER_EXIT_SNAPSHOT`: Enable/disable the automatic complete Anki snapshot on clean exit (default on).
+- `VOCABBUILDER_ANKI_EXPORT_DIR`: Operator-controlled root for default and unattended Anki exports. When set, clean-exit snapshots never reuse an explicit absolute destination from migrated tracker metadata; the VM sets this to `/var/lib/vocabbuilder/exports`.
 - `VOCABBUILDER_COMPOSITION_WORDS`: Target words per use-these-words attempt (default `3`, int >= 1).
 - `VOCABBUILDER_COMPOSITION_SET_SIZE`: Attempts per daily composition set (default `3`, int >= 1).
 - `VOCABBUILDER_MAX_BACKUPS`: Maximum timestamped backup snapshots to retain per file (default `10`; `0` disables pruning).

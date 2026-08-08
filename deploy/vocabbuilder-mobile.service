@@ -11,6 +11,7 @@ WorkingDirectory=/var/lib/vocabbuilder
 Environment=PYTHONUNBUFFERED=1
 Environment=VOCABBUILDER_CONFIG_DIR=/var/lib/vocabbuilder
 Environment=VOCABBUILDER_HISTORY_DIR=/var/lib/vocabbuilder/history
+Environment=VOCABBUILDER_ANKI_EXPORT_DIR=/var/lib/vocabbuilder/exports
 Environment=VOCABBUILDER_SKIP_KEYRING=1
 Environment=VOCABBUILDER_PROVIDER=gemini
 EnvironmentFile=/etc/vocabbuilder/mobile.env

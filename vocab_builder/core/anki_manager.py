@@ -359,9 +359,17 @@ class AnkiExportManager:
 
     def _resolve_default_export_directory(self) -> Path:
         """Return the stable base directory for deck-name-only exports."""
-        export_directory = self._exported_words_file.parent / self.EXPORT_DIRECTORY_NAME
+        configured = get_env("VOCABBUILDER_ANKI_EXPORT_DIR")
+        self._export_directory_is_operator_configured = bool(
+            configured and configured.strip()
+        )
+        export_directory = (
+            Path(configured).expanduser()
+            if self._export_directory_is_operator_configured
+            else self._exported_words_file.parent / self.EXPORT_DIRECTORY_NAME
+        )
         if not export_directory.is_absolute():
-            export_directory = self._project_root / export_directory
+            export_directory = self._exported_words_file.parent / export_directory
         return export_directory.resolve()
 
     def _resolve_composition_history_paths(
@@ -1377,6 +1385,11 @@ class AnkiExportManager:
 
         normalized = self._normalize_loaded_export_metadata(metadata)
         deck_name = str(normalized.get("deck_name") or default_deck).strip() or default_deck
+        if self._export_directory_is_operator_configured:
+            # A deployment-level export root is a hard boundary for unattended
+            # snapshots. In particular, never reuse a macOS absolute path from
+            # tracker metadata after moving the collection to a Linux VM.
+            return deck_name, None
         if normalized.get("path_source") != "explicit":
             return deck_name, None
 

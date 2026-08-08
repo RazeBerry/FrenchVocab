@@ -18,6 +18,7 @@ exec runuser -u vocabbuilder -- env \
   HOME=/var/lib/vocabbuilder \
   VOCABBUILDER_CONFIG_DIR=/var/lib/vocabbuilder \
   VOCABBUILDER_HISTORY_DIR=/var/lib/vocabbuilder/history \
+  VOCABBUILDER_ANKI_EXPORT_DIR=/var/lib/vocabbuilder/exports \
   VOCABBUILDER_SKIP_KEYRING=1 \
   /opt/vocabbuilder/.venv/bin/vocabbuilder \
   --provider "$PROVIDER" \

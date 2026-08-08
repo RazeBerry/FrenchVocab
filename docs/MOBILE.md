@@ -85,6 +85,7 @@ entire VM or disk.
 - `/opt/vocabbuilder`: read-only installed application
 - `/opt/vocabbuilder/.venv`: Python runtime and mobile dependencies
 - `/var/lib/vocabbuilder`: vocabulary, history, exports, and backups
+- `/var/lib/vocabbuilder/exports`: operator-enforced destination for remote CLI and mobile Anki packages
 - `/etc/vocabbuilder/mobile.env`: root-readable allowed identity and non-secret service settings
 - `/var/lib/vocabbuilder/.env`: service-readable provider credentials
 - `/usr/local/sbin/vocabbuilder-cli`: root wrapper that sets authoritative
