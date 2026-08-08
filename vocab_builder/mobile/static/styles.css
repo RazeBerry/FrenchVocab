@@ -452,16 +452,110 @@ textarea.hw::placeholder { color: var(--ghost); }
 .search input::placeholder { color: var(--placeholder); }
 .search:focus-within { border-color: var(--hue); box-shadow: 0 0 0 3px var(--hue-wash); }
 
-.entry-list { margin-top: 8px; }
-.entry {
-  padding: 14px 2px;
+/* ---------------- the index ----------------
+   One line per word so 571 of them stay scannable; detail opens in place so
+   the scroll position never moves. */
+.index { margin-top: 8px; }
+
+.index-letter {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 5px 2px;
+  background: var(--bg);
   border-bottom: 1px solid var(--line);
+  color: var(--hue);
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
-.entry:last-child { border-bottom: 0; }
-.entry-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
-.entry-word { font-family: var(--display); font-size: 1.1rem; }
-.entry-type { flex: none; color: var(--dim); font-size: 0.68rem; letter-spacing: 0.04em; }
-.entry-def { margin: 4px 0 0; color: var(--ink-soft); font-size: 0.86rem; line-height: 1.45; }
+
+.index-row {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 2px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.index-row[aria-expanded="true"] {
+  border-left-color: var(--hue);
+  border-bottom-color: transparent;
+  padding-left: 8px;
+  background: var(--card);
+}
+
+.index-word {
+  flex: none;
+  max-width: 52%;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 1rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.index-type {
+  flex: none;
+  color: var(--dim);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.index-gloss {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  text-align: right;
+  text-overflow: ellipsis;
+}
+.index-row[aria-expanded="true"] .index-gloss { display: none; }
+
+.index-detail {
+  padding: 2px 8px 14px;
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid var(--hue);
+  background: var(--card);
+}
+.index-detail .full-type {
+  margin: 0 0 7px;
+  color: var(--hue);
+  font-size: 0.6rem;
+  font-weight: 750;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.index-detail ol { margin: 0; padding-left: 1.1rem; font-size: 0.8rem; line-height: 1.45; }
+.index-detail ol li { margin-bottom: 5px; }
+.index-detail ol li::marker { color: var(--hue); font-size: 0.7rem; font-weight: 700; }
+.index-detail .example {
+  margin: 9px 0 0;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  font-size: 0.74rem;
+}
+.index-detail .example + .example { border-top: 0; padding-top: 0; margin-top: 7px; }
+
+.index-foot {
+  margin: 10px 0 2px;
+  padding-top: 9px;
+  border-top: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 0.66rem;
+  font-variant-numeric: tabular-nums;
+}
 .empty-state { margin: 16px 0 2px; color: var(--dim); font-size: 0.84rem; text-align: center; }
 
 /* ---------------- install tip and footer ---------------- */

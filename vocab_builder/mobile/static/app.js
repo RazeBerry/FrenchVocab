@@ -22,6 +22,7 @@ const state = {
   retryTimer: null,
   expanded: false,
   collapsedLabel: "",
+  total: 0,
 };
 
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -265,6 +266,7 @@ function setConnection(online, label) {
 
 function setEntryCount(count) {
   const total = Number(count);
+  state.total = total;
   el("entry-count").textContent = total.toLocaleString();
   // The deck behind the slip is the collection; with nothing collected there is
   // no deck to draw.
@@ -318,30 +320,135 @@ async function loadStatus() {
   }
 }
 
-function renderEntries(entries) {
+// Longest match first, so "separable verb" does not collapse to "verb" and
+// "adjective/noun" does not collapse to "noun".
+const TYPE_ABBREVIATIONS = [
+  ["separable verb", "v. sep."],
+  ["pronominal verb", "v. pron."],
+  ["conjunction", "conj."],
+  ["expression", "expr."],
+  ["adjective", "adj."],
+  ["adverb", "adv."],
+  ["pronoun", "pron."],
+  ["sentence", "sent."],
+  ["noun", "n."],
+  ["verb", "v."],
+];
+
+function abbreviateType(type) {
+  const value = (type || "").trim().toLowerCase();
+  if (!value || value === "unknown") return "";
+  const match = TYPE_ABBREVIATIONS.find(([full]) => value.startsWith(full));
+  if (match) return match[1];
+  return value.length <= 5 ? value : `${value.slice(0, 4)}.`;
+}
+
+// Group accented forms under their base letter, and file each word under the
+// character it is actually sorted by, so the dividers never disagree with the
+// order the server returned.
+function indexLetter(word) {
+  const first = (word || "").trim().charAt(0);
+  if (!first) return "#";
+  const base = first.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
+  return /[A-Z]/.test(base) ? base : "#";
+}
+
+function closeOpenRow() {
+  const open = entryList.querySelector('.index-row[aria-expanded="true"]');
+  if (!open) return;
+  open.setAttribute("aria-expanded", "false");
+  open.nextElementSibling.hidden = true;
+}
+
+function buildDetail(entry) {
+  const detail = document.createElement("div");
+  detail.className = "index-detail";
+  detail.hidden = true;
+
+  if (entry.word_type) {
+    const type = document.createElement("p");
+    type.className = "full-type";
+    const senses = entry.definitions?.length || 0;
+    type.textContent = senses > 1
+      ? `${entry.word_type} · ${senses} senses`
+      : entry.word_type;
+    detail.appendChild(type);
+  }
+
+  if (entry.definitions?.length) {
+    const senses = document.createElement("ol");
+    entry.definitions.forEach((definition) => {
+      const item = document.createElement("li");
+      item.textContent = definition;
+      senses.appendChild(item);
+    });
+    detail.appendChild(senses);
+  }
+
+  (entry.examples || []).forEach((example) => renderExample(detail, example));
+  return detail;
+}
+
+function renderEntries(entries, { grouped = false } = {}) {
   clearChildren(entryList);
+  closeOpenRow();
   emptyState.hidden = entries.length > 0;
+
+  let letter = null;
   entries.forEach((entry) => {
-    const article = document.createElement("article");
-    article.className = "entry";
-    const top = document.createElement("div");
-    top.className = "entry-top";
-    const word = document.createElement("strong");
-    word.className = "entry-word";
-    word.textContent = entry.word;
-    const type = document.createElement("span");
-    type.className = "entry-type";
-    type.textContent = entry.word_type || "";
-    top.append(word, type);
-    article.appendChild(top);
-    if (entry.definitions?.length) {
-      const definition = document.createElement("p");
-      definition.className = "entry-def";
-      definition.textContent = entry.definitions[0];
-      article.appendChild(definition);
+    if (grouped) {
+      const next = indexLetter(entry.word);
+      if (next !== letter) {
+        letter = next;
+        const divider = document.createElement("p");
+        divider.className = "index-letter";
+        divider.textContent = letter;
+        entryList.appendChild(divider);
+      }
     }
-    entryList.appendChild(article);
+
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "index-row";
+    row.setAttribute("aria-expanded", "false");
+
+    const word = document.createElement("span");
+    word.className = "index-word";
+    word.textContent = entry.word;
+
+    const type = document.createElement("span");
+    type.className = "index-type";
+    type.textContent = abbreviateType(entry.word_type);
+
+    const gloss = document.createElement("span");
+    gloss.className = "index-gloss";
+    gloss.textContent = entry.definitions?.[0] || "";
+
+    row.append(word, type, gloss);
+    const detail = buildDetail(entry);
+
+    row.addEventListener("click", () => {
+      const isOpen = row.getAttribute("aria-expanded") === "true";
+      closeOpenRow();
+      if (isOpen) return;
+      row.setAttribute("aria-expanded", "true");
+      detail.hidden = false;
+    });
+
+    entryList.append(row, detail);
   });
+
+  const foot = el("index-foot");
+  if (!entries.length) {
+    foot.hidden = true;
+    return;
+  }
+  // The collection total already sits in the top bar, so this line only
+  // qualifies what is on screen. It also avoids racing the status request.
+  foot.hidden = false;
+  foot.textContent = grouped
+    ? `${entries.length} match${entries.length === 1 ? "" : "es"} · tap to open`
+    : `${entries.length} most recent · tap to open`;
 }
 
 async function loadRecent() {
@@ -472,7 +579,8 @@ el("search-input").addEventListener("input", (event) => {
         language,
       );
       if (language === state.language && event.target.value.trim() === query) {
-        renderEntries(entries);
+        // Search results come back alphabetical, so the letter dividers are true.
+        renderEntries(entries, { grouped: true });
       }
     } catch (error) {
       if (language === state.language) setMessage(error.message);
@@ -482,6 +590,11 @@ el("search-input").addEventListener("input", (event) => {
 
 window.addEventListener("online", () => { loadStatus(); loadRecent(); });
 window.addEventListener("offline", () => setConnection(false, "Offline"));
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  loadStatus();
+  if (!el("search-input").value.trim()) loadRecent();
+});
 
 const installTip = el("install-tip");
 const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;

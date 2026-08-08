@@ -23,8 +23,8 @@
         document.documentElement.dataset.theme = theme;
       })();
     </script>
-    <link rel="stylesheet" href="/static/styles.css?v=5">
-    <script src="/static/app.js?v=5" defer></script>
+    <link rel="stylesheet" href="/static/styles.css?v=6">
+    <script src="/static/app.js?v=6" defer></script>
   </head>
   <body>
     <div class="app">
@@ -92,8 +92,9 @@
           <span class="sr-only">Search your collection</span>
           <input id="search-input" type="search" placeholder="Search words or meanings" autocomplete="off">
         </label>
-        <div class="entry-list" id="entry-list" aria-live="polite"></div>
+        <div class="index" id="entry-list" aria-live="polite"></div>
         <p class="empty-state" id="empty-state">Your most recent additions will appear here.</p>
+        <p class="index-foot" id="index-foot" hidden></p>
       </section>
 
       <aside class="install-tip" id="install-tip" hidden>

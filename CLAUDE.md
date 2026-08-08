@@ -1,9 +1,20 @@
 # Repository Guidelines
 
-## Sync Requirement
-- `AGENTS.md` and `CLAUDE.md` must stay byte-for-byte identical.
-- Update both files in the same change.
-- Run `pytest tests/test_agent_docs_sync.py` to validate alignment.
+## Repository Knowledge Contract
+- `AGENTS.md` is the canonical repository guide. `CLAUDE.md` is its generated,
+  byte-for-byte mirror so every coding agent receives the same architecture,
+  workflow, deployment, security, and design knowledge.
+- Edit `AGENTS.md` only; never maintain `CLAUDE.md` independently. After any
+  guide change, run `python scripts/sync_agent_docs.py --write`, and commit both
+  files in the same change.
+- Treat durable changes to behavior, architecture, ownership boundaries,
+  persistence, concurrency, deployment, security, configuration, testing, or
+  product design as incomplete until the canonical guide reflects them.
+- Run `python scripts/sync_agent_docs.py --check` for the fast byte-level check
+  and `pytest tests/test_agent_docs_sync.py` for regression coverage. Dedicated
+  CI also rejects a divergent mirror.
+- Byte equality proves shared text, not complete knowledge. During review,
+  explicitly verify that a change did not leave either guide semantically stale.
 
 ## Project Overview
 VocabBuilder is an AI-assisted CLI for building bilingual or monolingual vocabulary lists, generating LaTeX documents, and exporting Anki decks. The current app supports English (`en`), French (`fr`), and German (`de`), has Rich-based keyboard navigation, and integrates with Google Gemini or Anthropic Claude. Install with `pip install vocab-builder` and run `vocabbuilder`.
@@ -56,7 +67,12 @@ python scripts/bulk_add.py --language fr --file entries.json --json
 pip install -e ".[mobile]"
 vocabbuilder-mobile --help
 vocabbuilder-mobile --languages fr,de,en --default-language fr
+vocabbuilder-mobile --languages fr,de,en --allowed-tailscale-user you@example.com
 vocabbuilder-mobile --language fr --latex-file ./FrenchVocab.tex
+
+# Repository knowledge synchronization
+python scripts/sync_agent_docs.py --write
+python scripts/sync_agent_docs.py --check
 
 # Tests
 pytest
@@ -106,8 +122,28 @@ pytest -k "anki"
 - `app.py` builds the FastAPI app and owns the JSON API (`/api/collections`, `/api/status`, `/api/preview`, `/api/save`, `/api/recent`, `/api/search`) plus the static shell.
 - `service.py` wraps one `VocabBuilder` per language with its own in-process lock, preview tokens, idempotent save receipts, and history.
 - `catalog.py` registers those per-language services and resolves the `?language=` parameter; `factory.py` constructs them.
+- The mobile surface constructs every builder with `interactive=False`; no code reachable from a request may prompt. `UIHelper` raises `NonInteractiveError` as a backstop if a future request path accidentally attempts console input.
 - Blocking provider and repository work is exposed through synchronous FastAPI handlers so Starlette runs it in worker threads; do not call those workflows directly from an `async def` route.
 - Tailscale Serve supplies private HTTPS and identity; provider credentials stay server-side and are never sent to the browser.
+
+#### Mobile product philosophy
+- The phone is a private capture surface for the authoritative VM collection,
+  not a second application or database. Optimize for the moment a reader meets
+  a word: open, type, review, keep, and return to the book.
+- Preserve one dominant path: capture -> preview -> save. The preview is the
+  editorial checkpoint, not a separate destination, and secondary collection
+  browsing must not compete with capture above the fold.
+- Keep the interface calm and object-centered. Capture and preview inhabit the
+  same specimen slip so state changes feel continuous instead of navigating a
+  dashboard or multiplying cards, dialogs, and modes.
+- Language changes should preserve the same mental model. Express identity
+  through the collection hue and grammatical copy rather than separate layouts.
+- Progressive disclosure may hide detail, never discard it. The compact phone
+  view can defer senses and examples, but save behavior must retain the complete
+  structured result used by LaTeX and Anki.
+- Privacy, connectivity, and installability should be legible but quiet:
+  Tailscale remains the access boundary, secrets remain server-side, and the
+  no-build shell remains usable as an iPhone home-screen app.
 
 #### Mobile front end (`vocab_builder/mobile/static/`)
 - Plain HTML/CSS/JS with no build step and no external requests (Tailscale-only hosts may have no public egress).
@@ -118,6 +154,10 @@ pytest -k "anki"
 - Each collection owns a hue, selected by `data-language` on `<html>` and read through `--hue`/`--on-hue`. Any new accent must come from those tokens so a new language only adds a hue.
 - Headword sizing steps through `.hw--s1/2/3` at 14 and 28 characters. The breakpoints come from the stored collections (87% of French headwords are <= 14 characters, 2% are long expressions); re-measure before changing them.
 - Long AI responses are deferred, never dropped: the collapsed slip shows the first sense plus one example, and `#more-button` expands the rest, pinning the headword and scrolling `.slip-body`. `/api/save` still commits every definition and example.
+- The collection is an index, not a feed: one row per word (headword, abbreviated part of speech, truncated first sense), and tapping opens the full entry **in place** so the scroll position never moves. Only one row is open at a time.
+- Letter dividers are rendered only for alphabetical results. `/api/search` returns sorted matches, `/api/recent` returns history order; grouping the latter would print dividers that contradict the order, so `renderEntries` takes an explicit `grouped` flag.
+- Group headings normalise diacritics, so `Étourdissant` files under `E` and `Ôter` under `O`, but the letter is taken from the word **as stored** to stay consistent with the server's sort.
+- `TYPE_ABBREVIATIONS` is matched longest-first so `separable verb` does not collapse to `v.` and `adjective/noun` does not collapse to `n.`. Collections currently hold 18 distinct type strings; unrecognised values fall back to a truncation rather than being dropped.
 - When changing `styles.css` or `app.js`, bump the `?v=N` query in `index.html` **and** the matching `SHELL_CACHE`/`SHELL_FILES` entries in `service-worker.js`, or installed home-screen apps keep serving the old assets.
 - User-visible copy is generated in `app.js` (article agreement, singular/plural); keep it grammatical for every registered language name.
 
@@ -127,6 +167,7 @@ pytest -k "anki"
 - Cross-process lock files must remain beside the authoritative data/config root, never in the temporary directory. The systemd service uses `PrivateTmp=true`, so `/tmp` locks would split the phone and SSH CLI into different lock domains and reintroduce silent lost updates.
 - Reload authoritative disk state only after acquiring the commit lock. Duplicate checks, merge calculations, insertion decisions, and Anki state reconciliation must be recomputed inside that transaction rather than trusting pre-lock caches.
 - Keep a vocabulary mutation, its history append, and its Anki acquisition-order update inside one outer catalog transaction. Continue using atomic replacement for rewritten files and `flush` + `fsync` for append-only JSONL.
+- Mobile preview releases its service lock across provider recovery and generation, then re-validates duplicates after reacquiring it. Phone saves register Anki acquisition order inside the same catalog transaction as the vocabulary write and history append.
 - Anki tracker writes use a three-way merge of the manager's persisted baseline, current disk state, and local changes so concurrent additions and intentional removals do not overwrite one another.
 - `scripts/deploy/backup_mobile_data.sh` takes the same catalog lock with util-linux `flock` before archiving. Any new backup/export path that needs a coherent multi-file snapshot must join that lock domain.
 - Repository cache invalidation uses `(device, inode, mtime_ns, size)` signatures. Do not weaken it to timestamps alone.
@@ -193,6 +234,9 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 - `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`: Provider API credentials.
 - `VOCABBUILDER_CLAUDE_MODEL`: Override Claude model ID (default `claude-sonnet-4-6`).
 - `VOCABBUILDER_GEMINI_MODEL`: Override Gemini model ID (default `gemini-3-flash-preview`).
+- `VOCABBUILDER_PROVIDER_TIMEOUT`: Provider request deadline in seconds (default `120`).
+- `VOCABBUILDER_PROVIDER_RETRY_COOLDOWN`: Minimum seconds between silent provider re-initialization attempts (default `30`).
+- `VOCABBUILDER_ALLOWED_TAILSCALE_USER`: Tailscale login accepted by the private mobile interface; requests are not identity-checked when unset.
 - `VOCABBUILDER_CONFIG_DIR`: Override directory used for `.env` storage/loading.
 - `VOCABBUILDER_SKIP_KEYRING=1`: Disable keyring lookups/storage.
 - `VOCABBUILDER_FORCE_SYNC_LOAD=1`: Force synchronous loading (useful in tests).
@@ -222,7 +266,10 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 - Concurrency changes must cover both in-process threads and POSIX processes. Keep the isolated-`tempfile.tempdir` regression in `tests/test_concurrency_transactions.py`; it models systemd `PrivateTmp` without touching production data.
 - Mobile changes should exercise the ASGI surface in `tests/test_mobile_service.py`, including duplicate commits, save retries, language routing, Tailscale identity enforcement, and cross-language worker-thread behavior.
 - Run `pytest` before opening a pull request.
-- When changing agent docs, run `pytest tests/test_agent_docs_sync.py`.
+- When changing repository knowledge, edit `AGENTS.md`, run
+  `python scripts/sync_agent_docs.py --write`, then run
+  `python scripts/sync_agent_docs.py --check` and
+  `pytest tests/test_agent_docs_sync.py`.
 
 ## Commit and Pull Request Guidelines
 - Write imperative, present-tense commit subjects near 60 characters.
