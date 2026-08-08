@@ -36,6 +36,30 @@
   --card-shadow: 0 1px 2px rgba(28, 26, 23, 0.07), 0 18px 40px rgba(28, 26, 23, 0.11);
   --deck-shadow: 0 1px 2px rgba(28, 26, 23, 0.05);
 
+
+  /* Scales. Every size, radius and duration below snaps to one of these
+     steps so a value is a choice from a system rather than a guess. */
+  --t-3xs: 0.6rem;
+  --t-2xs: 0.66rem;
+  --t-xs: 0.72rem;
+  --t-sm: 0.8rem;
+  --t-md: 0.9rem;
+  --t-base: 1.0rem;
+  --t-lg: 1.15rem;
+  --t-xl: 1.3rem;
+  --t-2xl: 1.5rem;
+  --t-3xl: 1.7rem;
+  --r-xs: 10px;
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-pill: 999px;
+  /* Apple's minimum comfortable touch target. */
+  --tap: 44px;
+  --dur-fast: 150ms;
+  --dur: 240ms;
+  --dur-slow: 300ms;
+  --ease: cubic-bezier(.32, .72, 0, 1);
+
   --display: Didot, "Bodoni 72", "Playfair Display", Georgia, serif;
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   font-synthesis: none;
@@ -111,7 +135,7 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 .views { flex: 1 0 auto; }
-.view { animation: view-in 180ms ease both; }
+.view { animation: view-in var(--dur-fast) ease both; }
 @keyframes view-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
@@ -129,7 +153,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .eyebrow {
   margin: 0;
   color: var(--hue);
-  font-size: 0.65rem;
+  font-size: var(--t-2xs);
   font-weight: 780;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -150,12 +174,12 @@ button { -webkit-tap-highlight-color: transparent; }
   display: grid;
   place-items: center;
   width: 34px;
-  height: 40px;
+  min-height: var(--tap);
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
-  border-radius: 10px;
+  border-radius: var(--r-xs);
 }
 .lang::before {
   content: "";
@@ -164,7 +188,7 @@ button { -webkit-tap-highlight-color: transparent; }
   border-radius: 50%;
   background: currentColor;
   opacity: 0.26;
-  transition: opacity 140ms ease, transform 140ms ease;
+  transition: opacity var(--dur-fast) ease, transform var(--dur-fast) ease;
 }
 .lang[data-lang="fr"] { color: var(--hue-fr); }
 .lang[data-lang="de"] { color: var(--hue-de); }
@@ -174,7 +198,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .count {
   margin: 0 0 0 auto;
   color: var(--dim);
-  font-size: 0.78rem;
+  font-size: var(--t-sm);
   font-variant-numeric: tabular-nums;
 }
 .count strong { color: var(--ink); font-weight: 650; }
@@ -185,10 +209,10 @@ button { -webkit-tap-highlight-color: transparent; }
   display: grid;
   place-items: center;
   width: 34px;
-  height: 40px;
+  min-height: var(--tap);
   padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--r-xs);
   background: transparent;
   cursor: pointer;
 }
@@ -199,7 +223,7 @@ button { -webkit-tap-highlight-color: transparent; }
   border: 1.5px solid var(--dim);
   border-radius: 50%;
   background: linear-gradient(90deg, var(--dim) 0 50%, transparent 50% 100%);
-  transition: transform 260ms ease, border-color 140ms ease, background 140ms ease;
+  transition: transform var(--dur) ease, border-color var(--dur-fast) ease, background var(--dur-fast) ease;
 }
 :root[data-theme="dark"] .theme::before { transform: rotate(180deg); }
 
@@ -207,10 +231,10 @@ button { -webkit-tap-highlight-color: transparent; }
   display: grid;
   place-items: center;
   width: 30px;
-  height: 34px;
+  min-height: var(--tap);
   padding: 0;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--r-xs);
   background: transparent;
   cursor: default;
 }
@@ -260,7 +284,7 @@ button { -webkit-tap-highlight-color: transparent; }
   width: 100%;
   max-height: min(72dvh, 580px);
   overflow: hidden;
-  border-radius: 16px;
+  border-radius: var(--r-md);
   border-top: 4px solid var(--hue);
   background: var(--card);
   box-shadow: var(--card-shadow);
@@ -278,8 +302,8 @@ button { -webkit-tap-highlight-color: transparent; }
 .slip-head {
   padding: 22px 20px 0;
   border-bottom: 1px solid transparent;
-  transition: padding-bottom 240ms cubic-bezier(.32, .72, 0, 1),
-              border-color 200ms ease;
+  transition: padding-bottom var(--dur) var(--ease),
+              border-color var(--dur) ease;
 }
 
 /* ---------------- the headword, scaled to real data ----------------
@@ -299,10 +323,10 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 /* Smooths both the expand collapse of the headword and the step down through
    the size scale while a long word is being typed. */
-.hw { transition: font-size 240ms cubic-bezier(.32, .72, 0, 1); }
+.hw { transition: font-size var(--dur) var(--ease); }
 .hw--s1 { font-size: clamp(2rem, 9vw, 2.4rem); }
 .hw--s2 { font-size: clamp(1.35rem, 6vw, 1.6rem); }
-.hw--s3 { font-size: 1.06rem; font-style: italic; line-height: 1.35; }
+.hw--s3 { font-size: var(--t-base); font-style: italic; line-height: 1.35; }
 
 textarea.hw {
   border: 0;
@@ -319,16 +343,16 @@ textarea.hw::placeholder { color: var(--ghost); }
   height: 2px;
   margin: 14px 0 10px;
   background: var(--hue);
-  transition: height 240ms cubic-bezier(.32,.72,0,1),
-              margin 240ms cubic-bezier(.32,.72,0,1),
-              opacity 180ms ease;
+  transition: height var(--dur) var(--ease),
+              margin var(--dur) var(--ease),
+              opacity var(--dur-fast) ease;
 }
 .slip.is-capturing .short { opacity: 0.32; }
 
 .pos {
   margin: 0;
   color: var(--hue);
-  font-size: 0.64rem;
+  font-size: var(--t-2xs);
   font-weight: 750;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -338,7 +362,7 @@ textarea.hw::placeholder { color: var(--ghost); }
 .slip-body {
   padding: 13px 20px 20px;
   overflow: hidden;
-  transition: height 300ms cubic-bezier(.32, .72, 0, 1), opacity 220ms ease;
+  transition: height var(--dur-slow) var(--ease), opacity var(--dur) ease;
 }
 /* Once expanded the body is `flex: 1 1 0%`, so flex layout owns its main size
    and the height property is ignored. Opt out of flex growth for the duration
@@ -350,16 +374,16 @@ textarea.hw::placeholder { color: var(--ghost); }
   overflow: hidden;
 }
 
-.mean { margin: 0; font-size: 0.94rem; line-height: 1.5; }
+.mean { margin: 0; font-size: var(--t-md); line-height: 1.5; }
 .slip.is-capturing .mean { color: var(--ghost); }
 
-.example { margin: 11px 0 0; font-size: 0.82rem; line-height: 1.45; }
+.example { margin: 11px 0 0; font-size: var(--t-sm); line-height: 1.45; }
 .example .source { margin: 0; color: var(--dim); font-style: italic; }
 .example .target { margin: 2px 0 0; color: var(--dim); opacity: 0.85; }
 
-.senses { margin: 0; padding-left: 1.15rem; font-size: 0.9rem; line-height: 1.46; }
+.senses { margin: 0; padding-left: 1.15rem; font-size: var(--t-md); line-height: 1.46; }
 .senses li { margin-bottom: 9px; }
-.senses li::marker { color: var(--hue); font-size: 0.78rem; font-weight: 700; }
+.senses li::marker { color: var(--hue); font-size: var(--t-sm); font-weight: 700; }
 
 /* ---------------- tap to expand ---------------- */
 .more {
@@ -367,14 +391,14 @@ textarea.hw::placeholder { color: var(--ghost); }
   align-items: center;
   gap: 8px;
   width: 100%;
-  min-height: 40px;
+  min-height: var(--tap);
   margin-top: 12px;
   padding: 0;
   border: 0;
   border-top: 1px solid var(--line);
   background: transparent;
   color: var(--hue);
-  font-size: 0.76rem;
+  font-size: var(--t-xs);
   font-weight: 650;
   text-align: left;
   cursor: pointer;
@@ -386,7 +410,7 @@ textarea.hw::placeholder { color: var(--ghost); }
   border-right: 1.5px solid currentColor;
   border-bottom: 1.5px solid currentColor;
   transform: rotate(45deg) translate(-2px, -2px);
-  transition: transform 160ms ease;
+  transition: transform var(--dur-fast) ease;
 }
 .slip.is-expanded .more .chev { transform: rotate(225deg) translate(-2px, -2px); }
 
@@ -395,7 +419,7 @@ textarea.hw::placeholder { color: var(--ghost); }
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
 }
-.slip.is-expanded .hw { font-size: 1.25rem; font-style: normal; }
+.slip.is-expanded .hw { font-size: var(--t-xl); font-style: normal; }
 .slip.is-expanded .short { height: 0; margin: 0; opacity: 0; }
 .slip.is-expanded .pos { margin-top: 7px; }
 .slip.is-expanded .slip-body {
@@ -425,8 +449,8 @@ textarea.hw::placeholder { color: var(--ghost); }
   flex: 1;
   position: relative;
   min-height: 48px;
-  border-radius: 12px;
-  font-size: 0.9rem;
+  border-radius: var(--r-sm);
+  font-size: var(--t-md);
   font-weight: 650;
   cursor: pointer;
 }
@@ -461,7 +485,7 @@ textarea.hw::placeholder { color: var(--ghost); }
   min-height: 18px;
   margin: 10px 2px 0;
   color: var(--danger);
-  font-size: 0.84rem;
+  font-size: var(--t-sm);
   line-height: 1.4;
 }
 .message.is-ok { color: var(--ok); }
@@ -472,7 +496,7 @@ textarea.hw::placeholder { color: var(--ghost); }
 .collection h2 {
   margin: 0 0 12px;
   color: var(--dim);
-  font-size: 0.66rem;
+  font-size: var(--t-2xs);
   font-weight: 750;
   letter-spacing: 0.13em;
   text-transform: uppercase;
@@ -484,10 +508,10 @@ textarea.hw::placeholder { color: var(--ghost); }
   align-items: center;
   padding: 0 13px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--r-sm);
   background: var(--card);
 }
-.search span { color: var(--dim); font-size: 1.1rem; }
+.search span { color: var(--dim); font-size: var(--t-lg); }
 .search input {
   width: 100%;
   min-height: 46px;
@@ -496,7 +520,7 @@ textarea.hw::placeholder { color: var(--ghost); }
   outline: 0;
   color: var(--ink);
   background: transparent;
-  font-size: 1rem;
+  font-size: var(--t-base);
 }
 .search input::placeholder { color: var(--placeholder); }
 .search:focus-within { border-color: var(--hue); box-shadow: 0 0 0 3px var(--hue-wash); }
@@ -514,7 +538,7 @@ textarea.hw::placeholder { color: var(--ghost); }
   background: var(--bg);
   border-bottom: 1px solid var(--line);
   color: var(--hue);
-  font-size: 0.6rem;
+  font-size: var(--t-3xs);
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -548,14 +572,14 @@ textarea.hw::placeholder { color: var(--ghost); }
   overflow: hidden;
   color: var(--ink);
   font-family: var(--display);
-  font-size: 1rem;
+  font-size: var(--t-base);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
 .index-type {
   flex: none;
   color: var(--dim);
-  font-size: 0.58rem;
+  font-size: var(--t-3xs);
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
@@ -565,11 +589,11 @@ textarea.hw::placeholder { color: var(--ghost); }
   min-width: 0;
   overflow: hidden;
   color: var(--ink-soft);
-  font-size: 0.75rem;
+  font-size: var(--t-xs);
   white-space: nowrap;
   text-align: right;
   text-overflow: ellipsis;
-  transition: opacity 150ms ease;
+  transition: opacity var(--dur-fast) ease;
 }
 /* Fade rather than un-display: the row keeps its width, so opening a word
    never nudges the layout sideways. */
@@ -583,7 +607,7 @@ textarea.hw::placeholder { color: var(--ghost); }
   overflow: hidden;
   border-left: 2px solid transparent;
   background: var(--card);
-  transition: height 280ms cubic-bezier(.32, .72, 0, 1), border-color 200ms ease;
+  transition: height var(--dur-slow) var(--ease), border-color var(--dur) ease;
 }
 .index-detail.is-open { border-left-color: var(--hue); }
 .index-detail-inner { padding: 2px 8px 14px; }
@@ -591,7 +615,7 @@ textarea.hw::placeholder { color: var(--ghost); }
 .index-detail-inner > * {
   opacity: 0;
   transform: translateY(-4px);
-  transition: opacity 200ms ease 60ms, transform 200ms ease 60ms;
+  transition: opacity var(--dur) ease 60ms, transform var(--dur) ease 60ms;
 }
 .index-detail.is-open .index-detail-inner > * {
   opacity: 1;
@@ -601,19 +625,19 @@ textarea.hw::placeholder { color: var(--ghost); }
 .index-detail .full-type {
   margin: 0 0 7px;
   color: var(--hue);
-  font-size: 0.6rem;
+  font-size: var(--t-3xs);
   font-weight: 750;
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
-.index-detail ol { margin: 0; padding-left: 1.1rem; font-size: 0.8rem; line-height: 1.45; }
+.index-detail ol { margin: 0; padding-left: 1.1rem; font-size: var(--t-sm); line-height: 1.45; }
 .index-detail ol li { margin-bottom: 5px; }
-.index-detail ol li::marker { color: var(--hue); font-size: 0.7rem; font-weight: 700; }
+.index-detail ol li::marker { color: var(--hue); font-size: var(--t-xs); font-weight: 700; }
 .index-detail .example {
   margin: 9px 0 0;
   padding-top: 9px;
   border-top: 1px solid var(--line);
-  font-size: 0.74rem;
+  font-size: var(--t-xs);
 }
 .index-detail .example + .example { border-top: 0; padding-top: 0; margin-top: 7px; }
 
@@ -622,10 +646,10 @@ textarea.hw::placeholder { color: var(--ghost); }
   padding-top: 9px;
   border-top: 1px solid var(--line);
   color: var(--dim);
-  font-size: 0.66rem;
+  font-size: var(--t-2xs);
   font-variant-numeric: tabular-nums;
 }
-.empty-state { margin: 16px 0 2px; color: var(--dim); font-size: 0.84rem; text-align: center; }
+.empty-state { margin: 16px 0 2px; color: var(--dim); font-size: var(--t-sm); text-align: center; }
 
 /* ---------------- install tip and footer ---------------- */
 .install-tip {
@@ -641,18 +665,18 @@ textarea.hw::placeholder { color: var(--ghost); }
   padding: 15px 16px;
   margin: auto;
   color: var(--card);
-  border-radius: 14px;
+  border-radius: var(--r-md);
   background: var(--ink);
   box-shadow: 0 16px 50px rgba(0, 0, 0, 0.3);
 }
-.install-tip p { margin: 3px 0 0; opacity: 0.75; font-size: 0.8rem; }
+.install-tip p { margin: 3px 0 0; opacity: 0.75; font-size: var(--t-sm); }
 .install-tip button {
   flex: none;
   align-self: flex-start;
   color: inherit;
   border: 0;
   background: transparent;
-  font-size: 1.5rem;
+  font-size: var(--t-2xl);
   line-height: 1;
   cursor: pointer;
 }
@@ -664,7 +688,7 @@ footer {
   gap: 7px;
   padding: 30px 0 4px;
   color: var(--dim);
-  font-size: 0.71rem;
+  font-size: var(--t-xs);
 }
 
 /* ---------------- utilities ---------------- */
@@ -681,11 +705,6 @@ footer {
   border: 0;
 }
 
-button:focus-visible,
-textarea:focus-visible {
-  outline: 2px solid var(--hue);
-  outline-offset: 3px;
-}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -699,15 +718,15 @@ textarea:focus-visible {
 }
 
 /* ---------------- full mobile workspace ---------------- */
-.full { width: 100%; min-height: 48px; border-radius: 12px; }
+.full { width: 100%; min-height: 48px; border-radius: var(--r-sm); }
 .quiet-button {
-  min-height: 42px;
+  min-height: var(--tap);
   padding: 9px 13px;
   border: 1px solid var(--line-strong);
-  border-radius: 11px;
+  border-radius: var(--r-xs);
   color: var(--ink-soft);
   background: var(--card);
-  font-size: 0.82rem;
+  font-size: var(--t-sm);
   font-weight: 650;
   cursor: pointer;
 }
@@ -731,26 +750,26 @@ textarea:focus-visible {
   margin: 0;
   color: var(--ink);
   font-family: var(--display);
-  font-size: 1.13rem;
+  font-size: var(--t-lg);
   font-weight: 400;
 }
 .section-heading > button {
-  min-height: 36px;
+  min-height: var(--tap);
   padding: 0 2px;
   border: 0;
   color: var(--hue);
   background: transparent;
-  font-size: 0.74rem;
+  font-size: var(--t-xs);
   font-weight: 650;
 }
-.compact .index-row { min-height: 40px; padding-block: 7px; }
+.compact .index-row { min-height: var(--tap); padding-block: 7px; }
 .compact .index-detail-inner { padding-bottom: 11px; }
 
 .field-label {
   display: block;
   margin: 18px 2px 7px;
   color: var(--dim);
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
   font-weight: 700;
 }
 .field-label span { font-weight: 450; }
@@ -759,7 +778,7 @@ textarea:focus-visible {
   padding: 14px;
   resize: vertical;
   border: 1px solid var(--line-strong);
-  border-radius: 12px;
+  border-radius: var(--r-sm);
   outline: 0;
   color: var(--ink);
   background: var(--card-blank);
@@ -774,18 +793,18 @@ textarea:focus-visible {
   padding: 4px;
   overflow-x: auto;
   border: 1px solid var(--line);
-  border-radius: 13px;
+  border-radius: var(--r-sm);
   background: color-mix(in srgb, var(--card) 62%, transparent);
 }
 .segmented button {
   flex: 1 0 auto;
-  min-height: 38px;
+  min-height: var(--tap);
   padding: 7px 11px;
   border: 0;
-  border-radius: 9px;
+  border-radius: var(--r-xs);
   color: var(--dim);
   background: transparent;
-  font-size: 0.76rem;
+  font-size: var(--t-xs);
   font-weight: 650;
   cursor: pointer;
 }
@@ -801,25 +820,25 @@ textarea:focus-visible {
   padding: 18px;
   border: 1px solid var(--line);
   border-top: 3px solid var(--hue);
-  border-radius: 14px;
+  border-radius: var(--r-md);
   background: var(--card);
   box-shadow: var(--deck-shadow);
 }
-.translation-source { margin: 12px 0; color: var(--dim); font-size: 0.88rem; line-height: 1.5; }
+.translation-source { margin: 12px 0; color: var(--dim); font-size: var(--t-md); line-height: 1.5; }
 .translation-target, .corrected-text, .practice-source {
   margin: 12px 0;
   font-family: var(--display);
-  font-size: 1.35rem;
+  font-size: var(--t-xl);
   line-height: 1.4;
 }
 .rule { width: 34px; height: 2px; background: var(--hue); }
 .note, .english-gloss, .register, .practice-instruction {
   color: var(--dim);
-  font-size: 0.8rem;
+  font-size: var(--t-sm);
   line-height: 1.5;
 }
 .inline-actions { display: flex; gap: 9px; margin-top: 18px; }
-.inline-actions > * { flex: 1; min-height: 44px; border-radius: 11px; }
+.inline-actions > * { flex: 1; min-height: 44px; border-radius: var(--r-xs); }
 
 .pair-list { display: grid; gap: 7px; margin-top: 8px; }
 .pair-list article {
@@ -828,7 +847,7 @@ textarea:focus-visible {
   gap: 12px;
   padding: 10px 2px;
   border-bottom: 1px solid var(--line);
-  font-size: 0.82rem;
+  font-size: var(--t-sm);
   line-height: 1.4;
 }
 .pair-list p { margin: 0; }
@@ -845,13 +864,13 @@ textarea:focus-visible {
 .type-chips::-webkit-scrollbar { display: none; }
 .chip {
   flex: none;
-  min-height: 34px;
+  min-height: var(--tap);
   padding: 6px 11px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   color: var(--dim);
   background: transparent;
-  font-size: 0.7rem;
+  font-size: var(--t-xs);
   cursor: pointer;
 }
 .chip[aria-pressed="true"] { border-color: var(--hue); color: var(--on-hue); background: var(--hue); }
@@ -865,10 +884,10 @@ textarea:focus-visible {
   border-top-width: 1px;
 }
 .stats-panel > div { min-width: 0; text-align: center; }
-.stats-panel strong { display: block; color: var(--hue); font-family: var(--display); font-size: 1.3rem; }
-.stats-panel span { color: var(--dim); font-size: 0.65rem; line-height: 1.2; }
+.stats-panel strong { display: block; color: var(--hue); font-family: var(--display); font-size: var(--t-xl); }
+.stats-panel span { color: var(--dim); font-size: var(--t-2xs); line-height: 1.2; }
 .stats-panel.random-card { display: block; text-align: left; }
-.entry-card-word { margin: 4px 0 8px; font-family: var(--display); font-size: 1.7rem; font-weight: 400; }
+.entry-card-word { margin: 4px 0 8px; font-family: var(--display); font-size: var(--t-3xl); font-weight: 400; }
 .index-detail.is-static { border-left: 0; }
 .index-detail.is-static .index-detail-inner { padding-inline: 0; }
 .load-more { width: 100%; margin-top: 12px; }
@@ -878,7 +897,7 @@ textarea:focus-visible {
   min-height: 74px;
   padding: 11px;
   border: 1px solid var(--line-strong);
-  border-radius: 13px;
+  border-radius: var(--r-sm);
   color: var(--ink-soft);
   background: var(--card);
   text-align: left;
@@ -887,23 +906,23 @@ textarea:focus-visible {
 .mode-button[aria-pressed="true"] { border-color: var(--hue); color: var(--hue); background: var(--hue-wash); }
 .target-words { display: grid; gap: 8px; margin: 13px 0; }
 .target-words > div { padding: 10px 12px; border-left: 2px solid var(--hue); background: var(--hue-wash); }
-.target-word { margin: 0; font-family: var(--display); font-size: 1.15rem; }
-.target-definition { margin: 3px 0 0; color: var(--dim); font-size: 0.72rem; }
+.target-word { margin: 0; font-family: var(--display); font-size: var(--t-lg); }
+.target-definition { margin: 3px 0 0; color: var(--dim); font-size: var(--t-xs); }
 .practice-card .paper-input { margin: 10px 0; }
 .feedback-card { border-top-color: var(--ok); }
 .verdicts { display: flex; flex-wrap: wrap; gap: 6px; margin: 13px 0; }
-.verdict { margin: 0; padding: 6px 9px; border-radius: 999px; background: var(--hue-wash); font-size: 0.7rem; }
+.verdict { margin: 0; padding: 6px 9px; border-radius: var(--r-pill); background: var(--hue-wash); font-size: var(--t-xs); }
 .verdict-correct { color: var(--ok); }
 .verdict-incorrect, .verdict-not_used { color: var(--danger); }
 .corrections article { padding: 10px 0; border-top: 1px solid var(--line); }
 .correction-change { margin: 0; font-weight: 650; }
-.correction-why { margin: 3px 0 0; color: var(--dim); font-size: 0.76rem; }
+.correction-why { margin: 3px 0 0; color: var(--dim); font-size: var(--t-xs); }
 #practice-next { margin-top: 10px; }
 
 .tool-card { margin-top: 12px; }
 .tool-card .section-heading { align-items: flex-start; }
-.tool-card .section-heading h2 { margin-top: 3px; font-size: 1.4rem; }
-.tool-card > p:not(.message, .eyebrow) { color: var(--dim); font-size: 0.84rem; line-height: 1.5; }
+.tool-card .section-heading h2 { margin-top: 3px; font-size: var(--t-xl); }
+.tool-card > p:not(.message, .eyebrow) { color: var(--dim); font-size: var(--t-sm); line-height: 1.5; }
 .compact-grid { margin-top: 13px; }
 .anki-options { margin-top: 12px; }
 .check-row {
@@ -912,17 +931,17 @@ textarea:focus-visible {
   align-items: flex-start;
   margin-top: 11px;
   color: var(--dim);
-  font-size: 0.76rem;
+  font-size: var(--t-xs);
   line-height: 1.4;
 }
 .check-row input { flex: none; width: 17px; height: 17px; accent-color: var(--hue); }
 .status-pill {
   flex: none;
   padding: 5px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   color: var(--pending);
   background: color-mix(in srgb, var(--pending) 12%, transparent);
-  font-size: 0.63rem;
+  font-size: var(--t-3xs);
   font-weight: 750;
 }
 .status-pill.is-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
@@ -934,7 +953,7 @@ textarea:focus-visible {
   border: 0;
   color: var(--danger);
   background: transparent;
-  font-size: 0.74rem;
+  font-size: var(--t-xs);
   cursor: pointer;
 }
 .file-list { margin-top: 12px; border-top: 1px solid var(--line); }
@@ -945,7 +964,7 @@ textarea:focus-visible {
   padding: 9px 0;
   border-bottom: 1px solid var(--line);
   color: var(--dim);
-  font-size: 0.72rem;
+  font-size: var(--t-xs);
 }
 .file-list span { text-transform: capitalize; }
 .file-list code { overflow: hidden; color: var(--ink-soft); text-overflow: ellipsis; white-space: nowrap; }
@@ -957,7 +976,7 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 .backup-drawer { margin-top: 12px; }
-.backup-drawer summary { min-height: 42px; color: var(--hue); font-size: 0.76rem; font-weight: 650; cursor: pointer; }
+.backup-drawer summary { min-height: 42px; color: var(--hue); font-size: var(--t-xs); font-weight: 650; cursor: pointer; }
 .backup-drawer .file-list { margin-top: 0; }
 
 .privacy-footer { padding-bottom: 12px; }
@@ -989,13 +1008,13 @@ textarea:focus-visible {
   min-height: 52px;
   padding: 2px;
   border: 0;
-  border-radius: 11px;
+  border-radius: var(--r-xs);
   color: var(--dim);
   background: transparent;
   cursor: pointer;
 }
-.tab > span { font-family: var(--display); font-size: 1.15rem; line-height: 1; }
-.tab small { font-size: 0.59rem; font-weight: 650; }
+.tab > span { font-family: var(--display); font-size: var(--t-lg); line-height: 1; }
+.tab small { font-size: var(--t-3xs); font-weight: 650; }
 .tab.is-active { color: var(--hue); background: var(--hue-wash); }
 
 .install-tip { bottom: calc(78px + env(safe-area-inset-bottom)); }
