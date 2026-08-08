@@ -520,15 +520,35 @@ textarea.hw::placeholder { color: var(--ghost); }
   white-space: nowrap;
   text-align: right;
   text-overflow: ellipsis;
+  transition: opacity 150ms ease;
 }
-.index-row[aria-expanded="true"] .index-gloss { display: none; }
+/* Fade rather than un-display: the row keeps its width, so opening a word
+   never nudges the layout sideways. */
+.index-row[aria-expanded="true"] .index-gloss { opacity: 0; }
 
+/* height:auto cannot be transitioned, so app.js measures the panel and drives an
+   explicit pixel height, then releases it to auto once the animation lands.
+   Exact easing, and no reliance on fr-track interpolation. */
 .index-detail {
-  padding: 2px 8px 14px;
-  border-bottom: 1px solid var(--line);
-  border-left: 2px solid var(--hue);
+  height: 0;
+  overflow: hidden;
+  border-left: 2px solid transparent;
   background: var(--card);
+  transition: height 280ms cubic-bezier(.32, .72, 0, 1), border-color 200ms ease;
 }
+.index-detail.is-open { border-left-color: var(--hue); }
+.index-detail-inner { padding: 2px 8px 14px; }
+/* the inner content drifts up slightly as the panel opens */
+.index-detail-inner > * {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 200ms ease 60ms, transform 200ms ease 60ms;
+}
+.index-detail.is-open .index-detail-inner > * {
+  opacity: 1;
+  transform: none;
+}
+
 .index-detail .full-type {
   margin: 0 0 7px;
   color: var(--hue);

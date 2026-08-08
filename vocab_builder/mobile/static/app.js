@@ -353,17 +353,62 @@ function indexLetter(word) {
   return /[A-Z]/.test(base) ? base : "#";
 }
 
+// height:auto is not animatable, so drive an explicit pixel height and hand it
+// back to auto once the transition lands; otherwise a later entry with more
+// senses would be clipped to the height captured here.
+// A forced reflow rather than requestAnimationFrame: it commits the starting
+// height synchronously, so the transition cannot be skipped by a frame that
+// never arrives (background tabs, and headless browsers under test).
+function pinCurrentHeight(detail) {
+  void detail.offsetHeight;
+}
+
+function collapseDetail(detail) {
+  detail.style.height = `${detail.scrollHeight}px`;
+  pinCurrentHeight(detail);
+  detail.classList.remove("is-open");
+  detail.style.height = "0px";
+  // Collapsed content stays in the DOM so it can animate, so take it out of the
+  // tab order and the accessibility tree by hand.
+  detail.inert = true;
+}
+
+function expandDetail(detail) {
+  detail.inert = false;
+  detail.classList.add("is-open");
+  const target = detail.scrollHeight;
+  detail.style.height = "0px";
+  pinCurrentHeight(detail);
+  detail.style.height = `${target}px`;
+
+  const settle = (event) => {
+    if (event.propertyName !== "height") return;
+    detail.removeEventListener("transitionend", settle);
+    detail.style.height = "auto";
+    // "nearest" does nothing when the entry already fits, so an in-view row
+    // never moves; it only rescues one opened near the bottom of the screen.
+    detail.scrollIntoView({
+      behavior: reducedMotion.matches ? "auto" : "smooth",
+      block: "nearest",
+    });
+  };
+  detail.addEventListener("transitionend", settle);
+}
+
 function closeOpenRow() {
   const open = entryList.querySelector('.index-row[aria-expanded="true"]');
   if (!open) return;
   open.setAttribute("aria-expanded", "false");
-  open.nextElementSibling.hidden = true;
+  collapseDetail(open.nextElementSibling);
 }
 
 function buildDetail(entry) {
   const detail = document.createElement("div");
   detail.className = "index-detail";
-  detail.hidden = true;
+  detail.inert = true;
+  const inner = document.createElement("div");
+  inner.className = "index-detail-inner";
+  detail.appendChild(inner);
 
   if (entry.word_type) {
     const type = document.createElement("p");
@@ -372,7 +417,7 @@ function buildDetail(entry) {
     type.textContent = senses > 1
       ? `${entry.word_type} · ${senses} senses`
       : entry.word_type;
-    detail.appendChild(type);
+    inner.appendChild(type);
   }
 
   if (entry.definitions?.length) {
@@ -382,10 +427,10 @@ function buildDetail(entry) {
       item.textContent = definition;
       senses.appendChild(item);
     });
-    detail.appendChild(senses);
+    inner.appendChild(senses);
   }
 
-  (entry.examples || []).forEach((example) => renderExample(detail, example));
+  (entry.examples || []).forEach((example) => renderExample(inner, example));
   return detail;
 }
 
@@ -432,7 +477,7 @@ function renderEntries(entries, { grouped = false } = {}) {
       closeOpenRow();
       if (isOpen) return;
       row.setAttribute("aria-expanded", "true");
-      detail.hidden = false;
+      expandDetail(detail);
     });
 
     entryList.append(row, detail);
