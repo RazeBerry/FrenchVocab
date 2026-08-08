@@ -499,7 +499,7 @@ function renderEntries(entries, { grouped = false } = {}) {
 async function loadRecent() {
   const language = state.language;
   try {
-    const entries = await api("/api/recent?limit=8", {}, language);
+    const entries = await api("/api/recent?limit=30", {}, language);
     if (language === state.language) renderEntries(entries);
   } catch (_) { /* the connection dot already reports failures */ }
 }

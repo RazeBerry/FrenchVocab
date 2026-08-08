@@ -497,29 +497,25 @@ def test_blocking_previews_run_in_worker_threads_per_language():
     assert [response.status_code for response in responses] == [200, 200]
 
 
-def test_service_worker_precaches_the_versioned_shell_assets():
+def test_service_worker_precaches_the_unversioned_shell_assets():
+    """Freshness comes from Cache-Control, not from a hand-maintained ?v=.
+
+    Every asset under /static is served with `no-cache`, so a version query
+    would add nothing and a stale one would silently pin the old file. The
+    shell cache name is stable for the same reason: the activate handler drops
+    every other cache and the network-first fetch handler overwrites entries.
+    """
     static = files("vocab_builder.mobile").joinpath("static")
     html = static.joinpath("index.html").read_text(encoding="utf-8")
     app_js = static.joinpath("app.js").read_text(encoding="utf-8")
     worker = static.joinpath("service-worker.js").read_text(encoding="utf-8")
-    shell_assets = set(
-        re.findall(r'/(static/(?:app\.js|styles\.css)\?v=[^"\s]+)', html)
-    )
 
-    assert {asset.split("?", 1)[0] for asset in shell_assets} == {
-        "static/app.js",
-        "static/styles.css",
-    }
-    asset_versions = {asset.split("?", 1)[1] for asset in shell_assets}
-    assert len(asset_versions) == 1
+    shell_assets = set(re.findall(r'/(static/(?:app\.js|styles\.css))\b', html))
+    assert shell_assets == {"static/app.js", "static/styles.css"}
+    assert not re.search(r'static/(?:app\.js|styles\.css)\?v=', html)
+    assert not re.search(r"\?v=", worker)
     assert all(f'"/{asset}"' in worker for asset in shell_assets)
-    shell_cache_version = re.search(
-        r'const SHELL_CACHE = "vocabbuilder-shell-(v\d+)";',
-        worker,
-    )
-    assert shell_cache_version is not None
-    assert {version.replace("=", "") for version in asset_versions} == {
-        shell_cache_version.group(1)
-    }
+    assert re.search(r'const SHELL_CACHE = "vocabbuilder-shell";', worker)
+
     assert 'document.addEventListener("visibilitychange"' in app_js
     assert 'if (!el("search-input").value.trim()) loadRecent();' in app_js

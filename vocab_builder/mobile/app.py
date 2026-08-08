@@ -17,6 +17,21 @@ from .catalog import MobileVocabCatalog
 from .service import MobileServiceError, MobileVocabService, PrivateAccessError
 
 
+class RevalidatingStaticFiles(StaticFiles):
+    """Serve assets that must revalidate instead of aging into staleness.
+
+    With no directive a browser assigns heuristic freshness of roughly a tenth
+    of the file's age, so a long-untouched asset can be trusted for days after a
+    deployment. Revalidation costs one conditional request that the
+    network-first service worker already makes, and answers 304 with no body.
+    """
+
+    def file_response(self, *args: Any, **kwargs: Any):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 class PreviewRequest(BaseModel):
     text: str = Field(min_length=1, max_length=1000)
 
@@ -132,7 +147,7 @@ def create_app(
 
     static_root = files("vocab_builder.mobile").joinpath("static")
     static_path = Path(str(static_root))
-    app.mount("/static", StaticFiles(directory=static_path), name="static")
+    app.mount("/static", RevalidatingStaticFiles(directory=static_path), name="static")
 
     # Unversioned documents must revalidate. Without an explicit directive a
     # browser applies heuristic freshness (roughly a tenth of the file's age),
