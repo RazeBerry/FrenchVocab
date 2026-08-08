@@ -261,6 +261,39 @@ def test_concurrent_inserts_preserve_all_entries(tmp_path: Path):
     assert content.count(r"\entry{") == 2
 
 
+def test_concurrent_equivalent_inserts_commit_only_once(tmp_path: Path):
+    first = _repo(tmp_path)
+    first.create_initial_tex_file()
+    second = _repo(tmp_path)
+    entries = [
+        first.format_latex_entry("éphémère", "adjective", ["Fleeting"], []),
+        second.format_latex_entry("ephemere", "adjective", ["Short-lived"], []),
+    ]
+    results: list[bool] = []
+
+    threads = [
+        threading.Thread(
+            target=lambda repo, entry, word: results.append(
+                repo.insert_entry_alphabetically(entry, word)
+            ),
+            args=(repo, entry, word),
+        )
+        for repo, entry, word in zip(
+            (first, second),
+            entries,
+            ("éphémère", "ephemere"),
+        )
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    content = first.latex_file.read_text(encoding="utf-8")
+    assert sorted(results) == [False, True]
+    assert content.count(r"\entry{") == 1
+
+
 def test_create_initial_tex_file_does_not_overwrite_existing_file(tmp_path: Path):
     repo = _repo(tmp_path)
     repo.latex_file.write_text("existing saved content", encoding="utf-8")

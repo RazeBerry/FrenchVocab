@@ -18,6 +18,7 @@ from .llm_coordinator import LLMCoordinator
 from .anki_manager import AnkiExportManager
 from .spelling_checker import SpellingChecker
 from .vocab_display_mixin import VocabDisplayMixin
+from .vocab_application import VocabCaptureMixin
 from .vocab_merge_mixin import VocabMergeMixin
 from .vocab_runtime_mixin import VocabRuntimeMixin
 from .word_entry_workflow import WorkflowOutcome
@@ -74,7 +75,7 @@ class _TestDoubleVocabRepoAdapter:
         return set(self.word_entries.keys())
 
 
-class VocabBuilder(VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
+class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabDisplayMixin):
     DEFAULT_LANGUAGE_CONFIG = get_language_config(None)
     DEFAULT_LANGUAGE_CODE = default_language_code()
     language_config: LanguageConfig = DEFAULT_LANGUAGE_CONFIG

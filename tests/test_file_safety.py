@@ -306,6 +306,40 @@ class TestAtomicFileWriter(unittest.TestCase):
 
             self.assertEqual(path.read_text(), "20")
 
+    def test_file_lock_is_reentrant_for_one_logical_save(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "test.txt"
+            path.write_text("initial")
+
+            with file_lock(path):
+                with file_lock(path):
+                    path.write_text("nested")
+
+            self.assertEqual(path.read_text(), "nested")
+
+    def test_catalog_lock_serializes_different_artifacts(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            first = root / "FrenchVocab.tex"
+            second = root / "history" / "fr_translations.jsonl"
+            first.write_text("vocab")
+            second.parent.mkdir()
+            second.write_text("history")
+            entered = threading.Event()
+
+            def lock_second_artifact():
+                with file_lock(second):
+                    entered.set()
+
+            with patch.dict(os.environ, {"VOCABBUILDER_CONFIG_DIR": td}):
+                with file_lock(first):
+                    worker = threading.Thread(target=lock_second_artifact)
+                    worker.start()
+                    self.assertFalse(entered.wait(timeout=0.05))
+                self.assertTrue(entered.wait(timeout=1.0))
+                worker.join(timeout=1.0)
+                self.assertFalse(worker.is_alive())
+
     def test_atomic_write_replace_failure_keeps_original(self):
         """Test that final replace failures do not expose partial content."""
         with tempfile.TemporaryDirectory() as td:

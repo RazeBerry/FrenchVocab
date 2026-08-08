@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+CONFIG_ROOT=${XDG_CONFIG_HOME:-"$HOME/.config"}
+LAUNCHER_CONFIG=${VOCABBUILDER_LAUNCHER_CONFIG:-"$CONFIG_ROOT/vocabbuilder/remote.env"}
+if [ -r "$LAUNCHER_CONFIG" ]; then
+  # User-specific deployment identity belongs outside the public repository.
+  # shellcheck disable=SC1090
+  . "$LAUNCHER_CONFIG"
+fi
+
+REMOTE_HOST=${VOCABBUILDER_REMOTE_HOST:-vocabbuilder-mobile}
+REMOTE_USER=${VOCABBUILDER_REMOTE_USER:-}
+if [ -z "$REMOTE_USER" ]; then
+  echo "Set VOCABBUILDER_REMOTE_USER in $LAUNCHER_CONFIG or your shell environment." >&2
+  exit 2
+fi
+TARGET="$REMOTE_USER@$REMOTE_HOST"
+
+exec tailscale ssh "$TARGET" -t "sudo /usr/local/sbin/vocabbuilder-cli"

@@ -616,13 +616,24 @@ class TranslatorCLI:
             return False
 
         if self.confirm_translation(source_text, target_text):
-            latex_entry = self._format_latex_entry(source_text, target_text)
-            if not self._add_entry_to_file(latex_entry):
-                return False
-            self._add_entry_to_memory(source_text, target_text, normalized)
-            self._log_saved_translation(source_text, target_text, normalized)
-            self.ui.success("Translation saved successfully!")
-            return True
+            with file_lock(self.latex_file):
+                # The AI request and confirmation may take minutes. Refresh and
+                # repeat duplicate validation only after acquiring the commit
+                # lock so two sessions cannot append the same pair.
+                self._entries_loaded = False
+                self._ensure_entries_loaded()
+                existing_entry = self.check_duplicate(normalized)
+                if existing_entry:
+                    self.display_duplicate_warning(existing_entry)
+                    return True
+
+                latex_entry = self._format_latex_entry(source_text, target_text)
+                if not self._add_entry_to_file(latex_entry):
+                    return False
+                self._add_entry_to_memory(source_text, target_text, normalized)
+                self._log_saved_translation(source_text, target_text, normalized)
+                self.ui.success("Translation saved successfully!")
+                return True
 
         self.ui.warning("Save cancelled.")
         return False

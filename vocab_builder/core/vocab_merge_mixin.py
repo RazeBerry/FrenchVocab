@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Tuple
 
 from vocab_builder.models import normalize_word_key
 
+from .file_safety import file_lock
 from .vocab_repository import EntryNotFoundError
 
 
@@ -19,20 +20,30 @@ class VocabMergeMixin:
         new_defs: List[str],
         new_examples: List[Tuple[str, str]],
     ) -> bool:
-        success = self._vocab_repo.merge_into_existing(existing_word, new_type, new_defs, new_examples)
-        if not success:
-            return False
+        with file_lock(self._vocab_repo.latex_file):
+            success = self._vocab_repo.merge_into_existing(
+                existing_word,
+                new_type,
+                new_defs,
+                new_examples,
+            )
+            if not success:
+                return False
 
-        updated_entry = self.word_entries.get(key, {})
-        self._log_merge_history(
-            existing_word=updated_entry.get("word", existing_word),
-            final_type=updated_entry.get("type", new_type),
-            merged_definitions=updated_entry.get("definitions_list", new_defs),
-            merged_examples=updated_entry.get("examples_list", []),
-            added_definitions=new_defs,
-            added_examples=new_examples,
-        )
-        return True
+            refreshed_key = self._vocab_repo.normalized_entries.get(
+                self._vocab_repo.normalize_word(existing_word),
+                key,
+            )
+            updated_entry = self.word_entries.get(refreshed_key, {})
+            self._log_merge_history(
+                existing_word=updated_entry.get("word", existing_word),
+                final_type=updated_entry.get("type", new_type),
+                merged_definitions=updated_entry.get("definitions_list", new_defs),
+                merged_examples=updated_entry.get("examples_list", []),
+                added_definitions=new_defs,
+                added_examples=new_examples,
+            )
+            return True
 
     def _fallback_existing_definitions(self, entry: Dict[str, Any]) -> List[str]:
         definitions_list = entry.get("definitions_list") or []
@@ -184,4 +195,3 @@ class VocabMergeMixin:
 
         # Fallback for test doubles without _vocab_repo
         return self._merge_into_existing_fallback(entry, existing_word, new_type, new_defs, new_examples)
-

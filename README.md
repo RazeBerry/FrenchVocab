@@ -19,6 +19,17 @@ An AI-assisted command line companion for growing bilingual or monolingual vocab
 - Python 3.11+
 - Internet access for the selected AI provider (Google Gemini or Anthropic Claude)
 
+## Private phone access
+
+The optional mobile surface turns VocabBuilder into a small installable web app
+without publishing it to the public internet. A Tailscale-connected VM owns the
+authoritative vocabulary files; iPhone capture, the Mac browser, and the full
+Mac terminal interface all work against that same data.
+
+Install the optional server dependencies with `pip install '.[mobile]'`, then
+see [docs/MOBILE.md](docs/MOBILE.md) for the multilingual one-source-of-truth
+architecture, private deployment layout, phone installation, and Mac SSH launcher.
+
 ---
 
 ## Quick Start

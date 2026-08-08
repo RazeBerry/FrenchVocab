@@ -8,6 +8,8 @@
 ## Project Overview
 VocabBuilder is an AI-assisted CLI for building bilingual or monolingual vocabulary lists, generating LaTeX documents, and exporting Anki decks. The current app supports English (`en`), French (`fr`), and German (`de`), has Rich-based keyboard navigation, and integrates with Google Gemini or Anthropic Claude. Install with `pip install vocab-builder` and run `vocabbuilder`.
 
+An optional private web interface (`vocabbuilder-mobile`, extras `[mobile]`) serves the same collections to a phone or browser over Tailscale. See `docs/MOBILE.md` for the deployment topology.
+
 ## Project Structure and Module Organization
 - All source code lives under the `vocab_builder/` package.
 - `vocab_builder/cli/main.py` is the primary CLI entry point.
@@ -18,8 +20,11 @@ VocabBuilder is an AI-assisted CLI for building bilingual or monolingual vocabul
 - `vocab_builder/` root modules (`models.py`, `anki_exporter.py`, `latex_repository.py`, `llm_client.py`, `ui_helper.py`) provide shared infrastructure.
 - `vocab_builder/compat.py` provides backward-compatible helpers for env vars, config paths, and keyring migration.
 - `vocab_builder/diagnostics/` contains ESC latency tracing tools.
+- `vocab_builder/mobile/` contains the optional FastAPI web interface and its static front end (`static/index.html`, `styles.css`, `app.js`, `service-worker.js`).
 - `FrenchVocab.py` is a deprecated shim that delegates to `vocab_builder.cli.main`.
 - `scripts/` contains utility and demo scripts, including `scripts/bulk_add.py` for operator-reviewed structured JSON vocabulary batches.
+- `scripts/deploy/` holds VM provisioning and backup scripts; `scripts/macos/vocab` is the Mac launcher for the remote CLI.
+- `deploy/` holds the systemd unit and timer files for the mobile server and its daily backup.
 - `tests/` is a pytest suite (`test_*.py`) for architecture boundaries, onboarding, translators, language config, exporters, and UI behavior.
 
 ## Build, Test, and Development Commands
@@ -46,6 +51,12 @@ python scripts/demo_guided_onboarding.py
 # Operator bulk-add workflow
 python scripts/bulk_add.py --language fr --file entries.json --dry-run
 python scripts/bulk_add.py --language fr --file entries.json --json
+
+# Private mobile/web interface (requires the [mobile] extra)
+pip install -e ".[mobile]"
+vocabbuilder-mobile --help
+vocabbuilder-mobile --languages fr,de,en --default-language fr
+vocabbuilder-mobile --language fr --latex-file ./FrenchVocab.tex
 
 # Tests
 pytest
@@ -89,6 +100,31 @@ pytest -k "anki"
 - English is monolingual: it omits translation workflows and uses plain-English example paraphrases as active-recall cues.
 - `english_tex.py` and `german_tex.py` contain dedicated language-specific LaTeX templates.
 - `latex_templates.py`, `anki_shared_styles.py`, and `anki_themes.py` provide shared assets.
+
+### Private Mobile Interface (`vocab_builder/mobile/`)
+- `cli.py` is the `vocabbuilder-mobile` entry point; it binds `127.0.0.1:8080` by default and never opens a public port.
+- `app.py` builds the FastAPI app and owns the JSON API (`/api/collections`, `/api/status`, `/api/preview`, `/api/save`, `/api/recent`, `/api/search`) plus the static shell.
+- `service.py` wraps one `VocabBuilder` per language with its own in-process lock, preview tokens, idempotent save receipts, and history.
+- `catalog.py` registers those per-language services and resolves the `?language=` parameter; `factory.py` constructs them.
+- Blocking provider and repository work is exposed through synchronous FastAPI handlers so Starlette runs it in worker threads; do not call those workflows directly from an `async def` route.
+- Tailscale Serve supplies private HTTPS and identity; provider credentials stay server-side and are never sent to the browser.
+
+#### Mobile front end (`vocab_builder/mobile/static/`)
+- Plain HTML/CSS/JS with no build step and no external requests (Tailscale-only hosts may have no public egress).
+- All colors are CSS custom properties on `:root`, re-declared in one `@media (prefers-color-scheme: dark)` block. Style components through the tokens; never hardcode a color inside the dark block, or that rule will not apply in light mode.
+- The language picker and the connection chip share one pill rule; keep their metrics identical when editing either.
+- When changing `styles.css` or `app.js`, bump the `?v=N` query in `index.html` **and** the matching `SHELL_CACHE`/`SHELL_FILES` entries in `service-worker.js`, or installed home-screen apps keep serving the old assets.
+- User-visible copy is generated in `app.js` (article agreement, singular/plural); keep it grammatical for every registered language name.
+
+### Persistence and Concurrency Model
+- In the deployed topology, `/var/lib/vocabbuilder` is the only writable source of truth. The phone surface and the Mac `vocab` launcher operate on that VM state; repository-local vocabulary files are migration snapshots, not a second database. Do not introduce bidirectional file sync.
+- Every persisted read-modify-write must use `vocab_builder.core.file_safety.file_lock(path)`. It acquires the catalog-wide `.vocabbuilder.lock` before the artifact sidecar `.<filename>.lock`; nested acquisition in one thread is deliberately reentrant.
+- Cross-process lock files must remain beside the authoritative data/config root, never in the temporary directory. The systemd service uses `PrivateTmp=true`, so `/tmp` locks would split the phone and SSH CLI into different lock domains and reintroduce silent lost updates.
+- Reload authoritative disk state only after acquiring the commit lock. Duplicate checks, merge calculations, insertion decisions, and Anki state reconciliation must be recomputed inside that transaction rather than trusting pre-lock caches.
+- Keep a vocabulary mutation, its history append, and its Anki acquisition-order update inside one outer catalog transaction. Continue using atomic replacement for rewritten files and `flush` + `fsync` for append-only JSONL.
+- Anki tracker writes use a three-way merge of the manager's persisted baseline, current disk state, and local changes so concurrent additions and intentional removals do not overwrite one another.
+- `scripts/deploy/backup_mobile_data.sh` takes the same catalog lock with util-linux `flock` before archiving. Any new backup/export path that needs a coherent multi-file snapshot must join that lock domain.
+- Repository cache invalidation uses `(device, inode, mtime_ns, size)` signatures. Do not weaken it to timestamps alone.
 
 ### Shared Modules (`vocab_builder/`)
 - `models.py` defines `WordEntry` and normalization helpers.
@@ -139,6 +175,13 @@ choice = self.ui.interactive_menu(
 3. Fall back to keyring lookup when env credentials are missing/invalid.
 4. Launch guided/advanced interactive setup when credentials are still unavailable.
 
+### Persisting Mutable State Safely
+1. Acquire `file_lock()` for the authoritative artifact (which also takes the catalog lock).
+2. Reload the current file/index while holding that lock.
+3. Repeat duplicate/conflict validation and compute the mutation from the refreshed state.
+4. Commit the primary file atomically, then write coupled history/tracker state before releasing the outer transaction.
+5. Add a multiprocessing regression test that starts stale independent instances and proves every successful mutation survives. Thread-only tests are insufficient for VM/CLI concurrency.
+
 ## Environment Variables
 All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENCH_VOCAB_*` names are still recognized via `vocab_builder/compat.py` with deprecation warnings.
 
@@ -171,6 +214,8 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 - Keep tests mirrored to modules (for example `vocab_builder/core/vocab.py` -> `tests/test_sentence_flow.py`).
 - Name new files `test_<feature>.py` and test functions `test_<behavior>`.
 - Use stubs/fixtures (`tests/_stubs.py`) to avoid real API calls.
+- Concurrency changes must cover both in-process threads and POSIX processes. Keep the isolated-`tempfile.tempdir` regression in `tests/test_concurrency_transactions.py`; it models systemd `PrivateTmp` without touching production data.
+- Mobile changes should exercise the ASGI surface in `tests/test_mobile_service.py`, including duplicate commits, save retries, language routing, Tailscale identity enforcement, and cross-language worker-thread behavior.
 - Run `pytest` before opening a pull request.
 - When changing agent docs, run `pytest tests/test_agent_docs_sync.py`.
 
@@ -186,5 +231,8 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 
 ## Security and Configuration Tips
 - Store provider keys in keyring or environment variables; never commit secrets.
+- This is a public repository. Before pushing, scan the entire unpushed commit range (not only the final worktree) for real API keys, `.env` content, private keys, tailnet FQDNs, account emails, cloud project/instance IDs, private IPs, personal VM logins, and vocabulary/history/Anki data.
+- Keep deployment identity in root-owned VM environment files or untracked local shell configuration. Tracked documentation and launcher defaults should use generic machine names and placeholders wherever practical.
+- Public service topology and filesystem paths are not authentication. Preserve the actual boundary: localhost binding, Tailscale Serve identity, tailnet policy, and server-only credentials.
 - Avoid checking in generated LaTeX, PDF, or Anki artifacts.
 - Extend `.gitignore` when adding new generated outputs.

@@ -34,8 +34,15 @@ dependencies = [
     "python-dotenv>=1.0.0",
 ]
 
+[project.optional-dependencies]
+mobile = [
+    "fastapi>=0.103,<1.0",
+    "uvicorn>=0.25,<1.0",
+]
+
 [project.scripts]
 vocabbuilder = "vocab_builder.cli.main:main"
+vocabbuilder-mobile = "vocab_builder.mobile.cli:main"
 
 [tool.setuptools]
 py-modules = ["FrenchVocab"]
@@ -43,6 +50,9 @@ license-files = ["LICENSE"]
 
 [tool.setuptools.packages.find]
 include = ["vocab_builder*"]
+
+[tool.setuptools.package-data]
+"vocab_builder.mobile" = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

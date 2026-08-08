@@ -88,9 +88,10 @@ class VocabRepository:
         self._entries_loaded: bool = False
         self._entries_loading: bool = False
         self._entries_ready = threading.Event()
+        self._loaded_file_signature: Optional[Tuple[int, int, int, int]] = None
 
         # Caching for count_entries
-        self._entry_count_snapshot: Optional[Tuple[float, int, int]] = None
+        self._entry_count_snapshot: Optional[Tuple[Tuple[int, int, int, int], int]] = None
         self._reported_load_issues: Set[str] = set()
 
     def _get_entry_command(self) -> str:
@@ -159,11 +160,21 @@ class VocabRepository:
     # -------------------------------------------------------------------------
 
     def ensure_entries_loaded(self) -> None:
-        """Load LaTeX entries on first access to avoid startup penalty."""
+        """Load entries lazily and refresh after another process changes the file."""
         while True:
+            current_signature = self._current_file_signature()
             with self._entries_lock:
-                if self._entries_loaded:
+                if (
+                    self._entries_loaded
+                    and self._loaded_file_signature == current_signature
+                ):
                     return
+
+                if self._entries_loaded:
+                    # A phone request and a Tailscale SSH CLI session may use
+                    # separate processes. Atomic writes protect the file; this
+                    # signature check keeps both in-memory indexes current.
+                    self._entries_loaded = False
 
                 if self._entries_loading:
                     wait_event = self._entries_ready
@@ -175,6 +186,7 @@ class VocabRepository:
                     wait_event = None
 
             if should_load:
+                load_start_signature = current_signature
                 try:
                     self.load_existing_entries()
                 except Exception:
@@ -185,12 +197,25 @@ class VocabRepository:
                     with self._entries_lock:
                         self._entries_loading = False
                         self._entries_ready.set()
+                if load_start_signature != self._current_file_signature():
+                    # A writer replaced the file while it was being parsed.
+                    # Retry rather than attaching the new signature to an old index.
+                    with self._entries_lock:
+                        self._entries_loaded = False
+                    continue
                 return
 
             # Wait for the active loading thread to finish and retry.
             assert wait_event is not None
             if not wait_event.wait(timeout=30.0):
                 raise TimeoutError("Timed out waiting for vocabulary entries to load")
+
+    def _current_file_signature(self) -> Optional[Tuple[int, int, int, int]]:
+        try:
+            stat = self.latex_file.stat()
+        except OSError:
+            return None
+        return stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_size
 
     def load_existing_entries(self) -> None:
         """Load existing vocabulary entries using a balanced-brace parser."""
@@ -267,6 +292,7 @@ class VocabRepository:
         self.entry_count = len(self.word_entries)
         with self._entries_lock:
             self._entries_loaded = True
+            self._loaded_file_signature = self._current_file_signature()
             self._entries_ready.set()
 
     def _unique_entry_key(self, base_key: str) -> str:
@@ -288,13 +314,12 @@ class VocabRepository:
             self._entry_count_snapshot = None
             return 0
 
-        signature = (stat.st_mtime, stat.st_size)
+        signature = (stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_size)
         if (
             self._entry_count_snapshot is not None
-            and self._entry_count_snapshot[0] == signature[0]
-            and self._entry_count_snapshot[1] == signature[1]
+            and self._entry_count_snapshot[0] == signature
         ):
-            return self._entry_count_snapshot[2]
+            return self._entry_count_snapshot[1]
 
         content = self._read_text_for_scan()
         if content is None:
@@ -302,7 +327,7 @@ class VocabRepository:
 
         entry_cmd = self._get_entry_command()
         count = content.count(f"{entry_cmd}{{")
-        self._entry_count_snapshot = (signature[0], signature[1], count)
+        self._entry_count_snapshot = (signature, count)
         return count
 
     # -------------------------------------------------------------------------
@@ -345,6 +370,14 @@ class VocabRepository:
         examples: List[Tuple[str, str]],
     ) -> None:
         """Update the in-memory dictionaries with a new word entry."""
+        current_signature = self._current_file_signature()
+        if self._loaded_file_signature != current_signature:
+            # The file changed during the save transaction. Reloading is both
+            # simpler and safer than trying to merge an index that may have
+            # missed an entry written by another process.
+            self.load_existing_entries()
+            return
+
         self._entries_loaded = True
         word_lower = word.lower()
         display_word = word if word_type.lower() == 'sentence' else word.capitalize()
@@ -360,6 +393,7 @@ class VocabRepository:
         normalized_word = self.normalize_word(word_lower)
         self.normalized_entries[normalized_word] = word_lower
         self.entry_count = len(self.word_entries)
+        self._loaded_file_signature = self._current_file_signature()
 
     def bulk_add_entries(
         self,
@@ -392,6 +426,11 @@ class VocabRepository:
                     content = file.read()
 
                 entry_cmd = self._get_entry_command()
+                if self._contains_word(content, entry_cmd, new_word):
+                    self.ui.warning(
+                        f"Cannot insert '{new_word}': an equivalent entry already exists."
+                    )
+                    return False
                 insert_position = self._choose_insert_position(content, entry_cmd, new_word)
 
                 updated_content = content[:insert_position] + new_entry + "\n\n" + content[insert_position:]
@@ -428,6 +467,13 @@ class VocabRepository:
         if insert_position is not None:
             return insert_position
         return self._fallback_insert_position_after_last_entry(content, last_end)
+
+    def _contains_word(self, content: str, entry_cmd: str, word: str) -> bool:
+        normalized = self.normalize_word(word)
+        return any(
+            self.normalize_word(groups[0].strip()) == normalized
+            for groups, _, _ in iter_entry_groups(content, entry_cmd, num_groups=1)
+        )
 
     def _scan_entries_for_insertion(
         self,
@@ -672,33 +718,36 @@ class VocabRepository:
             Uses transactional approach: file is updated first, then memory.
             If file update fails, memory remains unchanged (no partial state).
         """
-        self.ensure_entries_loaded()
-        key = existing_word.lower()
-        entry = self.word_entries.get(key)
-        if not entry:
-            self.ui.error(f"Cannot merge: existing entry for '{existing_word}' not found.")
-            return False
+        with file_lock(self.latex_file):
+            # Merge planning must use the file state protected by this exact
+            # transaction. Computing from a session cache before taking the
+            # lock lets two successful merges silently overwrite each other.
+            self.load_existing_entries()
+            normalized = self.normalize_word(existing_word)
+            key = self.normalized_entries.get(normalized, existing_word.lower())
+            entry = self.word_entries.get(key)
+            if not entry:
+                self.ui.error(f"Cannot merge: existing entry for '{existing_word}' not found.")
+                return False
 
-        defs_existing = self._coerce_existing_definitions(entry)
-        exs_existing = self._coerce_existing_examples(entry)
+            defs_existing = self._coerce_existing_definitions(entry)
+            exs_existing = self._coerce_existing_examples(entry)
+            merged_defs = self._dedup_merge_definitions(defs_existing, new_defs)
+            merged_exs = self._dedup_merge_examples(exs_existing, new_examples)
+            final_type = entry.get("type") or new_type
+            latex_block = self.format_latex_entry(
+                entry["word"],
+                final_type,
+                merged_defs,
+                merged_exs,
+                entry_command=self.entry_command,
+            )
 
-        merged_defs = self._dedup_merge_definitions(defs_existing, new_defs)
-        merged_exs = self._dedup_merge_examples(exs_existing, new_examples)
+            if not self._replace_entry_block(entry["word"], latex_block):
+                return False
 
-        final_type = entry.get("type") or new_type
-        latex_block = self.format_latex_entry(
-            entry["word"],
-            final_type,
-            merged_defs,
-            merged_exs,
-            entry_command=self.entry_command,
-        )
-
-        if not self._replace_entry_block(entry["word"], latex_block):
-            return False
-
-        self._update_entry_memory(entry, final_type, merged_defs, merged_exs)
-        return True
+            self.load_existing_entries()
+            return True
 
     @staticmethod
     def _coerce_existing_definitions(entry: Dict[str, Any]) -> List[str]:

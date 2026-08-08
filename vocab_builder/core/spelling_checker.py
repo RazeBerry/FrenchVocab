@@ -52,6 +52,20 @@ class SpellingChecker:
         # Valid correction found that's different from input - ASK IMMEDIATELY
         return self._prompt_correction(original_word, corrected_spelling)
 
+    def suggest(self, original_word: str, ai_response: str) -> Optional[str]:
+        """Return a safe non-interactive suggestion for headless interfaces.
+
+        Unlike :meth:`check`, this method never prompts. ``None`` means the AI
+        offered no meaningful correction; otherwise the caller can present the
+        returned spelling for explicit confirmation.
+        """
+        corrected_spelling = self._extract_suggestion(ai_response)
+        if not corrected_spelling or self._is_placeholder(corrected_spelling, original_word):
+            return None
+
+        normalized = self._strip_trailing_punctuation(corrected_spelling.strip())
+        return normalized or None
+
     def _extract_suggestion(self, ai_response: str) -> Optional[str]:
         """Extract the 'Correctly Spelt Word' from AI response."""
         # More specific regex that stops at the next field and handles multiline content

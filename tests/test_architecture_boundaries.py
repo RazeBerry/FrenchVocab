@@ -32,3 +32,20 @@ def test_core_directory_contains_no_tex_artifacts():
 def test_vocab_controller_file_size_budget():
     line_count = len(Path("vocab_builder/core/vocab.py").read_text(encoding="utf-8").splitlines())
     assert line_count <= 1450, f"vocab_builder/core/vocab.py is too large ({line_count} lines); extract responsibilities into helper modules"
+
+
+def test_mobile_adapter_uses_only_the_public_builder_contract():
+    path = Path("vocab_builder/mobile/service.py")
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    violations = [
+        f"{path}:{node.lineno} accesses builder.{node.attr}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Attribute)
+        and isinstance(node.value.value, ast.Name)
+        and node.value.value.id == "self"
+        and node.value.attr == "builder"
+        and node.attr.startswith("_")
+    ]
+
+    assert not violations, "Mobile must depend on VocabBuilder's public port:\n" + "\n".join(violations)

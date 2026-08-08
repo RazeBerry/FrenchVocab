@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily VocabBuilder data backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=20m
+
+[Install]
+WantedBy=timers.target

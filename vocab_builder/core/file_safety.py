@@ -135,20 +135,47 @@ def atomic_copy_file(source: Path, destination: Path) -> None:
 
 _THREAD_LOCKS: dict[Path, threading.RLock] = {}
 _THREAD_LOCKS_GUARD = threading.Lock()
+_HELD_LOCKS = threading.local()
 
 
 @contextmanager
 def file_lock(path: Path) -> Iterator[None]:
-    """Cross-process lock for read-modify-write transactions on a data file."""
-    lock_path = _lock_path_for(Path(path))
+    """Lock one artifact and its containing VocabBuilder catalog.
+
+    The catalog lock makes multi-file operations and backups coherent, while
+    the sidecar lock keeps the target identity explicit. Both live beside the
+    authoritative data, so systemd ``PrivateTmp`` namespaces cannot split the
+    phone and CLI lock domains.
+    """
+    target = Path(path)
+    catalog_lock_path = _catalog_lock_path_for(target)
+    sidecar_lock_path = _lock_path_for(target)
+    with _acquire_lock(catalog_lock_path):
+        with _acquire_lock(sidecar_lock_path):
+            yield
+
+
+@contextmanager
+def _acquire_lock(lock_path: Path) -> Iterator[None]:
     thread_lock = _thread_lock_for(lock_path)
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     with thread_lock:
-        with lock_path.open("a", encoding="utf-8") as handle:
-            _lock_handle(handle)
+        held = _held_locks()
+        if lock_path in held:
+            held[lock_path] += 1
             try:
                 yield
             finally:
+                held[lock_path] -= 1
+            return
+
+        with lock_path.open("a", encoding="utf-8") as handle:
+            _lock_handle(handle)
+            held[lock_path] = 1
+            try:
+                yield
+            finally:
+                held.pop(lock_path, None)
                 _unlock_handle(handle)
 
 
@@ -212,9 +239,38 @@ def _prune_backup_snapshots(source: Path, backup_suffix: str) -> None:
 
 
 def _lock_path_for(path: Path) -> Path:
+    """Locate the sidecar lock guarding ``path``.
+
+    The lock lives beside the data file rather than in the temp directory so
+    that processes in different mount namespaces still contend for the same
+    inode.  A systemd unit with ``PrivateTmp=true`` gets its own /tmp, so a
+    temp-directory lock would silently stop excluding the CLI running outside
+    the unit, and concurrent saves would lose entries.  Temp is kept only as a
+    fallback for read-only data directories.
+    """
     resolved = path.expanduser().resolve(strict=False)
-    digest = hashlib.sha256(str(resolved).encode("utf-8")).hexdigest()
-    return Path(tempfile.gettempdir()) / "vocabbuilder-file-locks" / f"{digest}.lock"
+    sidecar = resolved.parent / f".{resolved.name}.lock"
+    try:
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        sidecar.touch(exist_ok=True)
+        return sidecar
+    except OSError:
+        digest = hashlib.sha256(str(resolved).encode("utf-8")).hexdigest()
+        return Path(tempfile.gettempdir()) / "vocabbuilder-file-locks" / f"{digest}.lock"
+
+
+def _catalog_lock_path_for(path: Path) -> Path:
+    resolved = path.expanduser().resolve(strict=False)
+    configured_root = get_env("VOCABBUILDER_CONFIG_DIR")
+    if configured_root:
+        root = Path(configured_root).expanduser().resolve(strict=False)
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            root = resolved.parent
+    else:
+        root = resolved.parent
+    return root / ".vocabbuilder.lock"
 
 
 def _thread_lock_for(lock_path: Path) -> threading.RLock:
@@ -224,6 +280,14 @@ def _thread_lock_for(lock_path: Path) -> threading.RLock:
             lock = threading.RLock()
             _THREAD_LOCKS[lock_path] = lock
         return lock
+
+
+def _held_locks() -> dict[Path, int]:
+    held = getattr(_HELD_LOCKS, "paths", None)
+    if held is None:
+        held = {}
+        _HELD_LOCKS.paths = held
+    return held
 
 
 def _copy_file_atomic(source: Path, destination: Path) -> None:

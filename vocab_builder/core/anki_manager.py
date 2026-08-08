@@ -28,7 +28,7 @@ from vocab_builder.anki_exporter import (
     AnkiMistakeEntry,
 )
 from vocab_builder.compat import get_env
-from vocab_builder.core.file_safety import atomic_write_text, create_backup_snapshot
+from vocab_builder.core.file_safety import atomic_write_text, create_backup_snapshot, file_lock
 from vocab_builder.core.history_logger import default_history_base_dir
 from vocab_builder.languages.anki_shared_styles import compute_template_hash
 
@@ -119,6 +119,7 @@ class AnkiExportManager:
             self._exported_deck_version,
             self._last_export_metadata,
         ) = self._load_exported_words()
+        self._remember_persisted_export_state()
 
     # -------------------------------------------------------------------------
     # Properties
@@ -202,14 +203,132 @@ class AnkiExportManager:
         return self._load_exported_words()
 
     def save_exported_words(self) -> bool:
-        """Save exported words to the tracking file using atomic write."""
+        """Merge and atomically save export state under the catalog lock."""
         path = self._exported_words_file
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             self._ui.error(f"Failed to prepare exported words directory: {exc}", with_panel=True)
             return False
-        payload = {
+        with file_lock(path):
+            local_state = self._capture_export_state()
+            current_state = self._read_export_state()
+            base_state = getattr(self, "_persisted_export_state", local_state)
+            merged_state = self._merge_export_states(
+                base=base_state,
+                current=current_state,
+                local=local_state,
+            )
+            self._apply_export_state(merged_state)
+            payload = self._export_state_payload()
+            content = json.dumps(payload, ensure_ascii=False, indent=2)
+            try:
+                atomic_write_text(path, content, create_backup=True)
+            except OSError as exc:
+                self._apply_export_state(local_state)
+                self._ui.error(
+                    f"Failed to save exported words state atomically: {exc}\n"
+                    f"Tracker path: {path}",
+                    with_panel=True,
+                )
+                return False
+            self._remember_persisted_export_state()
+            return True
+
+    def _read_export_state(self) -> Dict[str, Any]:
+        local_state = self._capture_export_state()
+        words, deck_version, last_export = self._load_exported_words()
+        current_state = {
+            "words": set(words),
+            "deck_version": deck_version,
+            "entry_order": list(self._entry_order),
+            "snapshot_hash": self._snapshot_hash,
+            "snapshot_export": (
+                dict(self._snapshot_export_metadata)
+                if self._snapshot_export_metadata is not None
+                else None
+            ),
+            "last_export": dict(last_export) if last_export is not None else None,
+        }
+        self._apply_export_state(local_state)
+        return current_state
+
+    def _merge_current_export_state(self) -> None:
+        local_state = self._capture_export_state()
+        current_state = self._read_export_state()
+        base_state = getattr(self, "_persisted_export_state", local_state)
+        self._apply_export_state(
+            self._merge_export_states(
+                base=base_state,
+                current=current_state,
+                local=local_state,
+            )
+        )
+
+    def _capture_export_state(self) -> Dict[str, Any]:
+        return {
+            "words": set(self._exported_words),
+            "deck_version": self._exported_deck_version,
+            "entry_order": list(self._entry_order),
+            "snapshot_hash": self._snapshot_hash,
+            "snapshot_export": (
+                dict(self._snapshot_export_metadata)
+                if self._snapshot_export_metadata is not None
+                else None
+            ),
+            "last_export": (
+                dict(self._last_export_metadata)
+                if self._last_export_metadata is not None
+                else None
+            ),
+        }
+
+    def _apply_export_state(self, state: Dict[str, Any]) -> None:
+        self._exported_words = set(state["words"])
+        self._exported_deck_version = state.get("deck_version")
+        self._entry_order = list(state.get("entry_order") or [])
+        self._snapshot_hash = state.get("snapshot_hash")
+        snapshot_export = state.get("snapshot_export")
+        self._snapshot_export_metadata = dict(snapshot_export) if snapshot_export else None
+        last_export = state.get("last_export")
+        self._last_export_metadata = dict(last_export) if last_export else None
+
+    def _remember_persisted_export_state(self) -> None:
+        self._persisted_export_state = self._capture_export_state()
+
+    @staticmethod
+    def _merge_export_states(
+        *,
+        base: Dict[str, Any],
+        current: Dict[str, Any],
+        local: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        base_words = set(base["words"])
+        local_words = set(local["words"])
+        merged_words = (
+            set(current["words"])
+            | (local_words - base_words)
+        ) - (base_words - local_words)
+
+        base_order = list(base.get("entry_order") or [])
+        local_order = list(local.get("entry_order") or [])
+        removed_order = set(base_order) - set(local_order)
+        merged_order = [
+            key for key in current.get("entry_order") or []
+            if key not in removed_order
+        ]
+        merged_order.extend(key for key in local_order if key not in merged_order)
+
+        merged: Dict[str, Any] = {
+            "words": merged_words,
+            "entry_order": merged_order,
+        }
+        for key in ("deck_version", "snapshot_hash", "snapshot_export", "last_export"):
+            merged[key] = local.get(key) if local.get(key) != base.get(key) else current.get(key)
+        return merged
+
+    def _export_state_payload(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
             "words": sorted(self._exported_words),
             "deck_version": self._exported_deck_version,
             "entry_order": list(self._entry_order),
@@ -220,17 +339,7 @@ class AnkiExportManager:
             payload["snapshot_export"] = self._snapshot_export_metadata
         if self._last_export_metadata:
             payload["last_export"] = self._last_export_metadata
-        content = json.dumps(payload, ensure_ascii=False, indent=2)
-        try:
-            atomic_write_text(path, content, create_backup=True)
-        except OSError as exc:
-            self._ui.error(
-                f"Failed to save exported words state atomically: {exc}\n"
-                f"Tracker path: {path}",
-                with_panel=True,
-            )
-            return False
-        return True
+        return payload
 
     def get_all_exported_words(self) -> Set[str]:
         """Return a copy of all exported words."""
@@ -540,23 +649,25 @@ class AnkiExportManager:
 
     def register_entry_order(self, word: str) -> None:
         """Persist a newly saved word after existing order without re-sorting it."""
-        self._vocab_repo.ensure_entries_loaded()
-        key = self._entry_order_key(word)
-        if not key or key in self._entry_order:
-            return
+        with file_lock(self._exported_words_file):
+            self._merge_current_export_state()
+            self._vocab_repo.ensure_entries_loaded()
+            key = self._entry_order_key(word)
+            if not key or key in self._entry_order:
+                return
 
-        existing_entries = {
-            entry_key: entry
-            for entry_key, entry in self._vocab_repo.word_entries.items()
-            if self._entry_order_key(entry_key) != key
-        }
-        self._sync_entry_order(existing_entries)
-        self._entry_order.append(key)
-        if not self.save_exported_words():
-            self._ui.warning(
-                "The vocabulary entry was saved, but its Anki acquisition order "
-                "could not be persisted."
-            )
+            existing_entries = {
+                entry_key: entry
+                for entry_key, entry in self._vocab_repo.word_entries.items()
+                if self._entry_order_key(entry_key) != key
+            }
+            self._sync_entry_order(existing_entries)
+            self._entry_order.append(key)
+            if not self.save_exported_words():
+                self._ui.warning(
+                    "The vocabulary entry was saved, but its Anki acquisition order "
+                    "could not be persisted."
+                )
 
     def _read_composition_history_records(self) -> List[Dict[str, Any]]:
         records: List[Dict[str, Any]] = []
@@ -1059,6 +1170,34 @@ class AnkiExportManager:
         track_exported_words: bool = True,
         quiet: bool = False,
     ) -> None:
+        """Serialize deck generation and tracker mutation across CLI sessions."""
+        with file_lock(self._exported_words_file):
+            self._merge_current_export_state()
+            self._export_to_anki_locked(
+                deck_name,
+                include_exported_words,
+                selected_words=selected_words,
+                auto_retry_on_empty=auto_retry_on_empty,
+                output_path=output_path,
+                export_context=export_context,
+                include_mistake_deck=include_mistake_deck,
+                track_exported_words=track_exported_words,
+                quiet=quiet,
+            )
+
+    def _export_to_anki_locked(
+        self,
+        deck_name: Optional[str] = None,
+        include_exported_words: bool = False,
+        *,
+        selected_words: Optional[Set[str]] = None,
+        auto_retry_on_empty: bool = True,
+        output_path: Optional[Path] = None,
+        export_context: str = "incremental",
+        include_mistake_deck: bool = False,
+        track_exported_words: bool = True,
+        quiet: bool = False,
+    ) -> None:
         """Export vocabulary entries to an Anki deck.
 
         Args:
@@ -1236,6 +1375,19 @@ class AnkiExportManager:
             return deck_name, None
 
     def export_snapshot_if_changed(
+        self,
+        *,
+        export_context: str = "clean_exit",
+        quiet: bool = True,
+    ) -> AnkiSnapshotResult:
+        with file_lock(self._exported_words_file):
+            self._merge_current_export_state()
+            return self._export_snapshot_if_changed_locked(
+                export_context=export_context,
+                quiet=quiet,
+            )
+
+    def _export_snapshot_if_changed_locked(
         self,
         *,
         export_context: str = "clean_exit",
@@ -1640,9 +1792,13 @@ class AnkiExportManager:
         # Remove extra exported words not present in LaTeX
         if in_exports_not_latex:
             if self._ui.confirm(f"Remove {len(in_exports_not_latex)} stale exported word(s) from tracking?", default=False):
-                self._exported_words.difference_update(in_exports_not_latex)
-                self.save_exported_words()
-                self._ui.success("Updated exported words; removed stale entries.")
+                with file_lock(self._exported_words_file):
+                    self._merge_current_export_state()
+                    current_latex_entries = self._vocab_repo.get_all_latex_entries()
+                    current_extras = self._exported_words - current_latex_entries
+                    self._exported_words.difference_update(current_extras)
+                    self.save_exported_words()
+                    self._ui.success("Updated exported words; removed stale entries.")
 
     # -------------------------------------------------------------------------
     # Helpers

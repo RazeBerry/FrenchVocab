@@ -5,13 +5,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import os
 from pathlib import Path
-import threading
 from typing import Any, Callable, Collection, Dict, Iterable, List, MutableMapping, Optional, Sequence, Tuple
 
-try:
-    import fcntl
-except ImportError:  # pragma: no cover - Windows
-    fcntl = None  # type: ignore[assignment]
+from .file_safety import file_lock
 
 
 def _timestamp() -> str:
@@ -37,8 +33,6 @@ def default_history_base_dir() -> Path:
 
 
 ErrorHandler = Optional[Callable[[str], None]]
-_PATH_LOCKS: Dict[Path, threading.Lock] = {}
-_PATH_LOCKS_GUARD = threading.Lock()
 
 
 @dataclass
@@ -273,33 +267,8 @@ class CompositionLogger:
 
 def _append_jsonl_record(path: Path, record: Dict[str, Any]) -> None:
     line = json.dumps(record, ensure_ascii=False) + "\n"
-    with _path_lock(path):
+    with file_lock(path):
         with path.open("a", encoding="utf-8") as handle:
-            _lock_handle(handle)
-            try:
-                handle.write(line)
-                handle.flush()
-                os.fsync(handle.fileno())
-            finally:
-                _unlock_handle(handle)
-
-
-def _path_lock(path: Path) -> threading.Lock:
-    with _PATH_LOCKS_GUARD:
-        lock = _PATH_LOCKS.get(path)
-        if lock is None:
-            lock = threading.Lock()
-            _PATH_LOCKS[path] = lock
-        return lock
-
-
-def _lock_handle(handle: Any) -> None:
-    if fcntl is None:
-        return
-    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-
-
-def _unlock_handle(handle: Any) -> None:
-    if fcntl is None:
-        return
-    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.write(line)
+            handle.flush()
+            os.fsync(handle.fileno())

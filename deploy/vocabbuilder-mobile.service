@@ -1,0 +1,40 @@
+[Unit]
+Description=Private VocabBuilder mobile service
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vocabbuilder
+Group=vocabbuilder
+WorkingDirectory=/var/lib/vocabbuilder
+Environment=PYTHONUNBUFFERED=1
+Environment=VOCABBUILDER_CONFIG_DIR=/var/lib/vocabbuilder
+Environment=VOCABBUILDER_HISTORY_DIR=/var/lib/vocabbuilder/history
+Environment=VOCABBUILDER_SKIP_KEYRING=1
+Environment=VOCABBUILDER_PROVIDER=gemini
+EnvironmentFile=/etc/vocabbuilder/mobile.env
+ExecStart=/opt/vocabbuilder/.venv/bin/vocabbuilder-mobile --host 127.0.0.1 --port 8080 --languages fr,de,en --default-language fr --provider ${VOCABBUILDER_PROVIDER} --config-dir /var/lib/vocabbuilder
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+UMask=0077
+
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/vocabbuilder
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

@@ -13,6 +13,7 @@ from vocab_builder.languages import LanguageConfig, TranslatorConfig
 from vocab_builder.ui_helper import UIHelper, read_line
 
 from .spelling_checker import SpellingChecker
+from .file_safety import file_lock
 from .history_logger import TranslationLogger
 from .text_utils import detect_input_type, sanitize_user_text, translator_title
 
@@ -270,9 +271,6 @@ class WordEntryWorkflow:
 
         entry_count = len(self.vocab_repo.word_entries)
         self.ui.success(f"Entry saved successfully! ({entry_count} entries total)")
-
-        if self._on_entry_saved:
-            self._on_entry_saved(insert_word)
 
         return True
 
@@ -775,45 +773,48 @@ class WordEntryWorkflow:
         corrected_word_value: Optional[str],
     ) -> bool:
         """Save the entry to repository and log to history."""
-        if self._insert_entry_alphabetically_fn:
-            written = self._insert_entry_alphabetically_fn(latex_entry, insert_word) is not False
-        else:
-            written = self.vocab_repo.insert_entry_alphabetically(latex_entry, insert_word)
+        with file_lock(self.vocab_repo.latex_file):
+            if self._insert_entry_alphabetically_fn:
+                written = self._insert_entry_alphabetically_fn(latex_entry, insert_word) is not False
+            else:
+                written = self.vocab_repo.insert_entry_alphabetically(latex_entry, insert_word)
 
-        if not written:
-            return False
+            if not written:
+                return False
 
-        if self._add_word_to_entries_fn:
-            self._add_word_to_entries_fn(insert_word, word_type, definitions, examples)
-        else:
-            self.vocab_repo.add_word_to_entries(insert_word, word_type, definitions, examples)
+            if self._add_word_to_entries_fn:
+                self._add_word_to_entries_fn(insert_word, word_type, definitions, examples)
+            else:
+                self.vocab_repo.add_word_to_entries(insert_word, word_type, definitions, examples)
 
-        # Log to history
-        if self.history_logger and self.history_logger.enabled:
-            history_metadata: Dict[str, Any] = {}
-            if history_existing_word:
-                history_metadata["existing_word"] = history_existing_word
-            if corrected_word_value:
-                history_metadata["corrected_word"] = corrected_word_value
-            if original_word != insert_word:
-                history_metadata["original_input"] = original_word
-                history_metadata["saved_word"] = insert_word
-            if history_action == "force":
-                history_metadata["forced_variant"] = insert_word
+            if self.history_logger and self.history_logger.enabled:
+                history_metadata: Dict[str, Any] = {}
+                if history_existing_word:
+                    history_metadata["existing_word"] = history_existing_word
+                if corrected_word_value:
+                    history_metadata["corrected_word"] = corrected_word_value
+                if original_word != insert_word:
+                    history_metadata["original_input"] = original_word
+                    history_metadata["saved_word"] = insert_word
+                if history_action == "force":
+                    history_metadata["forced_variant"] = insert_word
 
-            try:
-                self.history_logger.log_vocab_entry(
-                    action=history_action,
-                    word=insert_word,
-                    word_type=word_type,
-                    definitions=definitions,
-                    examples=examples,
-                    source_text=original_word,
-                    normalized_key=self.vocab_repo.normalize_word(insert_word),
-                    provider=self._provider_label_fn(),
-                    latex_file=self.vocab_repo.latex_file,
-                    metadata=history_metadata or None,
-                )
-            except Exception as exc:
-                self.ui.warning(f"History logging failed: {exc}")
-        return True
+                try:
+                    self.history_logger.log_vocab_entry(
+                        action=history_action,
+                        word=insert_word,
+                        word_type=word_type,
+                        definitions=definitions,
+                        examples=examples,
+                        source_text=original_word,
+                        normalized_key=self.vocab_repo.normalize_word(insert_word),
+                        provider=self._provider_label_fn(),
+                        latex_file=self.vocab_repo.latex_file,
+                        metadata=history_metadata or None,
+                    )
+                except Exception as exc:
+                    self.ui.warning(f"History logging failed: {exc}")
+
+            if self._on_entry_saved:
+                self._on_entry_saved(insert_word)
+            return True
