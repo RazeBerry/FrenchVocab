@@ -12,13 +12,5 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Ensure AGENTS.md and CLAUDE.md are identical
-        run: |
-          if cmp -s AGENTS.md CLAUDE.md; then
-            echo "AGENTS.md and CLAUDE.md are aligned."
-            exit 0
-          fi
-
-          echo "::error::AGENTS.md and CLAUDE.md are out of sync. Keep them identical in the same PR."
-          diff -u AGENTS.md CLAUDE.md || true
-          exit 1
+      - name: Ensure CLAUDE.md mirrors canonical AGENTS.md
+        run: python3 scripts/sync_agent_docs.py --check
