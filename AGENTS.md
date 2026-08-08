@@ -111,7 +111,9 @@ pytest -k "anki"
 
 #### Mobile front end (`vocab_builder/mobile/static/`)
 - Plain HTML/CSS/JS with no build step and no external requests (Tailscale-only hosts may have no public egress).
-- All colors are CSS custom properties on `:root`, re-declared in one `@media (prefers-color-scheme: dark)` block. Style components through the tokens; never hardcode a color inside the dark block, or that rule will not apply in light mode.
+- All colors are CSS custom properties on `:root`, re-declared in one `:root[data-theme="dark"]` rule. Style components through the tokens; never hardcode a color inside the dark rule, or it will not apply in light mode.
+- Theme is an explicit choice, not an ambient one. An inline script in `index.html` stamps `data-theme` on `<html>` before first paint (seeded from `prefers-color-scheme` only on a first visit, then from `localStorage`); the toggle writes that key. Keep the stamping inline and before the stylesheet, or the page flashes the wrong theme, and keep `THEME_BACKGROUND` in `app.js` matching `--bg` so the iOS status bar follows.
+- `/`, `/manifest.webmanifest` and `/service-worker.js` must send `Cache-Control: no-cache`. Unversioned documents otherwise fall back to heuristic freshness that grows with file age, so an installed home-screen app can serve a stale shell for days after a deploy. Assets under `/static` carry `?v=N` instead and may cache normally.
 - The interface is a single "specimen slip": one card carries capture and preview. `.slip.is-capturing` is the blank state (the `textarea` is the headword), and the same slip fills in with the preview rather than swapping to another component.
 - Each collection owns a hue, selected by `data-language` on `<html>` and read through `--hue`/`--on-hue`. Any new accent must come from those tokens so a new language only adds a hue.
 - Headword sizing steps through `.hw--s1/2/3` at 14 and 28 characters. The breakpoints come from the stored collections (87% of French headwords are <= 14 characters, 2% are long expressions); re-measure before changing them.

@@ -2,10 +2,13 @@
    One object on screen: you type onto a blank slip in the same face the saved
    word will use, and the slip fills in rather than transforming.
 
-   Every colour is a token so the dark block only redefines tokens. */
+   Theme is an explicit choice, not an ambient one. `data-theme` is stamped on
+   <html> before first paint by the inline script in index.html, seeded from the
+   OS preference the first time and from the user's choice after that. Every
+   colour is a token, so the dark rule only redefines tokens. */
 
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 
   --bg: #efeae3;
   --bg-top: #f4f0ea;
@@ -41,36 +44,38 @@
 :root[data-language="de"] { --hue: var(--hue-de); --hue-wash: rgba(138, 90, 32, 0.1); }
 :root[data-language="en"] { --hue: var(--hue-en); --hue-wash: rgba(107, 43, 79, 0.09); }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #151310;
-    --bg-top: #1b1815;
-    --card: #201d19;
-    --card-blank: #1b1815;
-    --ink: #ece7de;
-    --ink-soft: #cbc5b9;
-    --dim: #9c958a;
-    --ghost: #6b655c;
-    --placeholder: #8e877c;
-    --line: rgba(236, 231, 222, 0.13);
-    --line-strong: rgba(236, 231, 222, 0.24);
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #151310;
+  --bg-top: #1b1815;
+  --card: #201d19;
+  --card-blank: #1b1815;
+  --ink: #ece7de;
+  --ink-soft: #cbc5b9;
+  --dim: #9c958a;
+  --ghost: #6b655c;
+  --placeholder: #8e877c;
+  --line: rgba(236, 231, 222, 0.13);
+  --line-strong: rgba(236, 231, 222, 0.24);
 
-    --hue-fr: #7ea3dc;
-    --hue-de: #d9a05a;
-    --hue-en: #cf87ab;
-    --on-hue: #17130f;
-    --hue-wash: rgba(126, 163, 220, 0.14);
+  /* --hue is indirection: redefining the per-language values here is enough,
+     because var() resolves against whatever --hue-fr/de/en cascade to. */
+  --hue-fr: #7ea3dc;
+  --hue-de: #d9a05a;
+  --hue-en: #cf87ab;
+  --on-hue: #17130f;
+  --hue-wash: rgba(126, 163, 220, 0.14);
 
-    --ok: #6fbf95;
-    --pending: #d8b66a;
-    --danger: #ef8f7c;
+  --ok: #6fbf95;
+  --pending: #d8b66a;
+  --danger: #ef8f7c;
 
-    --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 44px rgba(0, 0, 0, 0.5);
-    --deck-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  }
-  :root[data-language="de"] { --hue-wash: rgba(217, 160, 90, 0.15); }
-  :root[data-language="en"] { --hue-wash: rgba(207, 135, 171, 0.15); }
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 18px 44px rgba(0, 0, 0, 0.5);
+  --deck-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
+
+:root[data-theme="dark"][data-language="de"] { --hue-wash: rgba(217, 160, 90, 0.15); }
+:root[data-theme="dark"][data-language="en"] { --hue-wash: rgba(207, 135, 171, 0.15); }
 
 * { box-sizing: border-box; }
 
@@ -147,6 +152,30 @@ button { -webkit-tap-highlight-color: transparent; }
   font-variant-numeric: tabular-nums;
 }
 .count strong { color: var(--ink); font-weight: 650; }
+
+/* Theme toggle: a half-filled circle that flips, echoing the language dots
+   rather than introducing a second icon vocabulary. */
+.theme {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+}
+.theme::before {
+  content: "";
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--dim);
+  border-radius: 50%;
+  background: linear-gradient(90deg, var(--dim) 0 50%, transparent 50% 100%);
+  transition: transform 260ms ease, border-color 140ms ease, background 140ms ease;
+}
+:root[data-theme="dark"] .theme::before { transform: rotate(180deg); }
 
 .conn {
   display: grid;

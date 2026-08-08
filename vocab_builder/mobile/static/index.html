@@ -3,8 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#efeae3">
-    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#151310">
+    <meta name="theme-color" id="theme-color" content="#efeae3">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="VocabBuilder">
@@ -12,14 +11,29 @@
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="/static/icon.svg">
-    <link rel="stylesheet" href="/static/styles.css?v=4">
-    <script src="/static/app.js?v=4" defer></script>
+    <script>
+      // Stamp the theme before first paint, or the page flashes light on the
+      // way to dark. The OS preference only seeds the very first visit.
+      (function () {
+        var stored = null;
+        try { stored = localStorage.getItem("vocabbuilder-theme"); } catch (error) { /* private mode */ }
+        var theme = stored === "light" || stored === "dark"
+          ? stored
+          : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.dataset.theme = theme;
+      })();
+    </script>
+    <link rel="stylesheet" href="/static/styles.css?v=5">
+    <script src="/static/app.js?v=5" defer></script>
   </head>
   <body>
     <div class="app">
       <header class="bar">
         <div class="langs" id="languages" role="group" aria-label="Collection"></div>
         <p class="count"><strong id="entry-count">&mdash;</strong> <span id="entry-noun">collected</span></p>
+        <button class="theme" id="theme-toggle" type="button">
+          <span class="sr-only" id="theme-label">Switch to dark theme</span>
+        </button>
         <button class="conn" id="connection" type="button">
           <span class="sr-only" id="connection-label">Connecting</span>
         </button>

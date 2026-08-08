@@ -134,11 +134,19 @@ def create_app(
     static_path = Path(str(static_root))
     app.mount("/static", StaticFiles(directory=static_path), name="static")
 
+    # Unversioned documents must revalidate. Without an explicit directive a
+    # browser applies heuristic freshness (roughly a tenth of the file's age),
+    # so a home-screen app can keep serving a months-old shell for days after a
+    # deployment and never ask the server. Assets under /static carry a ?v=
+    # query instead, so a new build is a new URL and may be cached normally.
+    REVALIDATE = {"Cache-Control": "no-cache"}
+
     @app.get("/manifest.webmanifest", include_in_schema=False)
     async def manifest() -> FileResponse:
         return FileResponse(
             static_path / "manifest.webmanifest",
             media_type="application/manifest+json",
+            headers=REVALIDATE,
         )
 
     @app.get("/service-worker.js", include_in_schema=False)
@@ -146,11 +154,11 @@ def create_app(
         return FileResponse(
             static_path / "service-worker.js",
             media_type="application/javascript",
-            headers={"Cache-Control": "no-cache"},
+            headers=REVALIDATE,
         )
 
     @app.get("/", include_in_schema=False, dependencies=private)
     async def index() -> FileResponse:
-        return FileResponse(static_path / "index.html")
+        return FileResponse(static_path / "index.html", headers=REVALIDATE)
 
     return app

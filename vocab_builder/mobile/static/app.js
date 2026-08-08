@@ -1,6 +1,10 @@
 const LANGUAGE_STORAGE_KEY = "vocabbuilder-language";
+const THEME_STORAGE_KEY = "vocabbuilder-theme";
 const INSTALL_TIP_KEY = "vocabbuilder-install-tip-dismissed";
 const RETRY_DELAY_MS = 15000;
+
+// Must match --bg in each theme; iOS paints the status bar with this.
+const THEME_BACKGROUND = { light: "#efeae3", dark: "#151310" };
 
 // Headword sizes come from the real distribution of the stored collections:
 // of 571 French headwords, 87% are <=14 characters and 2% are long expressions.
@@ -216,6 +220,28 @@ function toggleExpanded() {
   el("more-label").textContent = "Show less";
 }
 
+/* ------------------------------ theme ------------------------------ */
+
+// The inline script in index.html has already stamped <html> before paint;
+// this only keeps the status bar colour and the button label in step.
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  el("theme-color").setAttribute("content", THEME_BACKGROUND[theme]);
+  el("theme-label").textContent = theme === "dark"
+    ? "Switch to light theme"
+    : "Switch to dark theme";
+}
+
+function currentTheme() {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+function toggleTheme() {
+  const next = currentTheme() === "dark" ? "light" : "dark";
+  try { localStorage.setItem(THEME_STORAGE_KEY, next); } catch (_) { /* private mode */ }
+  applyTheme(next);
+}
+
 /* ------------------------------ connection ------------------------------ */
 
 function isOnline() {
@@ -421,6 +447,8 @@ discardButton.addEventListener("click", () => {
 
 moreButton.addEventListener("click", toggleExpanded);
 
+el("theme-toggle").addEventListener("click", toggleTheme);
+
 el("connection").addEventListener("click", () => {
   if (isOnline()) return;
   el("connection-label").textContent = "Reconnecting";
@@ -474,6 +502,7 @@ if ("serviceWorker" in navigator) {
 }
 
 async function bootstrap() {
+  applyTheme(currentTheme());
   showCaptureState();
   try {
     await loadCollections();

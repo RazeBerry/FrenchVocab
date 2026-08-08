@@ -164,6 +164,33 @@ def test_tailscale_identity_header_can_be_required(tmp_path, monkeypatch):
     assert preview.json()["word"] == "chrysanthème"
 
 
+def test_unversioned_documents_must_revalidate(tmp_path, monkeypatch):
+    """A home-screen app should never keep a stale shell after a deployment.
+
+    Without an explicit directive these responses fall back to heuristic
+    freshness, which grows with the file's age, so an installed app can serve
+    an old build for days without contacting the server.
+    """
+    service = build_service(tmp_path, monkeypatch)
+    app = create_app(service, allowed_tailscale_user="reader@example.com")
+    identity = {"Tailscale-User-Login": "reader@example.com"}
+
+    async def exercise_app():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            index = await client.get("/", headers=identity)
+            worker = await client.get("/service-worker.js")
+            manifest = await client.get("/manifest.webmanifest")
+        return index, worker, manifest
+
+    import asyncio
+
+    index, worker, manifest = asyncio.run(exercise_app())
+    for response in (index, worker, manifest):
+        assert response.status_code == 200
+        assert response.headers.get("cache-control") == "no-cache"
+
+
 def test_catalog_routes_preview_tokens_and_state_by_language(tmp_path, monkeypatch):
     french = build_service(tmp_path / "fr", monkeypatch, language="fr")
     german = build_service(tmp_path / "de", monkeypatch, language="de")
