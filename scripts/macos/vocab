@@ -17,4 +17,17 @@ if [ -z "$REMOTE_USER" ]; then
 fi
 TARGET="$REMOTE_USER@$REMOTE_HOST"
 
-exec tailscale ssh "$TARGET" -t "sudo /usr/local/sbin/vocabbuilder-cli"
+REMOTE_COMMAND='sudo /usr/local/sbin/vocabbuilder-cli'
+for argument in "$@"; do
+  case "$argument" in
+    *'
+'*)
+      echo "Command-line arguments cannot contain newlines." >&2
+      exit 2
+      ;;
+  esac
+  escaped_argument=$(printf '%s' "$argument" | sed "s/'/'\\\\''/g")
+  REMOTE_COMMAND="$REMOTE_COMMAND '$escaped_argument'"
+done
+
+exec tailscale ssh "$TARGET" -t "$REMOTE_COMMAND"

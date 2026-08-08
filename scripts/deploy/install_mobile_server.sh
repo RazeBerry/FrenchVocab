@@ -20,7 +20,11 @@ if ! id vocabbuilder >/dev/null 2>&1; then
 fi
 
 install -d -m 0755 -o root -g root "$APP_DIR"
-install -d -m 0700 -o vocabbuilder -g vocabbuilder "$DATA_DIR" "$DATA_DIR/history" "$DATA_DIR/backups"
+install -d -m 0700 -o vocabbuilder -g vocabbuilder \
+  "$DATA_DIR" \
+  "$DATA_DIR/history" \
+  "$DATA_DIR/exports" \
+  "$DATA_DIR/backups"
 install -d -m 0755 -o root -g root "$CONFIG_DIR"
 
 rsync -a --delete --chown=root:root \

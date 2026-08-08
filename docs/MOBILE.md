@@ -71,6 +71,8 @@ it in the same file with `VOCABBUILDER_REMOTE_HOST` if the Tailscale machine
 name changes. `VOCABBUILDER_LAUNCHER_CONFIG` can select a different config
 path. The launcher uses `tailscale ssh`, which verifies the VM host key against
 your tailnet and does not depend on a manually maintained `known_hosts` entry.
+It preserves CLI options, so commands such as `vocab --language de` behave like
+their direct `vocabbuilder` equivalents on the VM.
 
 ## Storage and recovery
 
