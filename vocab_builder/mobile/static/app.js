@@ -4,7 +4,7 @@ import { LibraryView } from "./library-view.js";
 import { TranslationView } from "./translation-view.js";
 import { PracticeView } from "./practice-view.js";
 import { ToolsView } from "./tools-view.js";
-import { el, readStorage, writeStorage } from "./ui.js";
+import { el, readStorage, trackKeyboardInset, writeStorage } from "./ui.js";
 
 const LANGUAGE_KEY = "vocabbuilder-language";
 const THEME_KEY = "vocabbuilder-theme";
@@ -200,6 +200,7 @@ async function bootstrap() {
   views.practice = new PracticeView(api, dataChanged);
   views.tools = new ToolsView(api, dataChanged);
   wireShell();
+  trackKeyboardInset();
   showInstallTip();
   try {
     await loadCollections();

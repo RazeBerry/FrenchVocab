@@ -38,6 +38,40 @@ export function makeButton(label, value, active = false) {
   return button;
 }
 
+/* iOS does not shrink vh/dvh when the software keyboard opens. The layout
+   viewport keeps the full screen height and only the *visual* viewport shrinks,
+   so on a 14 Pro `.stage` went on reserving 54vh = 460px of an 852px screen
+   while just 516px remained visible, leaving "Look it up" 145px below the fold
+   of the screen the app opens to. visualViewport is the only thing that reports
+   the real inset; Safari does not support the `interactive-widget` viewport key
+   that would fix it declaratively.
+
+   The threshold keeps Safari's collapsing address bar (~50px) from reading as a
+   keyboard, which would strip the tab bar out from under a scroll. */
+const KEYBOARD_MIN_INSET = 120;
+
+export function trackKeyboardInset() {
+  const viewport = window.visualViewport;
+  if (!viewport) return;
+  const apply = () => {
+    // Layout height minus visual height, and nothing else. offsetTop says where
+    // the visual viewport sits, not how tall it is, so subtracting it would
+    // under-report whenever iOS scrolls to keep the caret visible — far enough
+    // and the inset would fall back under the threshold mid-keystroke,
+    // flickering the tab bar and the whole column with it.
+    const inset = Math.max(0, window.innerHeight - viewport.height);
+    const open = inset > KEYBOARD_MIN_INSET;
+    document.documentElement.style.setProperty(
+      "--kb",
+      `${open ? Math.round(inset) : 0}px`,
+    );
+    document.documentElement.classList.toggle("is-keyboard", open);
+  };
+  viewport.addEventListener("resize", apply);
+  viewport.addEventListener("scroll", apply);
+  apply();
+}
+
 /* A horizontally scrolling strip looks like a clipped one unless it says
    otherwise, and CSS cannot ask whether an element overflows. */
 export function markScrollable(container) {

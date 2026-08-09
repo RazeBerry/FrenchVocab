@@ -71,6 +71,10 @@
   --dur-slow: 300ms;
   --ease: cubic-bezier(.32, .72, 0, 1);
 
+  /* Height the software keyboard is currently covering, published by
+     app.js from visualViewport. Zero until it opens. */
+  --kb: 0px;
+
   --display: Didot, "Bodoni 72", "Playfair Display", Georgia, serif;
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   font-synthesis: none;
@@ -151,6 +155,28 @@ button { -webkit-tap-highlight-color: transparent; }
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
 }
+
+/* ---------------- the software keyboard ----------------
+   Every vh/dvh length in this file measures the layout viewport, which iOS
+   leaves at full screen height when the keyboard opens. So while the keyboard
+   is up the capture column has to be re-fitted to what is actually visible:
+   the stage stops reserving half a screen it cannot show, the furniture that
+   the keyboard already covers steps out of the flow, and the headword stops
+   growing past its share so a long paste cannot push the actions back down.
+   `--kb` is the covered height, measured in app.js. */
+:root.is-keyboard body,
+:root.is-keyboard .app { min-height: 0; }
+:root.is-keyboard .app { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+:root.is-keyboard .stage { min-height: 0; }
+:root.is-keyboard .slip { max-height: calc((100dvh - var(--kb)) * 0.52); }
+:root.is-keyboard textarea.hw {
+  max-height: calc((100dvh - var(--kb)) * 0.3);
+  overflow-y: auto;
+}
+:root.is-keyboard .recent-strip,
+:root.is-keyboard .privacy-footer,
+:root.is-keyboard .install-tip,
+:root.is-keyboard .tabbar { display: none; }
 
 .page-heading { padding: 24px 2px 20px; }
 .page-heading h1 {

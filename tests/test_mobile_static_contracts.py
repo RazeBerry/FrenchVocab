@@ -115,6 +115,23 @@ def test_no_stray_pixel_sizes_remain_on_tap_targets(styles):
     assert strays == []
 
 
+@pytest.fixture(scope="module")
+def shell_js() -> str:
+    return (STATIC / "ui.js").read_text(encoding="utf-8")
+
+
+def test_capture_actions_stay_reachable_when_the_keyboard_opens(styles, shell_js):
+    """iOS shrinks only the visual viewport, so every vh/dvh length keeps
+    measuring the whole screen. `.stage` went on reserving 54vh — 460px of an
+    iPhone 14 Pro's 852px — while only 516px stayed visible, leaving "Look it
+    up" about 57px below the fold. visualViewport is the only thing that reports
+    the real inset; Safari ignores the `interactive-widget` viewport key."""
+    assert "window.visualViewport" in shell_js
+    assert '"--kb"' in shell_js and "is-keyboard" in shell_js
+    assert "min-height: 0" in _rule(styles, ":root.is-keyboard .stage")
+    assert "none" in _rule(styles, ":root.is-keyboard .recent-strip")
+
+
 def test_duplicate_markings_use_only_colour_and_type_scale_tokens(styles):
     """Duplicate affordances share the collection palette and type scale instead
     of introducing a light-only literal or a nearly-identical font size."""
