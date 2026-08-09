@@ -62,7 +62,10 @@ except ImportError:  # pragma: no cover - used when Rich stubs are installed
 
 MenuOption = Tuple[str, str]
 
-_INSTRUCTION_DEFAULT = "Use ↑ and ↓ to navigate, press Enter to select, Esc to cancel."
+_INSTRUCTION_DEFAULT = "Press a number to choose, ↑ and ↓ then Enter to browse, Esc to cancel."
+# Above this many options a choice would need two keystrokes, which defeats the
+# point of offering it; those menus stay arrow-only.
+_MAX_NUMBERED_OPTIONS = 9
 _ESC_SEQUENCE_TIMEOUT = read_esc_sequence_timeout()
 _ESC_INITIAL_TIMEOUT = min(0.025, _ESC_SEQUENCE_TIMEOUT)  # keep bare Esc snappy while honoring lower custom timeouts
 _MAX_ESCAPE_SEQUENCE_BYTES = 5
@@ -164,6 +167,10 @@ def interactive_select(
                         return options[index][0]
                     elif key in {"escape", "ctrl_c"}:
                         raise KeyboardInterrupt
+                    else:
+                        chosen = _numbered_choice(key, len(options))
+                        if chosen is not None:
+                            return options[chosen][0]
 
                     if index != previous_index:
                         live.update(
@@ -267,6 +274,18 @@ def _resolve_default_index(options: Sequence[MenuOption], default_key: str | Non
     return 0
 
 
+def _numbered_choice(key: str, option_count: int) -> int | None:
+    """Map a digit keypress to a zero-based option index, when one applies.
+
+    Reaching option N with the arrow keys costs N round trips over SSH, each
+    one repainting the panel. A digit spends exactly one.
+    """
+    if option_count > _MAX_NUMBERED_OPTIONS or len(key) != 1 or not key.isdigit():
+        return None
+    index = int(key) - 1
+    return index if 0 <= index < option_count else None
+
+
 def _render_menu(
     options: Sequence[MenuOption],
     active_index: int,
@@ -279,13 +298,19 @@ def _render_menu(
         lines.append(f"[dim]{instructions}[/dim]")
         lines.append("")
 
+    # The ordinal replaces the bullet rather than adding a column: it occupies
+    # the same width and states the key that selects the row, which over a
+    # remote session is the difference between one round trip and several.
+    numbered = len(options) <= _MAX_NUMBERED_OPTIONS
+
     for idx, (key, label) in enumerate(options):
+        marker = str(idx + 1) if numbered else "○"
         if idx == active_index:
             # Active item with Anthropic orange background highlight
-            line = f"[black on dark_orange] → {label} [/]"
+            line = f"[black on dark_orange] {marker} → {label} [/]"
         else:
             # Inactive item with subtle bullet
-            line = f"  [dim]○[/] {label}"
+            line = f"  [dim]{marker}[/] {label}"
 
         if show_keys and key and key not in label:
             line = f"{line} [dim]({key})[/dim]"
@@ -368,6 +393,8 @@ def _read_key_windows() -> str:
             continue
         if ch == "\x03":
             return "ctrl_c"
+        if ch.isdigit():
+            return ch
         # Ignore other characters
 
 

@@ -126,6 +126,75 @@ def test_menus_redraw_only_on_change(monkeypatch):
     assert constructed == [{"console": console, "transient": True, "auto_refresh": False}]
 
 
+def test_number_selects_an_option_in_one_keypress(monkeypatch):
+    """Reaching option N by arrow costs N round trips; a digit costs one."""
+    monkeypatch.setattr(navigation, "Live", _PassiveLive)
+    monkeypatch.setattr(navigation, "_flush_stdin", lambda: None)
+    monkeypatch.setattr(navigation, "_raw_mode", _noop_context)
+    monkeypatch.setattr(navigation.sys, "stdin", _Stdin())
+    monkeypatch.setattr(navigation, "_read_key", _scripted_keys(["3"]))
+
+    result = navigation.interactive_select(
+        _RecordingConsole(),
+        "Menu",
+        [("add", "Add"), ("browse", "Browse"), ("export", "Export")],
+    )
+
+    assert result == "export"
+
+
+def test_out_of_range_digit_is_ignored(monkeypatch):
+    monkeypatch.setattr(navigation, "Live", _PassiveLive)
+    monkeypatch.setattr(navigation, "_flush_stdin", lambda: None)
+    monkeypatch.setattr(navigation, "_raw_mode", _noop_context)
+    monkeypatch.setattr(navigation.sys, "stdin", _Stdin())
+    monkeypatch.setattr(navigation, "_read_key", _scripted_keys(["9", "0", "enter"]))
+
+    result = navigation.interactive_select(
+        _RecordingConsole(), "Menu", [("add", "Add"), ("exit", "Exit")]
+    )
+
+    assert result == "add"
+
+
+def test_menu_numbers_exactly_the_options_a_digit_can_reach():
+    """The ordinal is the affordance; an unnumbered row must not accept a digit."""
+    short = [(f"k{i}", f"Option {i}") for i in range(9)]
+    long = [(f"k{i}", f"Option {i}") for i in range(10)]
+
+    short_lines = navigation._render_menu(short, 0, "", show_keys=False)
+    long_lines = navigation._render_menu(long, 0, "", show_keys=False)
+
+    assert "1 → Option 0" in short_lines[0]
+    assert "9" in short_lines[-1]
+    assert all("○" not in line for line in short_lines)
+    assert all("○" in line for line in long_lines[1:])
+    assert navigation._numbered_choice("1", len(short)) == 0
+    assert navigation._numbered_choice("1", len(long)) is None
+
+
+@pytest.mark.parametrize(
+    ("key", "count", "expected"),
+    [("1", 3, 0), ("3", 3, 2), ("4", 3, None), ("0", 3, None), ("a", 3, None), ("up", 3, None)],
+)
+def test_numbered_choice_rules(key, count, expected):
+    assert navigation._numbered_choice(key, count) == expected
+
+
+class _PassiveLive:
+    def __init__(self, _renderable, **_kwargs):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exc):
+        return False
+
+    def update(self, _renderable, **_kwargs) -> None:
+        pass
+
+
 def _scripted_keys(keys):
     remaining = list(keys)
 
