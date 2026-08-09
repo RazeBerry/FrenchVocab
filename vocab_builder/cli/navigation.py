@@ -148,7 +148,10 @@ def interactive_select(
             renderable = _menu_renderable(
                 console, title, options, index, instructions, show_keys=show_keys
             )
-            with Live(renderable, console=console, refresh_per_second=24, transient=True) as live:
+            # Redraw only when the selection moves. Rich's refresh thread would
+            # otherwise restream the whole panel ~24 times a second, which is
+            # free on a local terminal and costly over a remote session.
+            with Live(renderable, console=console, transient=True, auto_refresh=False) as live:
                 while True:
                     key = _read_key()
                     previous_index = index
@@ -171,7 +174,8 @@ def interactive_select(
                                 index,
                                 instructions,
                                 show_keys=show_keys,
-                            )
+                            ),
+                            refresh=True,
                         )
     finally:
         console.show_cursor(True)
@@ -399,7 +403,28 @@ def _read_escape_remainder(fd: int) -> str:
         if not next_ch:
             break
         sequence.append(next_ch)
+        if _escape_sequence_is_complete(sequence):
+            break
     return "".join(sequence)
+
+
+def _escape_sequence_is_complete(sequence: list[str]) -> bool:
+    """Report whether the buffered bytes already form a whole escape sequence.
+
+    Without this, every arrow key pays one full ``_ESC_SEQUENCE_TIMEOUT`` while
+    ``select`` waits for a continuation byte that will never arrive. That is
+    invisible on a local terminal and lands on top of the round trip when the
+    CLI is driven over SSH.
+    """
+    introducer = sequence[0]
+    if introducer == "[":
+        # CSI: parameter and intermediate bytes precede a final byte in 0x40-0x7E.
+        return len(sequence) > 1 and "\x40" <= sequence[-1] <= "\x7e"
+    if introducer == "O":
+        # SS3 keypad/cursor sequences carry exactly one byte after the introducer.
+        return len(sequence) > 1
+    # Anything else is a single-character Alt combination.
+    return True
 
 
 def _stdin_ready(fd: int, timeouts: list[float]) -> bool:
@@ -457,9 +482,10 @@ def interactive_confirm(
     try:
         with _raw_mode(sys.stdin):
             renderable = _confirm_renderable(console, message, selected, yes_label, no_label)
-            with Live(renderable, console=console, refresh_per_second=24, transient=True) as live:
+            with Live(renderable, console=console, transient=True, auto_refresh=False) as live:
                 while True:
                     key = _read_key()
+                    previous_selected = selected
 
                     if key in {"left", "up"}:
                         selected = True
@@ -476,7 +502,11 @@ def interactive_confirm(
                     elif key == "ctrl_c":
                         return False
 
-                    live.update(_confirm_renderable(console, message, selected, yes_label, no_label))
+                    if selected != previous_selected:
+                        live.update(
+                            _confirm_renderable(console, message, selected, yes_label, no_label),
+                            refresh=True,
+                        )
     finally:
         console.show_cursor(True)
 

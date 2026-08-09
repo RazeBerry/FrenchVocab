@@ -17,6 +17,7 @@ from .vocab_repository import VocabRepository
 from .llm_coordinator import LLMCoordinator
 from .anki_manager import AnkiExportManager
 from .spelling_checker import SpellingChecker
+from .startup_warmup import start_entry_warmup, sync_load_requested
 from .vocab_display_mixin import VocabDisplayMixin
 from .vocab_application import VocabCaptureMixin
 from .vocab_merge_mixin import VocabMergeMixin
@@ -230,6 +231,7 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
         self._initialize_vocab_repository()
         self._initialize_runtime_flags()
         self._spelling_checker = SpellingChecker(self.ui)
+        start_entry_warmup(self)
 
         load_config_start, load_config_end = self._initialize_llm(
             provider=provider,
@@ -381,11 +383,8 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
         load_config_start: float,
         load_config_end: float,
     ) -> None:
-        from vocab_builder.compat import get_env
-        if os.environ.get("PYTEST_CURRENT_TEST") or get_env("VOCABBUILDER_FORCE_SYNC_LOAD"):
+        if sync_load_requested():
             self._ensure_entries_loaded()
-        else:
-            self._start_warmup_tasks()
 
         init_end = time.time()
         if self.verbose:
@@ -641,25 +640,6 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
             on_query_exception=self._handle_ai_exception,
             verbose=self.verbose,
         )
-
-    def _safe_warmup(self, fn, label: str) -> None:
-        """Run a warm-up task defensively so background failures never block startup."""
-        try:
-            fn()
-        except Exception as exc:  # pragma: no cover - best-effort telemetry
-            if self.verbose:
-                self.ui.debug(f"Warm-up task failed [{label}]: {exc}")
-
-    def _start_warmup_tasks(self) -> None:
-        """Run non-critical startup tasks in parallel (e.g., LaTeX parse)."""
-        tasks: List[Tuple[str, Any]] = []
-        if not getattr(self, "_entries_loaded", False):
-            tasks.append(("entries", self._ensure_entries_loaded))
-
-        for label, fn in tasks:
-            t = threading.Thread(target=self._safe_warmup, args=(fn, label), name=f"warmup-{label}", daemon=True)
-            t.start()
-            self._warmup_threads.append(t)
 
     def ensure_llm_ready(self) -> bool:
         """Ensure the LLM client is available (delegated to LLMCoordinator)."""

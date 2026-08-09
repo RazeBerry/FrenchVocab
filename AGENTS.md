@@ -89,6 +89,22 @@ pytest -k "anki"
 - `vocab_builder/core/menu_loop.py` drives menu orchestration; `vocab_builder/cli/menu.py` remains a compatibility shim.
 - `pyproject.toml` defines the `vocabbuilder` console script entry point.
 
+#### Remote interaction cost
+- The CLI is routinely driven over SSH through `scripts/macos/vocab`, so treat
+  keystrokes and redraws as billed at network latency, not as free local work.
+- `vocab_builder/cli/navigation.py` renders menus with `Live(auto_refresh=False)`
+  and repaints only when the selection moves. Re-enabling Rich's refresh thread
+  restreams the whole panel about 24 times a second for as long as a menu is
+  open, which is invisible locally and continuous traffic remotely.
+- `_read_escape_remainder` stops as soon as the buffered bytes form a complete
+  CSI or SS3 sequence. Without that early exit, every arrow key waits out a full
+  `VOCABBUILDER_ESC_SEQUENCE_TIMEOUT` for a continuation byte that never comes,
+  and that wait lands on top of the round trip.
+- `startup_warmup.start_entry_warmup` runs before provider initialization
+  because the first menu refresh blocks on an authoritative entry count.
+  Scheduling the parse later leaves nothing for it to overlap with and puts it
+  in front of the welcome screen.
+
 ### Core Application (`vocab_builder/core/`)
 - `vocab.py` contains `VocabBuilder`, the main controller.
 - `vocab_repository.py` handles LaTeX parsing, persistence, entry indexing, and counts.
@@ -100,6 +116,7 @@ pytest -k "anki"
 - `llm_coordinator.py` manages provider initialization lifecycle, degraded mode, and usage metrics, and uses generation-guarded background init so stale workers cannot overwrite newer provider changes.
 - `history_logger.py` writes append-only JSONL history.
 - `file_safety.py` provides atomic file operations and backup/restore support.
+- `startup_warmup.py` schedules the background LaTeX parse and owns the synchronous-load escape hatch.
 - `protocols.py` defines structural typing contracts used by menu/workflow modules.
 
 ### Provider and Credential System
