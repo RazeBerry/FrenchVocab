@@ -35,7 +35,6 @@ export class CaptureView {
     this.language = status.language;
     this.languageName = status.language_name;
     el("entry-label").textContent = `${status.language_name} word or phrase`;
-    this.input.placeholder = `Type ${withArticle(status.language_name)} word`;
     if (changed) {
       this.input.value = readStorage(this.draftKey());
       this.showCapture();
@@ -116,15 +115,22 @@ export class CaptureView {
     this.more.hidden = labels.length === 0;
     el("more-label").textContent = this.collapsedLabel;
     this.more.setAttribute("aria-expanded", "false");
+    // The solid button always commits the previewed entry and the ghost always
+    // offers the alternative to committing it. Routing a sentence to the
+    // translator used to sit in the solid slot while the ghost wrote to disk,
+    // which read exactly backwards.
     this.discard.hidden = false;
     this.discard.textContent = preview.route_recommended
-      ? "Keep as vocabulary"
+      ? "Translate instead"
       : (preview.spelling_suggestion ? `Keep “${preview.original_input}”` : "Discard");
     el("primary-label").textContent = preview.route_recommended
-      ? "Translate instead"
+      ? "Keep as vocabulary"
       : (preview.duplicate_action === "merge" ? "Merge senses" : "Keep it");
     this.primary.disabled = false;
-    this.showMessage(preview.spelling_suggestion ? `Corrected to “${preview.word}”.` : "");
+    this.showMessage(
+      preview.spelling_suggestion ? `Corrected to “${preview.word}”.` : "",
+      { note: true },
+    );
   }
 
   showDuplicate(error) {
@@ -144,7 +150,7 @@ export class CaptureView {
       return;
     }
     const text = this.pendingDuplicateText || this.input.value;
-    this.setBusy(true);
+    this.setBusy(true, "Looking it up…");
     this.showMessage("");
     try {
       const preview = await this.api.request("/api/preview", {
@@ -163,7 +169,7 @@ export class CaptureView {
   async save(useOriginal = false) {
     if (!this.preview) return;
     const preview = this.preview;
-    this.setBusy(true);
+    this.setBusy(true, "Saving…");
     this.showMessage("");
     try {
       const saved = await this.api.request("/api/save", {
@@ -253,7 +259,19 @@ export class CaptureView {
     el("more-label").textContent = "Show less";
   }
 
-  setBusy(busy) {
+  // One busy idiom app-wide: the label states what is happening. The spinner
+  // this replaces was hidden under prefers-reduced-motion, which left capture
+  // with no visible feedback at all across a request that can run two minutes.
+  setBusy(busy, busyLabel = "Working…") {
+    const label = el("primary-label");
+    if (busy) {
+      this.idleLabel = label.textContent;
+      this.busyLabel = busyLabel;
+      label.textContent = busyLabel;
+    } else if (label.textContent === this.busyLabel) {
+      // A completed save has already written the next idle label itself.
+      label.textContent = this.idleLabel;
+    }
     this.primary.classList.toggle("is-loading", busy);
     this.primary.setAttribute("aria-busy", String(busy));
     this.primary.disabled = busy || (!this.preview && !this.input.value.trim());
@@ -268,6 +286,19 @@ export class CaptureView {
       this.duplicateActions.hidden = true;
       this.pendingDuplicateText = "";
     });
+    // A size step started on that input event has not landed yet, so the
+    // scrollHeight just measured belongs to the previous, larger step. Typing
+    // hides this because the next keystroke re-measures at the settled size,
+    // but a paste delivers one event and would leave the field stuck tall.
+    this.input.addEventListener("transitionend", (event) => {
+      if (event.propertyName === "font-size") autoGrow(this.input);
+    });
+    // The whole blank slip is the writing surface. Without this only the
+    // textarea's own line box accepts a tap, which is a 39px target inside a
+    // card several times its height.
+    this.slip.addEventListener("click", (event) => {
+      if (!this.preview && !event.target.closest("button")) this.input.focus();
+    });
     this.input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
@@ -275,16 +306,11 @@ export class CaptureView {
       }
     });
     this.primary.addEventListener("click", () => {
-      if (this.preview?.route_recommended) {
-        this.onRouteSentence(this.preview.original_input);
-      } else if (this.preview) {
-        this.save();
-      } else {
-        this.lookUp();
-      }
+      if (this.preview) this.save();
+      else this.lookUp();
     });
     this.discard.addEventListener("click", () => {
-      if (this.preview?.route_recommended) this.save();
+      if (this.preview?.route_recommended) this.onRouteSentence(this.preview.original_input);
       else if (this.preview?.spelling_suggestion) this.save(true);
       else { this.showCapture(); this.input.focus(); }
     });
@@ -292,10 +318,6 @@ export class CaptureView {
     el("merge-button").addEventListener("click", () => this.lookUp("merge"));
     el("variant-button").addEventListener("click", () => this.lookUp("variant"));
   }
-}
-
-function withArticle(name) {
-  return `${/^[aeiou]/i.test(name) ? "an" : "a"} ${name}`;
 }
 
 function scaleHeadword(node, text) {

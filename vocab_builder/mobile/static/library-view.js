@@ -1,5 +1,5 @@
 import { renderEntries, renderEntryCard } from "./entry-list.js";
-import { el, ignoreCancelled, makeButton } from "./ui.js";
+import { el, ignoreCancelled, makeButton, markScrollable } from "./ui.js";
 
 export class LibraryView {
   constructor(api) {
@@ -97,6 +97,7 @@ export class LibraryView {
       });
       container.appendChild(button);
     });
+    markScrollable(container);
   }
 
   async showRandom() {

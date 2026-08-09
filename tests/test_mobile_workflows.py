@@ -253,6 +253,19 @@ def test_mobile_api_exposes_each_cli_capability_without_leaking_credentials(
     assert responses["download"].content.startswith(b"\\documentclass")
 
 
+def test_settings_report_the_model_apart_from_the_provider_label(tmp_path, monkeypatch):
+    """The phone names the provider in its heading and the model beneath it, so
+    the split has to come from the server rather than string surgery in JS."""
+    service = build_service(tmp_path, monkeypatch)
+
+    settings = service.settings.describe()
+
+    assert settings["model"] == "test-model-1"
+    assert settings["label"] == "Test provider (test-model-1)"
+    assert {"gemini", "claude"} <= {provider["id"] for provider in settings["providers"]}
+    assert all(provider["name"] for provider in settings["providers"])
+
+
 def test_monolingual_status_disables_only_translation_navigation(tmp_path, monkeypatch):
     service = build_service(tmp_path, monkeypatch, language="en")
 

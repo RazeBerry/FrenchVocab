@@ -16,9 +16,12 @@
   --card-blank: #faf8f5;
   --ink: #1c1a17;
   --ink-soft: #4a4740;
-  --dim: #6f6a63;
-  --ghost: #b3ada4;
-  --placeholder: #857e75;
+  /* The grey ramp is tuned against the surface each step actually sits on:
+     --dim 4.75:1 on --bg, --placeholder 4.53:1 on --card-blank, and --ghost
+     3.40:1 there — large-text only, which is all it now carries. */
+  --dim: #6b665f;
+  --ghost: #8d867c;
+  --placeholder: #787268;
   --line: rgba(28, 26, 23, 0.12);
   --line-strong: rgba(28, 26, 23, 0.2);
 
@@ -35,6 +38,11 @@
 
   --card-shadow: 0 1px 2px rgba(28, 26, 23, 0.07), 0 18px 40px rgba(28, 26, 23, 0.11);
   --deck-shadow: 0 1px 2px rgba(28, 26, 23, 0.05);
+
+  /* Declared once and painted viewport-fixed wherever it is used, so anything
+     that has to sit on the page ground (the sticky letter chip) matches it at
+     every scroll position instead of guessing a flat step from the ramp. */
+  --page: linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 42%);
 
 
   /* Scales. Every size, radius and duration below snaps to one of these
@@ -53,8 +61,11 @@
   --r-sm: 12px;
   --r-md: 16px;
   --r-pill: 999px;
-  /* Apple's minimum comfortable touch target. */
+  /* Apple's minimum comfortable touch target, and the taller step used by
+     controls that commit something or accept typing. Layout dimensions — card
+     heights, the tab bar, the stage — are not tap targets and stay literal. */
   --tap: 44px;
+  --tap-lg: 48px;
   --dur-fast: 150ms;
   --dur: 240ms;
   --dur-slow: 300ms;
@@ -77,7 +88,7 @@
   --ink: #ece7de;
   --ink-soft: #cbc5b9;
   --dim: #9c958a;
-  --ghost: #6b655c;
+  --ghost: #736d64;
   --placeholder: #8e877c;
   --line: rgba(236, 231, 222, 0.13);
   --line-strong: rgba(236, 231, 222, 0.24);
@@ -113,7 +124,7 @@ body {
   min-height: 100dvh;
   margin: 0;
   color: var(--ink);
-  background: linear-gradient(180deg, var(--bg-top) 0%, var(--bg) 42%);
+  background: var(--page);
   background-attachment: fixed;
 }
 
@@ -265,8 +276,11 @@ button { -webkit-tap-highlight-color: transparent; }
   position: absolute;
   left: 50%;
   height: 44px;
-  border-radius: 16px 16px 0 0;
+  border-radius: var(--r-md) var(--r-md) 0 0;
   background: var(--card);
+  /* --card barely separates from --bg in the dark theme, which left the stack
+     reading as two stray hue arcs. The edge restores the card body. */
+  border: 1px solid var(--line);
   border-top: 4px solid var(--hue);
   box-shadow: var(--deck-shadow);
   transform: translateX(-50%);
@@ -297,6 +311,12 @@ button { -webkit-tap-highlight-color: transparent; }
   box-shadow: none;
   outline: 1.5px dashed var(--line-strong);
   outline-offset: -1.5px;
+  transition: outline-color var(--dur-fast) ease;
+}
+/* the slip is the focus indicator for the headword it contains */
+.slip.is-capturing:focus-within {
+  outline-style: solid;
+  outline-color: var(--hue);
 }
 
 .slip-head {
@@ -357,7 +377,9 @@ textarea.hw::placeholder { color: var(--ghost); }
   letter-spacing: 0.13em;
   text-transform: uppercase;
 }
-.slip.is-capturing .pos { color: var(--ghost); }
+/* --ghost carries only the headword placeholder, which is large enough for the
+   3:1 floor. The small blank-state lines take the body-legible step. */
+.slip.is-capturing .pos { color: var(--placeholder); }
 
 .slip-body {
   padding: 13px 20px 20px;
@@ -375,11 +397,13 @@ textarea.hw::placeholder { color: var(--ghost); }
 }
 
 .mean { margin: 0; font-size: var(--t-md); line-height: 1.5; }
-.slip.is-capturing .mean { color: var(--ghost); }
+.slip.is-capturing .mean { color: var(--placeholder); }
 
 .example { margin: 11px 0 0; font-size: var(--t-sm); line-height: 1.45; }
 .example .source { margin: 0; color: var(--dim); font-style: italic; }
-.example .target { margin: 2px 0 0; color: var(--dim); opacity: 0.85; }
+/* Italic source against roman target already separates the two; fading the
+   target as well pushed the translation under the small-text contrast floor. */
+.example .target { margin: 2px 0 0; color: var(--dim); }
 
 .senses { margin: 0; padding-left: 1.15rem; font-size: var(--t-md); line-height: 1.46; }
 .senses li { margin-bottom: 9px; }
@@ -448,7 +472,7 @@ textarea.hw::placeholder { color: var(--ghost); }
 .acts button {
   flex: 1;
   position: relative;
-  min-height: 48px;
+  min-height: var(--tap-lg);
   border-radius: var(--r-sm);
   font-size: var(--t-md);
   font-weight: 650;
@@ -464,22 +488,17 @@ textarea.hw::placeholder { color: var(--ghost); }
   background: var(--hue);
   color: var(--on-hue);
 }
-.solid-button:disabled { opacity: 0.34; cursor: not-allowed; }
+/* Fading the whole button fades label and fill together, so their contrast
+   against each other collapses to ~2:1 — and this is the state the app opens
+   in every launch. Restate the surface instead and keep the label at strength. */
+.solid-button:disabled {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--dim);
+  cursor: not-allowed;
+}
 .solid-button:not(:disabled):active { filter: brightness(0.92); transform: translateY(1px); }
 
-.button-loader {
-  display: none;
-  width: 18px;
-  height: 18px;
-  margin: auto;
-  border: 2px solid color-mix(in srgb, currentColor 35%, transparent);
-  border-top-color: currentColor;
-  border-radius: 50%;
-  animation: spin 0.75s linear infinite;
-}
-.is-loading .button-label { display: none; }
-.is-loading .button-loader { display: block; }
-@keyframes spin { to { transform: rotate(360deg); } }
+[aria-busy="true"] { cursor: progress; }
 
 .message {
   min-height: 18px;
@@ -489,6 +508,7 @@ textarea.hw::placeholder { color: var(--ghost); }
   line-height: 1.4;
 }
 .message.is-ok { color: var(--ok); }
+.message.is-note { color: var(--dim); }
 
 /* ---------------- the collection, below the fold ---------------- */
 .collection { margin-top: 34px; }
@@ -514,7 +534,7 @@ textarea.hw::placeholder { color: var(--ghost); }
 .search span { color: var(--dim); font-size: var(--t-lg); }
 .search input {
   width: 100%;
-  min-height: 46px;
+  min-height: var(--tap-lg);
   padding: 0;
   border: 0;
   outline: 0;
@@ -535,7 +555,10 @@ textarea.hw::placeholder { color: var(--ghost); }
   top: 0;
   z-index: 2;
   padding: 5px 2px;
-  background: var(--bg);
+  /* --bg is the gradient's *lower* stop, but a chip pinned at top: 0 sits
+     against its upper one. Paint the same viewport-fixed gradient instead. */
+  background: var(--page);
+  background-attachment: fixed;
   border-bottom: 1px solid var(--line);
   color: var(--hue);
   font-size: var(--t-3xs);
@@ -549,7 +572,7 @@ textarea.hw::placeholder { color: var(--ghost); }
   gap: 9px;
   align-items: baseline;
   width: 100%;
-  min-height: 44px;
+  min-height: var(--tap);
   padding: 9px 2px;
   border: 0;
   border-bottom: 1px solid var(--line);
@@ -655,7 +678,7 @@ textarea.hw::placeholder { color: var(--ghost); }
 .install-tip {
   position: fixed;
   right: max(14px, env(safe-area-inset-right));
-  bottom: calc(14px + env(safe-area-inset-bottom));
+  bottom: calc(78px + env(safe-area-inset-bottom));
   left: max(14px, env(safe-area-inset-left));
   z-index: 10;
   display: flex;
@@ -673,6 +696,8 @@ textarea.hw::placeholder { color: var(--ghost); }
 .install-tip button {
   flex: none;
   align-self: flex-start;
+  min-width: var(--tap);
+  min-height: var(--tap);
   color: inherit;
   border: 0;
   background: transparent;
@@ -713,12 +738,10 @@ footer {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
-  .is-loading .button-label { display: inline; }
-  .is-loading .button-loader { display: none; }
 }
 
 /* ---------------- full mobile workspace ---------------- */
-.full { width: 100%; min-height: 48px; border-radius: var(--r-sm); }
+.full { width: 100%; min-height: var(--tap-lg); border-radius: var(--r-sm); }
 .quiet-button {
   min-height: var(--tap);
   padding: 9px 13px;
@@ -784,7 +807,7 @@ footer {
   background: var(--card-blank);
   line-height: 1.5;
 }
-.paper-input.single { min-height: 48px; resize: none; }
+.paper-input.single { min-height: var(--tap-lg); resize: none; }
 .paper-input:focus { border-color: var(--hue); box-shadow: 0 0 0 3px var(--hue-wash); }
 .paper-input::placeholder { color: var(--placeholder); }
 .segmented {
@@ -813,6 +836,11 @@ footer {
   background: var(--card);
   box-shadow: 0 1px 4px color-mix(in srgb, var(--ink) 12%, transparent);
 }
+.segmented.is-scrollable,
+.type-chips.is-scrollable {
+  -webkit-mask-image: linear-gradient(90deg, #000 0 calc(100% - 26px), transparent);
+  mask-image: linear-gradient(90deg, #000 0 calc(100% - 26px), transparent);
+}
 #translate-button { margin-top: 11px; }
 
 .result-card, .practice-card, .feedback-card, .tool-card, .stats-panel {
@@ -838,7 +866,7 @@ footer {
   line-height: 1.5;
 }
 .inline-actions { display: flex; gap: 9px; margin-top: 18px; }
-.inline-actions > * { flex: 1; min-height: 44px; border-radius: var(--r-xs); }
+.inline-actions > * { flex: 1; min-height: var(--tap); border-radius: var(--r-xs); }
 
 .pair-list { display: grid; gap: 7px; margin-top: 8px; }
 .pair-list article {
@@ -851,7 +879,10 @@ footer {
   line-height: 1.4;
 }
 .pair-list p { margin: 0; }
-.pair-list p:last-child { color: var(--dim); }
+/* The studied language keeps the display face in either column, so a
+   target -> English direction does not demote it to dim sans. */
+.pair-list .pair-term { font-family: var(--display); font-size: var(--t-md); }
+.pair-list .pair-gloss { color: var(--dim); }
 
 .library-search { margin-bottom: 11px; }
 .type-chips {
@@ -947,7 +978,7 @@ footer {
 .status-pill.is-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
 .download { display: grid; place-items: center; margin-top: 10px; text-decoration: none; }
 .danger-link {
-  min-height: 38px;
+  min-height: var(--tap);
   margin-top: 8px;
   padding: 0;
   border: 0;
@@ -966,8 +997,6 @@ footer {
   color: var(--dim);
   font-size: var(--t-xs);
 }
-.file-list span { text-transform: capitalize; }
-.file-list code { overflow: hidden; color: var(--ink-soft); text-overflow: ellipsis; white-space: nowrap; }
 .file-list a {
   min-width: 0;
   overflow: hidden;
@@ -976,7 +1005,7 @@ footer {
   white-space: nowrap;
 }
 .backup-drawer { margin-top: 12px; }
-.backup-drawer summary { min-height: 42px; color: var(--hue); font-size: var(--t-xs); font-weight: 650; cursor: pointer; }
+.backup-drawer summary { min-height: var(--tap); color: var(--hue); font-size: var(--t-xs); font-weight: 650; cursor: pointer; }
 .backup-drawer .file-list { margin-top: 0; }
 
 .privacy-footer { padding-bottom: 12px; }
@@ -1017,10 +1046,13 @@ footer {
 .tab small { font-size: var(--t-3xs); font-weight: 650; }
 .tab.is-active { color: var(--hue); background: var(--hue-wash); }
 
-.install-tip { bottom: calc(78px + env(safe-area-inset-bottom)); }
 
+/* A text field always matches :focus-visible while focused, so this ring would
+   box the headword on every tap — a second hard border inside the slip's own
+   outline. The headword is excluded and the slip carries the focus treatment
+   instead; the caret remains the in-field indicator. */
 button:focus-visible,
-textarea:focus-visible,
+textarea:not(.hw):focus-visible,
 input:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--hue);
@@ -1029,6 +1061,6 @@ a:focus-visible {
 
 @media (min-width: 700px) {
   .app { width: min(100%, 720px); }
-  .tabbar { max-width: 720px; border-right: 1px solid var(--line); border-left: 1px solid var(--line); border-radius: 16px 16px 0 0; }
+  .tabbar { max-width: 720px; border-right: 1px solid var(--line); border-left: 1px solid var(--line); border-radius: var(--r-md) var(--r-md) 0 0; }
   .stage { min-height: 470px; }
 }

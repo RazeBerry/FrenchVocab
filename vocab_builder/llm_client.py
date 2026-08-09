@@ -195,6 +195,14 @@ class LLMClient(ABC):
         """Return a human-readable provider/model label."""
         return self.__class__.__name__
 
+    def model_name(self) -> str:
+        """Return the bare model identifier, without the provider name.
+
+        Surfaces that show the provider and the model in separate roles need
+        the two apart; ``model_label`` glues them together for single-line use.
+        """
+        return getattr(self, "_model_name", "")
+
     def verify_credentials(self, timeout: float = 5.0) -> None:  # pragma: no cover - optional override
         """Validate credentials; subclasses may override for richer checks."""
         return None

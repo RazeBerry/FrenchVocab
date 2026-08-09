@@ -50,7 +50,10 @@ class FakeClient:
         return {"usage": {"prompt_tokens": 1, "output_tokens": 1, "total_tokens": 2}}
 
     def model_label(self) -> str:
-        return "Test provider"
+        return "Test provider (test-model-1)"
+
+    def model_name(self) -> str:
+        return "test-model-1"
 
 
 def build_service(

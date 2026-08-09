@@ -46,6 +46,7 @@ function setConnection(online, label) {
 function setEntryCount(count) {
   const total = Number(count || 0);
   el("entry-count").textContent = total.toLocaleString();
+  el("entry-noun").textContent = total === 1 ? "word" : "words";
   el("deck").classList.toggle("is-empty", total === 0);
 }
 

@@ -30,7 +30,7 @@
     <div class="app">
       <header class="bar">
         <div class="langs" id="languages" role="group" aria-label="Collection"></div>
-        <p class="count"><strong id="entry-count">&mdash;</strong> <span id="entry-noun">collected</span></p>
+        <p class="count"><strong id="entry-count">&mdash;</strong> <span id="entry-noun">words</span></p>
         <button class="theme" id="theme-toggle" type="button">
           <span class="sr-only" id="theme-label">Switch to dark theme</span>
         </button>
@@ -78,7 +78,6 @@
             <button class="ghost-button" id="discard-button" type="button" hidden>Discard</button>
             <button class="solid-button" id="primary-button" type="button" disabled>
               <span class="button-label" id="primary-label">Look it up</span>
-              <span class="button-loader" aria-hidden="true"></span>
             </button>
           </div>
           <div class="duplicate-actions" id="duplicate-actions" hidden>
@@ -94,7 +93,7 @@
         </section>
 
         <section class="view" id="view-translate" data-view="translate" hidden>
-          <div class="page-heading"><p class="eyebrow">Translator</p><h1>Turn a passage around</h1><p>Same prompts and translation files as the terminal.</p></div>
+          <div class="page-heading"><p class="eyebrow">Translator</p><h1>Turn a passage around</h1><p>Pairs you keep are saved to the same collection you use everywhere else.</p></div>
           <div class="segmented" id="translation-directions" role="group" aria-label="Translation direction"></div>
           <label class="field-label" for="translation-input">Text to translate</label>
           <textarea class="paper-input" id="translation-input" rows="5" maxlength="10000" placeholder="Type or paste a sentence"></textarea>
@@ -160,6 +159,7 @@
           </section>
           <section class="tool-card">
             <div class="section-heading"><div><p class="eyebrow">AI provider</p><h2 id="provider-label">Connection</h2></div><span class="status-pill" id="provider-status">Loading</span></div>
+            <p class="note" id="provider-model" hidden></p>
             <div class="segmented" id="provider-options" role="group" aria-label="Provider"></div>
             <label class="field-label" for="provider-key">New API key <span>(optional)</span></label>
             <input class="paper-input single" id="provider-key" type="password" autocomplete="new-password" placeholder="Leave blank to use the stored key">

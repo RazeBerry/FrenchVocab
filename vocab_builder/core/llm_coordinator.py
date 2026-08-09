@@ -267,6 +267,19 @@ class LLMCoordinator:
         return label
 
     @property
+    def provider_model(self) -> str:
+        """Bare model identifier for the active provider, or an empty string."""
+        if self._client is None:
+            return ""
+        getter = getattr(self._client, "model_name", None)
+        if not callable(getter):
+            return ""
+        try:
+            return getter()
+        except (RuntimeError, ValueError, TypeError, AttributeError):
+            return ""
+
+    @property
     def session_usage(self) -> Dict[str, int]:
         """Session token usage statistics."""
         with self._usage_lock:

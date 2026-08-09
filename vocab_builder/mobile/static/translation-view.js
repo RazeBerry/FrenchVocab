@@ -1,4 +1,4 @@
-import { el, ignoreCancelled, makeButton, readStorage, setBusy, setMessage, writeStorage } from "./ui.js";
+import { el, ignoreCancelled, makeButton, markScrollable, readStorage, setBusy, setMessage, writeStorage } from "./ui.js";
 
 export class TranslationView {
   constructor(api, onSaved) {
@@ -86,6 +86,7 @@ export class TranslationView {
       });
       container.appendChild(button);
     });
+    markScrollable(container);
   }
 
   async previewTranslation() {
@@ -155,10 +156,16 @@ export class TranslationView {
       );
       const container = el("translation-pairs");
       container.replaceChildren();
+      // The studied language is the display face everywhere else in the app.
+      // Styling by column position instead demoted it to dim sans whenever the
+      // direction ran target -> English.
+      const studiedIsSource = direction.startsWith("target");
       payload.items.forEach((pair) => {
         const row = document.createElement("article");
         const source = document.createElement("p");
         const target = document.createElement("p");
+        source.className = studiedIsSource ? "pair-term" : "pair-gloss";
+        target.className = studiedIsSource ? "pair-gloss" : "pair-term";
         source.textContent = pair.source;
         target.textContent = pair.target;
         row.append(source, target);

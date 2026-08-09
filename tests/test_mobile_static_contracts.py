@@ -1,0 +1,109 @@
+"""Design invariants of the mobile shell that nothing else can catch.
+
+The static assets have no runtime coverage, so every defect these pin shipped
+invisibly and stayed shipped: a focus ring boxing the headword, a paste leaving
+the capture field stuck at a stale height, an index that threw the page half a
+screen, a disabled primary button whose label sat at 2:1 against its own fill.
+Each assertion below names the behavior it protects rather than the syntax it
+matches, so a deliberate redesign can restate it and an accident cannot.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+
+import pytest
+
+STATIC = Path(__file__).resolve().parents[1] / "vocab_builder" / "mobile" / "static"
+
+
+@pytest.fixture(scope="module")
+def styles() -> str:
+    return (STATIC / "styles.css").read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def capture_view() -> str:
+    return (STATIC / "capture-view.js").read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def entry_list() -> str:
+    return (STATIC / "entry-list.js").read_text(encoding="utf-8")
+
+
+def test_focus_ring_excludes_the_headword(styles):
+    """A text field always matches :focus-visible, so an unscoped rule would
+    box the capture headword on every tap, inside the slip's own outline."""
+    assert "textarea:not(.hw):focus-visible" in styles
+    assert not re.search(r"^\s*textarea:focus-visible", styles, re.MULTILINE)
+    assert ".slip.is-capturing:focus-within" in styles
+
+
+def test_disabled_primary_button_does_not_fade_label_and_fill_together(styles):
+    """opacity composites both, collapsing their mutual contrast to ~2:1 — and
+    this is the state the app opens in on every launch."""
+    rule = _rule(styles, ".solid-button:disabled")
+    assert "opacity" not in rule
+    assert "background:" in rule and "color:" in rule
+
+
+def test_headword_remeasures_after_its_size_step_lands(capture_view):
+    """scrollHeight read during the font-size transition belongs to the previous
+    step. Typing re-measures on the next keystroke; a paste never would."""
+    assert 'event.propertyName === "font-size"' in capture_view
+    assert "autoGrow" in capture_view
+
+
+def test_the_whole_blank_slip_focuses_the_field(capture_view):
+    """The textarea's own line box is a 39px target inside a much taller card."""
+    assert "this.slip.addEventListener" in capture_view
+    assert "this.input.focus()" in capture_view
+
+
+def test_index_opens_without_scrollintoview(entry_list):
+    """scrollIntoView aligned the whole panel and moved the page ~500px, which
+    contradicts the in-place contract and hid the tapped word."""
+    assert ".scrollIntoView(" not in entry_list
+    assert "window.scrollBy" in entry_list
+
+
+def test_sticky_letter_paints_the_same_ground_as_the_page(styles):
+    """--bg is the gradient's lower stop; a chip pinned at top: 0 sits against
+    its upper one, so a flat token leaves a visible band."""
+    assert "--page:" in styles
+    letter = _rule(styles, ".index-letter")
+    assert "var(--page)" in letter
+    assert "background-attachment: fixed" in letter
+
+
+def test_unknown_is_not_rendered_as_a_part_of_speech(entry_list):
+    """"Unknown" is the parser's placeholder, and it reached the index as an
+    "UNKN." badge on real entries."""
+    assert "function knownType" in entry_list
+    assert '"unknown"' in entry_list
+
+
+def test_every_tappable_control_declares_at_least_the_tap_floor(styles):
+    """Three controls survived the pass that was supposed to raise them all."""
+    assert "--tap: 44px" in styles
+    assert "--tap-lg: 48px" in styles
+    for selector in (".danger-link", ".backup-drawer summary", ".install-tip button"):
+        assert "var(--tap" in _rule(styles, selector), selector
+
+
+def test_no_stray_pixel_sizes_remain_on_tap_targets(styles):
+    """The scale exists so a value is a choice; 44px spelled two ways is drift."""
+    body = styles.split("--tap-lg: 48px;", 1)[1]
+    strays = re.findall(r"min-height:\s*(4[2-9]|5[01])px", body)
+    assert strays == []
+
+
+def _rule(styles: str, selector: str) -> str:
+    match = re.search(
+        rf"(^|\n)\s*{re.escape(selector)}\s*(,[^{{]*)?\{{(?P<body>[^}}]*)\}}",
+        styles,
+    )
+    assert match, f"no rule found for {selector}"
+    return match.group("body")

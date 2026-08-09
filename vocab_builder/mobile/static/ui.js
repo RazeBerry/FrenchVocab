@@ -12,9 +12,13 @@ export function clearStorage(key) {
   try { localStorage.removeItem(key); } catch (_) { /* private mode */ }
 }
 
-export function setMessage(node, text, { ok = false } = {}) {
+/* Messages default to the failure colour, so anything that is neither a
+   failure nor a confirmation — a spelling correction, say — has to say so
+   explicitly rather than shipping as red. */
+export function setMessage(node, text, { ok = false, note = false } = {}) {
   node.textContent = text || "";
   node.classList.toggle("is-ok", Boolean(text) && ok);
+  node.classList.toggle("is-note", Boolean(text) && note && !ok);
 }
 
 export function setBusy(button, busy, busyLabel = "Working") {
@@ -32,6 +36,15 @@ export function makeButton(label, value, active = false) {
   button.dataset.value = value;
   button.setAttribute("aria-pressed", String(active));
   return button;
+}
+
+/* A horizontally scrolling strip looks like a clipped one unless it says
+   otherwise, and CSS cannot ask whether an element overflows. */
+export function markScrollable(container) {
+  container.classList.toggle(
+    "is-scrollable",
+    container.scrollWidth > container.clientWidth + 1,
+  );
 }
 
 export function paragraph(className, text) {

@@ -1,4 +1,4 @@
-import { el, ignoreCancelled, makeButton, setBusy, setMessage } from "./ui.js";
+import { el, ignoreCancelled, makeButton, markScrollable, setBusy, setMessage } from "./ui.js";
 
 export class ToolsView {
   constructor(api, onChanged) {
@@ -39,13 +39,25 @@ export class ToolsView {
     }
   }
 
+  // Words waiting to be exported are the normal state, not a fault; only stale
+  // tracking needs a decision. Clauses with a count of zero are left out
+  // rather than printed as "0 stale tracking records".
   renderAnki(status) {
     const pending = Number(status.pending_count || 0);
     const stale = Number(status.stale_count || 0);
-    el("anki-status").textContent = pending || stale ? "Needs attention" : "In sync";
-    el("anki-status").classList.toggle("is-ok", !pending && !stale);
-    el("anki-copy").textContent = pending || stale
-      ? `${pending} new entr${pending === 1 ? "y" : "ies"}; ${stale} stale tracking record${stale === 1 ? "" : "s"}.`
+    el("anki-status").textContent = stale
+      ? "Needs attention"
+      : (pending ? "Ready to export" : "In sync");
+    el("anki-status").classList.toggle("is-ok", stale === 0);
+    const clauses = [];
+    if (pending) {
+      clauses.push(`${pending} entr${pending === 1 ? "y is" : "ies are"} not in the deck yet`);
+    }
+    if (stale) {
+      clauses.push(`${stale} tracking record${stale === 1 ? "" : "s"} point${stale === 1 ? "s" : ""} at words you have removed`);
+    }
+    el("anki-copy").textContent = clauses.length
+      ? `${clauses.join(" · ")}.`
       : "Every vocabulary entry is represented in the export ledger.";
     el("anki-remove-stale").hidden = stale === 0;
   }
@@ -106,7 +118,13 @@ export class ToolsView {
 
   renderSettings(settings) {
     this.provider = settings.active || settings.providers?.[0]?.id || "gemini";
-    el("provider-label").textContent = settings.label || "AI connection";
+    // The heading names the provider; the model identifier is reference detail
+    // and belongs below it, not wrapping across a display-serif h2 into the
+    // status pill.
+    const active = (settings.providers || []).find(({ id }) => id === settings.active);
+    el("provider-label").textContent = active?.name || settings.label || "AI connection";
+    el("provider-model").textContent = settings.model || "";
+    el("provider-model").hidden = !settings.model;
     el("provider-status").textContent = settings.available ? "Connected" : "Unavailable";
     el("provider-status").classList.toggle("is-ok", Boolean(settings.available));
     const container = el("provider-options");
@@ -122,6 +140,7 @@ export class ToolsView {
       });
       container.appendChild(button);
     });
+    markScrollable(container);
     if (settings.error && !settings.available) setMessage(this.message, settings.error);
   }
 

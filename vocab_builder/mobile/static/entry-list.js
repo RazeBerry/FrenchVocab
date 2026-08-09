@@ -14,11 +14,10 @@ export function renderEntries(container, entries, options = {}) {
     row.type = "button";
     row.className = "index-row";
     row.setAttribute("aria-expanded", "false");
-    row.append(
-      element("span", "index-word", entry.word),
-      element("span", "index-type", abbreviateType(entry.word_type)),
-      element("span", "index-gloss", entry.definitions?.[0] || ""),
-    );
+    row.appendChild(element("span", "index-word", entry.word));
+    const abbreviation = abbreviateType(entry.word_type);
+    if (abbreviation) row.appendChild(element("span", "index-type", abbreviation));
+    row.appendChild(element("span", "index-gloss", entry.definitions?.[0] || ""));
     const detail = buildDetail(entry);
     row.addEventListener("click", () => toggleRow(container, row, detail));
     container.append(row, detail);
@@ -28,7 +27,7 @@ export function renderEntries(container, entries, options = {}) {
 export function renderEntryCard(container, entry) {
   container.replaceChildren();
   const title = element("h2", "entry-card-word", entry.word);
-  const type = element("p", "eyebrow", entry.word_type || "Unknown");
+  const type = element("p", "eyebrow", knownType(entry.word_type));
   const detail = buildDetail(entry, true);
   detail.inert = false;
   detail.classList.add("is-open", "is-static");
@@ -40,7 +39,8 @@ function buildDetail(entry, staticDetail = false) {
   const detail = element("div", "index-detail");
   if (!staticDetail) detail.inert = true;
   const inner = element("div", "index-detail-inner");
-  if (entry.word_type) inner.appendChild(element("p", "full-type", entry.word_type));
+  const type = knownType(entry.word_type);
+  if (type) inner.appendChild(element("p", "full-type", type));
   if (entry.definitions?.length) {
     const senses = document.createElement("ol");
     entry.definitions.forEach((definition) => {
@@ -67,7 +67,7 @@ function toggleRow(container, row, detail) {
   }
   if (alreadyOpen) return;
   row.setAttribute("aria-expanded", "true");
-  expand(detail);
+  expand(row, detail);
 }
 
 function collapse(detail) {
@@ -78,7 +78,7 @@ function collapse(detail) {
   detail.inert = true;
 }
 
-function expand(detail) {
+function expand(row, detail) {
   detail.inert = false;
   detail.classList.add("is-open");
   detail.style.height = "0px";
@@ -88,12 +88,28 @@ function expand(detail) {
     if (event.propertyName !== "height") return;
     detail.removeEventListener("transitionend", settle);
     detail.style.height = "auto";
-    detail.scrollIntoView({
-      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ? "auto"
-        : "smooth",
-      block: "nearest",
-    });
+    reveal(row, detail);
+  });
+}
+
+/* The index opens in place. scrollIntoView aligned the whole panel and could
+   throw the page half a screen, landing the tapped word under the sticky
+   letter. Scroll down only, by the least that shows the panel, and never far
+   enough to push the tapped row out of view — so the common case is no
+   movement at all. */
+function reveal(row, detail) {
+  const chrome = document.querySelector(".tabbar");
+  const floor = window.innerHeight - (chrome ? chrome.getBoundingClientRect().height : 0);
+  const overflow = detail.getBoundingClientRect().bottom - floor;
+  if (overflow <= 0) return;
+  const sticky = detail.parentElement?.querySelector(".index-letter");
+  const ceiling = sticky ? sticky.getBoundingClientRect().height : 0;
+  const headroom = row.getBoundingClientRect().top - ceiling;
+  const delta = Math.min(overflow, Math.max(0, headroom));
+  if (delta <= 0) return;
+  window.scrollBy({
+    top: delta,
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
   });
 }
 
@@ -103,8 +119,17 @@ function indexLetter(word) {
   return /[A-Z]/.test(base) ? base : "#";
 }
 
+/* "Unknown" is the parser's placeholder for a missing part of speech, not a
+   part of speech. Rendering it produced an "UNKN." badge on 7 French entries;
+   an absent badge says the same thing without the noise. */
+function knownType(type) {
+  const value = (type || "").trim();
+  return value.toLowerCase() === "unknown" ? "" : value;
+}
+
 function abbreviateType(type) {
-  const value = (type || "").trim().toLowerCase();
+  const value = knownType(type).toLowerCase();
+  if (!value) return "";
   const pairs = [
     ["separable verb", "v. sep."], ["pronominal verb", "v. pron."],
     ["conjunction", "conj."], ["expression", "expr."],
@@ -118,6 +143,6 @@ function abbreviateType(type) {
 function element(tag, className = "", text = "") {
   const node = document.createElement(tag);
   if (className) node.className = className;
-  if (text !== undefined) node.textContent = text;
+  node.textContent = text;
   return node;
 }

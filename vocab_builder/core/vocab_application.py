@@ -32,6 +32,9 @@ class VocabCapturePort(Protocol):
     @property
     def provider_label(self) -> str: ...
 
+    @property
+    def provider_model(self) -> str: ...
+
     def is_valid_input(self, word: str) -> bool: ...
 
     def detect_input_type(self, text: str) -> str: ...
@@ -83,6 +86,10 @@ class VocabCaptureMixin:
     def provider_label(self) -> str:
         return self._provider_label()
 
+    @property
+    def provider_model(self) -> str:
+        return self._llm.provider_model
+
     def suggest_spelling(self, word: str, ai_response: str) -> Optional[str]:
         return self._spelling_checker.suggest(word, ai_response)
 
@@ -127,6 +134,7 @@ class VocabCaptureMixin:
         return {
             "active": self.provider,
             "label": self.provider_label,
+            "model": self.provider_model,
             "available": self.api_available,
             "error": self.api_error_reason,
             "providers": configured,
