@@ -64,6 +64,19 @@ def test_the_whole_blank_slip_focuses_the_field(capture_view):
     assert "this.input.focus()" in capture_view
 
 
+def test_duplicate_content_leaves_the_blank_capture_styling(capture_view):
+    """Stored definitions are content, not placeholder copy, so the duplicate
+    landing state must use the filled slip before rendering the stored entry."""
+    collected = capture_view.split("showCollected(existingEntry)", 1)[1].split(
+        "showMergePreview(preview)", 1
+    )[0]
+    renderer = capture_view.split("renderEntry(entry, displayWord)", 1)[1].split(
+        "setRibbon(label, note)", 1
+    )[0]
+    assert "this.renderEntry(existingEntry, existingEntry.word)" in collected
+    assert 'this.slip.classList.remove("is-capturing"' in renderer
+
+
 def test_index_opens_without_scrollintoview(entry_list):
     """scrollIntoView aligned the whole panel and moved the page ~500px, which
     contradicts the in-place contract and hid the tapped word."""
@@ -100,6 +113,43 @@ def test_no_stray_pixel_sizes_remain_on_tap_targets(styles):
     body = styles.split("--tap-lg: 48px;", 1)[1]
     strays = re.findall(r"min-height:\s*(4[2-9]|5[01])px", body)
     assert strays == []
+
+
+def test_duplicate_markings_use_only_colour_and_type_scale_tokens(styles):
+    """Duplicate affordances share the collection palette and type scale instead
+    of introducing a light-only literal or a nearly-identical font size."""
+    selectors = (
+        ".ribbon",
+        ".ribbon-note",
+        ".senses li.is-held",
+        ".senses li.is-new",
+        ".tag",
+        ".senses li.is-new .tag",
+        ".tertiary",
+    )
+    feature_rules = "\n".join(_rule(styles, selector) for selector in selectors)
+    assert not re.search(r"#[0-9a-fA-F]{3,8}|(?:rgb|hsl)a?\(", feature_rules)
+    font_sizes = re.findall(r"font-size:\s*([^;]+)", feature_rules)
+    assert font_sizes
+    assert all(value.strip().startswith("var(--t-") for value in font_sizes)
+
+
+def test_dark_theme_only_redefines_tokens(styles):
+    """A colour whose only definition sits inside the dark rule never applies in
+    light mode, so the page renders one theme's text on the other theme's ground.
+    The dark block redefines the palette and declares nothing else — pinning that
+    rule catches the mistake, where pinning today's hex values would only catch
+    the next deliberate retune."""
+    dark = styles.split(':root[data-theme="dark"] {', 1)[1].split("\n}", 1)[0]
+    properties = [
+        line.split(":", 1)[0].strip()
+        for line in dark.splitlines()
+        if ":" in line and not line.strip().startswith(("/*", "*"))
+    ]
+    assert properties, "the dark theme block was not found"
+    assert [name for name in properties if not name.startswith("--")] == [
+        "color-scheme"
+    ]
 
 
 @pytest.fixture(scope="module")

@@ -747,17 +747,64 @@ class VocabRepository:
         return []
 
     @staticmethod
-    def _norm_text_for_merge(s: str) -> str:
+    def normalize_text_for_merge(s: str) -> str:
+        """Return the canonical text key used by repository merges."""
         text = re.sub(r"\s+", " ", s).strip().lower()
         return normalize_word_key(text)
 
     @classmethod
+    def normalize_example_for_merge(
+        cls,
+        example: Tuple[str, str],
+    ) -> Tuple[str, str]:
+        """Return the canonical pair key used by repository merges."""
+        return (
+            cls.normalize_text_for_merge(example[0]),
+            cls.normalize_text_for_merge(example[1]),
+        )
+
+    @classmethod
+    def new_definitions_for_merge(
+        cls,
+        defs_existing: Sequence[str],
+        new_defs: Sequence[str],
+    ) -> List[str]:
+        """Return genuinely new definitions in candidate order."""
+        seen = {cls.normalize_text_for_merge(value) for value in defs_existing}
+        additions: List[str] = []
+        for definition in new_defs:
+            normalized = cls.normalize_text_for_merge(definition)
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                additions.append(definition)
+        return additions
+
+    @classmethod
+    def new_examples_for_merge(
+        cls,
+        exs_existing: Sequence[Tuple[str, str]],
+        new_examples: Sequence[Tuple[str, str]],
+    ) -> List[Tuple[str, str]]:
+        """Return genuinely new examples in candidate order."""
+        seen = {cls.normalize_example_for_merge(value) for value in exs_existing}
+        additions: List[Tuple[str, str]] = []
+        for example in new_examples:
+            normalized = cls.normalize_example_for_merge(example)
+            if normalized not in seen:
+                seen.add(normalized)
+                additions.append(example)
+        return additions
+
+    @staticmethod
+    def _norm_text_for_merge(s: str) -> str:
+        """Backward-compatible private alias for the public merge normalizer."""
+        return VocabRepository.normalize_text_for_merge(s)
+
+    @classmethod
     def _dedup_merge_definitions(cls, defs_existing: List[str], new_defs: List[str]) -> List[str]:
         merged_map = {cls._norm_text_for_merge(d): d for d in defs_existing}
-        for d in new_defs:
-            nd = cls._norm_text_for_merge(d)
-            if nd and nd not in merged_map:
-                merged_map[nd] = d
+        for d in cls.new_definitions_for_merge(defs_existing, new_defs):
+            merged_map[cls._norm_text_for_merge(d)] = d
         return list(merged_map.values())
 
     @classmethod
@@ -766,14 +813,9 @@ class VocabRepository:
         exs_existing: List[Tuple[str, str]],
         new_examples: List[Tuple[str, str]],
     ) -> List[Tuple[str, str]]:
-        def norm_pair(p: Tuple[str, str]) -> Tuple[str, str]:
-            return (cls._norm_text_for_merge(p[0]), cls._norm_text_for_merge(p[1]))
-
-        merged_map = {norm_pair(p): p for p in exs_existing}
-        for p in new_examples:
-            np = norm_pair(p)
-            if np not in merged_map:
-                merged_map[np] = p
+        merged_map = {cls.normalize_example_for_merge(p): p for p in exs_existing}
+        for p in cls.new_examples_for_merge(exs_existing, new_examples):
+            merged_map[cls.normalize_example_for_merge(p)] = p
         return list(merged_map.values())
 
     def _replace_entry_block(self, word_capitalized: str, latex_block: str) -> bool:

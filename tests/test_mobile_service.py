@@ -38,6 +38,18 @@ Examples:
    [Chrysanthemums bloom in autumn.]
 """
 
+MERGE_AI_RESPONSE = """Correctly Spelt Word: chrysanthème
+Word Type: noun
+Definitions:
+a. A FLOWERING   PLANT in the daisy family.
+b. A newly recorded botanical sense.
+Examples:
+1. ELLE  a posé un chrysanthème sur la table.
+   [She placed a chrysanthemum on the table.]
+2. Ce sens botanique est nouveau.
+   [This botanical sense is new.]
+"""
+
 
 class FakeClient:
     def __init__(self, response: str = AI_RESPONSE):
@@ -291,6 +303,122 @@ def test_duplicate_is_rejected_before_ai_query(tmp_path, monkeypatch):
         raise AssertionError("Expected duplicate error")
 
     assert len(service.builder.client.prompts) == prompt_count
+
+
+def test_merge_preview_contains_full_existing_entry_and_only_new_content(
+    tmp_path,
+    monkeypatch,
+):
+    service = build_service(tmp_path, monkeypatch)
+    service._token_factory = iter(("initial-preview-token", "merge-preview-token")).__next__
+    service.save(service.preview("chrysantheme").token)
+    service.builder.client.response = MERGE_AI_RESPONSE
+
+    preview = service.preview("chrysanthème", duplicate_action="merge")
+
+    assert preview.existing_entry == {
+        "word": "Chrysanthème",
+        "word_type": "noun",
+        "definitions": [
+            "A flowering plant in the daisy family.",
+            "A flower associated with autumn in France.",
+        ],
+        "examples": [
+            {
+                "source": "Elle a posé un chrysanthème sur la table.",
+                "target": "She placed a chrysanthemum on the table.",
+            },
+            {
+                "source": "Les chrysanthèmes fleurissent en automne.",
+                "target": "Chrysanthemums bloom in autumn.",
+            },
+        ],
+    }
+    assert preview.new_definitions == ["A newly recorded botanical sense."]
+    assert preview.new_examples == [
+        ("Ce sens botanique est nouveau.", "This botanical sense is new.")
+    ]
+
+
+def test_empty_merge_is_byte_identical_and_returns_unchanged(tmp_path, monkeypatch):
+    service = build_service(tmp_path, monkeypatch)
+    service._token_factory = iter(("initial-preview-token", "merge-preview-token")).__next__
+    service.save(service.preview("chrysantheme").token)
+    preview = service.preview("chrysanthème", duplicate_action="merge")
+    latex_file = tmp_path / "FrenchVocab.tex"
+    before = latex_file.read_bytes()
+
+    receipt = service.save(preview.token)
+
+    assert latex_file.read_bytes() == before
+    assert receipt["action"] == "unchanged"
+    assert receipt["added_definitions"] == 0
+    assert receipt["added_examples"] == 0
+    assert receipt["sync_pending"] is False
+    assert preview.token not in service._transactions
+
+
+def test_real_merge_receipt_reports_added_definition_and_example_counts(
+    tmp_path,
+    monkeypatch,
+):
+    service = build_service(tmp_path, monkeypatch)
+    service._token_factory = iter(("initial-preview-token", "merge-preview-token")).__next__
+    service.save(service.preview("chrysantheme").token)
+    service.builder.client.response = MERGE_AI_RESPONSE
+
+    receipt = service.save(
+        service.preview("chrysanthème", duplicate_action="merge").token
+    )
+
+    assert receipt["action"] == "merged"
+    assert receipt["added_definitions"] == 1
+    assert receipt["added_examples"] == 1
+
+
+def test_spell_corrected_duplicate_reuses_one_generation_as_merge_preview(
+    tmp_path,
+    monkeypatch,
+):
+    service = build_service(tmp_path, monkeypatch)
+    service._token_factory = iter(("initial-preview-token", "merge-preview-token")).__next__
+    service.save(service.preview("chrysantheme").token)
+    calls_before = len(service.builder.client.prompts)
+
+    preview = service.preview("krizantem")
+
+    assert preview.duplicate_action == "merge"
+    assert preview.existing_entry["word"] == "Chrysanthème"
+    assert len(service.builder.client.prompts) == calls_before + 1
+
+
+def test_variant_preview_name_matches_the_committed_variant(tmp_path, monkeypatch):
+    service = build_service(tmp_path, monkeypatch)
+    service._token_factory = iter(("initial-preview-token", "variant-preview-token")).__next__
+    service.save(service.preview("chrysantheme").token)
+
+    preview = service.preview("chrysanthème", duplicate_action="variant")
+    receipt = service.save(preview.token)
+
+    assert preview.variant_word == "chrysanthème - alt"
+    assert receipt["word"] == preview.variant_word
+
+
+def test_duplicate_preview_fields_round_trip_through_state_store(
+    tmp_path,
+    monkeypatch,
+):
+    service = build_service(tmp_path, monkeypatch)
+    service._token_factory = iter(("initial-preview-token", "variant-preview-token")).__next__
+    service.save(service.preview("chrysantheme").token)
+    service.builder.client.response = MERGE_AI_RESPONSE
+    preview = service.preview("chrysanthème", duplicate_action="variant")
+
+    restarted = build_service(tmp_path, monkeypatch)
+    restored = restarted._previews[preview.token]
+
+    assert restored == preview
+    assert restored.as_json() == preview.as_json()
 
 
 def test_save_retry_returns_the_original_receipt_without_a_second_write(tmp_path, monkeypatch):

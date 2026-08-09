@@ -177,6 +177,24 @@ pytest -k "anki"
   scoring, Anki acquisition order, and provider recovery. Do not create a
   second implementation of those rules in JavaScript or route handlers; expose
   headless methods from the shared core and adapt their typed outcomes.
+- A word you already own is not an error. The phone answers with the stored
+  entry in the filled slip, so the CLI's "view existing" stops being a menu item
+  and becomes the state you land in, and offers merge, a labelled variant, or
+  keeping what is there. The rejection payload has always carried the whole
+  entry; rendering one definition of it into the still-blank capture slip
+  painted real content in `--placeholder`, the exact grey of the hint text it
+  replaced, and left the only explanation in the failure colour.
+- Merge is approved against a diff, never blind. The preview marks which senses
+  and examples are already held and which are new, and the commit button counts
+  what it will add. That marking is computed on the server by the same code the
+  write uses -- `VocabRepository.normalize_text_for_merge` and the
+  `new_definitions_for_merge` / `new_examples_for_merge` helpers -- so the
+  preview cannot disagree with what lands on disk, and the rule is not
+  reimplemented in the browser.
+- A duplicate found only after generation, when spelling correction resolves to
+  a word already held, returns that merge preview instead of raising. The answer
+  is already in memory; raising discarded it and made the user pay for the same
+  provider call a second time.
 - Destructive vocabulary editing, deletion, and backup restoration are not CLI
   workflows and are intentionally absent from the phone. Recovery artifacts are
   allowlisted, read-only downloads. This is parity with the product's behavior,
@@ -191,6 +209,15 @@ pytest -k "anki"
 - `app.js` is only the shell and view dispatcher. `api.js`, `ui.js`, `entry-list.js`, and the `*-view.js` modules own transport, shared presentation, and one workflow each. Keep server rules on the server and keep view-local DOM/state out of the shell.
 - Every mutating flow is preview/confirm or an explicit tool action. Disable repeated submissions while a request is active, use idempotency tokens supplied by the server, and ignore stale responses after a language or view change.
 - In the capture actions the solid button **always commits the previewed entry** and the ghost always offers the alternative to committing it. Routing a sentence to the translator sat in the solid slot while the ghost wrote to disk, which read exactly backwards.
+- Capture dispatches on an explicit mode (`capture` / `collected` / `preview`),
+  never on whether `this.preview` happens to be truthy. Inferring the state that
+  way left the solid button reading "Look it up" and still enabled while a
+  duplicate was on screen, so tapping it re-sent the request that had just been
+  rejected. In the collected state the solid button commits the decision to
+  change nothing ("Keep what I have") and the ghost carries the alternative that
+  costs a provider call.
+- Held/new marking on senses and examples is rendered as real elements, never as
+  CSS `content:`, which is not reliably announced by a screen reader.
 - There is one busy idiom app-wide: the label states what is happening ("Looking it up…", "Saving…", "Translating…"). The spinner this replaced was hidden under `prefers-reduced-motion`, which left capture with no visible feedback across a request that can run two minutes.
 - `.message` defaults to the failure colour. Anything that is neither a failure nor a confirmation — a spelling correction, say — must pass `{ note: true }` rather than shipping as red; `{ ok: true }` stays for confirmations.
 - The studied language keeps the display face wherever it appears, including the saved-pairs list. Styling by column position instead demoted it to dim sans whenever the direction ran target -> English.
@@ -256,6 +283,15 @@ pytest -k "anki"
 - Mobile preview releases its state lock across provider recovery and generation, then re-validates duplicates after reacquiring it. Phone saves register Anki acquisition order inside the same catalog transaction as the vocabulary write and history append.
 - A vocabulary or translation save is idempotent by its durable preview token. Persist the journal before the primary file mutation, record the primary commit before auxiliary work, and retain incomplete history/Anki steps for replay. A restart after the file write must reconstruct the same receipt rather than duplicate or lose the entry.
 - Practice grading records its generated feedback before appending attempt history, then repairs a missing append by stable attempt ID. Auxiliary history failures may produce a visible pending state, but they must never roll back or misreport an already committed primary file.
+- A merge that adds nothing must not claim it did. `save()` recomputes the diff
+  from reloaded disk state inside the commit lock; an empty diff writes no
+  journal entry, leaves the vocabulary file byte-identical, and returns
+  `action: "unchanged"`. A non-empty diff records its counts on the transaction
+  *before* the primary write, because afterwards the content is already present
+  and a re-derived diff would be empty -- replay would then report "unchanged"
+  for a merge that really happened. The repository rewrites a merged block and
+  returns success whether or not anything changed, so this is the only layer
+  that can tell the user the truth.
 - Never infer transaction ownership from the presence of a duplicate alone. Recovery may treat stored content as this operation only when the durable pre-write journal and exact/contained structured payload prove it; a competing session's duplicate must remain a conflict.
 - Anki tracker writes use a three-way merge of the manager's persisted baseline, current disk state, and local changes so concurrent additions and intentional removals do not overwrite one another.
 - `scripts/deploy/backup_mobile_data.sh` takes the same catalog lock with util-linux `flock` before archiving. Any new backup/export path that needs a coherent multi-file snapshot must join that lock domain.

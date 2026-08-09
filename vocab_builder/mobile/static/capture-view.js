@@ -12,7 +12,9 @@ export class CaptureView {
     this.api = api;
     this.onSaved = onSaved;
     this.onRouteSentence = onRouteSentence;
+    this.mode = "capture";
     this.preview = null;
+    this.displayedEntry = null;
     this.language = "fr";
     this.languageName = "";
     this.expanded = false;
@@ -23,7 +25,8 @@ export class CaptureView {
     this.discard = el("discard-button");
     this.more = el("more-button");
     this.message = el("form-message");
-    this.duplicateActions = el("duplicate-actions");
+    this.ribbon = el("slip-ribbon");
+    this.variant = el("variant-button");
     this.wire();
     this.showCapture();
   }
@@ -38,7 +41,7 @@ export class CaptureView {
     if (changed) {
       this.input.value = readStorage(this.draftKey());
       this.showCapture();
-    } else if (!this.preview) {
+    } else if (this.mode === "capture") {
       el("slip-pos").textContent = status.language_name;
     }
   }
@@ -67,16 +70,19 @@ export class CaptureView {
   showMessage(text, options) { setMessage(this.message, text, options); }
 
   showCapture({ preserveMessage = false } = {}) {
+    this.mode = "capture";
     this.preview = null;
+    this.displayedEntry = null;
     this.expanded = false;
     this.pendingDuplicateText = "";
     this.slip.classList.add("is-capturing");
     this.slip.classList.remove("is-expanded");
+    this.ribbon.hidden = true;
     this.input.hidden = false;
     el("preview-word").hidden = true;
     this.discard.hidden = true;
     this.more.hidden = true;
-    this.duplicateActions.hidden = true;
+    this.variant.hidden = true;
     el("slip-senses").hidden = true;
     el("slip-examples").hidden = true;
     el("slip-example").replaceChildren();
@@ -91,30 +97,25 @@ export class CaptureView {
   }
 
   showPreview(preview) {
+    this.mode = "preview";
     this.preview = preview;
-    this.expanded = false;
-    this.duplicateActions.hidden = true;
-    this.slip.classList.remove("is-capturing", "is-expanded");
-    this.input.hidden = true;
-    const word = el("preview-word");
-    word.hidden = false;
-    word.textContent = preview.word;
-    scaleHeadword(word, preview.word);
-    el("slip-pos").textContent = preview.word_type || "";
-    el("slip-mean").textContent = preview.definitions?.[0] || "";
-    const first = el("slip-example");
-    first.replaceChildren();
-    if (preview.examples?.length) renderExample(first, preview.examples[0]);
+    if (preview.duplicate_action === "merge" && preview.existing_entry) {
+      this.showMergePreview(preview);
+      return;
+    }
+    if (preview.duplicate_action === "variant" && preview.existing_entry) {
+      this.showVariantPreview(preview);
+      return;
+    }
 
-    const extraSenses = Math.max(0, (preview.definitions?.length || 0) - 1);
-    const extraExamples = Math.max(0, (preview.examples?.length || 0) - 1);
-    const labels = [];
-    if (extraSenses) labels.push(`${extraSenses} more sense${extraSenses === 1 ? "" : "s"}`);
-    if (extraExamples) labels.push(`${extraExamples} more example${extraExamples === 1 ? "" : "s"}`);
-    this.collapsedLabel = labels.join(" · ");
-    this.more.hidden = labels.length === 0;
-    el("more-label").textContent = this.collapsedLabel;
-    this.more.setAttribute("aria-expanded", "false");
+    this.showStandardPreview(preview);
+  }
+
+  showStandardPreview(preview) {
+    this.expanded = false;
+    this.ribbon.hidden = true;
+    this.variant.hidden = true;
+    this.renderEntry(preview, preview.word);
     // The solid button always commits the previewed entry and the ghost always
     // offers the alternative to committing it. Routing a sentence to the
     // translator used to sit in the solid slot while the ghost wrote to disk,
@@ -125,7 +126,7 @@ export class CaptureView {
       : (preview.spelling_suggestion ? `Keep “${preview.original_input}”` : "Discard");
     el("primary-label").textContent = preview.route_recommended
       ? "Keep as vocabulary"
-      : (preview.duplicate_action === "merge" ? "Merge senses" : "Keep it");
+      : "Keep it";
     this.primary.disabled = false;
     this.showMessage(
       preview.spelling_suggestion ? `Corrected to “${preview.word}”.` : "",
@@ -133,15 +134,147 @@ export class CaptureView {
     );
   }
 
-  showDuplicate(error) {
-    this.pendingDuplicateText = this.input.value.trim();
-    this.duplicateActions.hidden = false;
-    const existing = error.details?.existing_entry;
-    if (existing) {
-      el("slip-pos").textContent = existing.word_type || "Already collected";
-      el("slip-mean").textContent = existing.definitions?.[0] || "Already collected";
+  showCollected(existingEntry) {
+    this.mode = "collected";
+    this.preview = null;
+    this.expanded = false;
+    this.renderEntry(existingEntry, existingEntry.word);
+    this.setRibbon(
+      "In your collection",
+      countLabel(existingEntry.definitions?.length || 0, "sense"),
+    );
+    this.discard.hidden = false;
+    this.discard.textContent = "Add new senses";
+    el("primary-label").textContent = "Keep what I have";
+    this.primary.disabled = false;
+    this.variant.hidden = false;
+    this.showMessage(
+      "Looking up again asks the model for senses you may be missing. It takes a moment.",
+      { note: true },
+    );
+  }
+
+  showMergePreview(preview) {
+    const existing = preview.existing_entry;
+    const newDefinitions = preview.new_definitions || [];
+    const newExamples = preview.new_examples || [];
+    const nothingNew = newDefinitions.length === 0 && newExamples.length === 0;
+
+    this.displayedEntry = existing;
+    this.expanded = true;
+    this.slip.classList.remove("is-capturing", "is-expanded");
+    this.slip.classList.add("is-expanded");
+    this.input.hidden = true;
+    const word = el("preview-word");
+    word.hidden = false;
+    word.textContent = existing.word;
+    scaleHeadword(word, existing.word);
+    el("slip-pos").textContent = existing.word_type || "";
+    el("slip-mean").hidden = true;
+    const first = el("slip-example");
+    first.replaceChildren();
+    first.hidden = true;
+    this.more.hidden = true;
+    this.more.setAttribute("aria-expanded", "false");
+    this.variant.hidden = true;
+
+    const senses = el("slip-senses");
+    senses.replaceChildren(
+      ...(existing.definitions || []).map((definition) => renderSense(definition, "held")),
+      ...newDefinitions.map((definition) => renderSense(definition, "new")),
+    );
+    senses.hidden = false;
+    const examples = el("slip-examples");
+    examples.replaceChildren();
+    (existing.examples || []).forEach((example) => renderExample(examples, example, "held"));
+    newExamples.forEach((example) => renderExample(examples, example, "new"));
+    examples.hidden = (existing.examples?.length || 0) + newExamples.length === 0;
+
+    if (nothingNew) {
+      this.setRibbon("In your collection", "already complete");
+      this.discard.hidden = true;
+      el("primary-label").textContent = "Keep what I have";
+      this.showMessage(
+        `Nothing new — your entry already covers all ${countLabel(preview.definitions?.length || 0, "sense")} the model returned.`,
+        { note: true },
+      );
+    } else {
+      const addedCount = newDefinitions.length || newExamples.length;
+      const addedKind = newDefinitions.length ? "sense" : "example";
+      const added = countLabel(addedCount, addedKind);
+      this.setRibbon(
+        "Merging into your entry",
+        `${addedCount} new ${addedKind}${addedCount === 1 ? "" : "s"}`,
+      );
+      this.discard.hidden = false;
+      this.discard.textContent = "Cancel";
+      el("primary-label").textContent = `Add ${added}`;
+      const correction = preview.spelling_suggestion
+        ? `Corrected to “${preview.word}”. `
+        : "";
+      this.showMessage(
+        `${correction}Your ${countLabel(existing.definitions?.length || 0, "existing sense")} stay exactly as they are.`,
+        { note: true },
+      );
     }
-    this.showMessage(`${error.message} Add genuinely new senses, keep a separate variant, or leave it unchanged.`);
+    this.primary.disabled = false;
+  }
+
+  showVariantPreview(preview) {
+    const existing = preview.existing_entry;
+    this.expanded = false;
+    this.renderEntry(preview, preview.variant_word || preview.word);
+    this.setRibbon("New, separate entry", "yours is untouched");
+    this.discard.hidden = false;
+    this.discard.textContent = "Cancel";
+    this.variant.hidden = true;
+    el("primary-label").textContent = "Keep as a variant";
+    this.primary.disabled = false;
+    this.showMessage(
+      `Filed as a second entry. Your original ${existing.word} keeps its ${countLabel(existing.definitions?.length || 0, "sense")}.`,
+      { note: true },
+    );
+  }
+
+  renderEntry(entry, displayWord) {
+    this.displayedEntry = entry;
+    this.slip.classList.remove("is-capturing", "is-expanded");
+    this.input.hidden = true;
+    const word = el("preview-word");
+    word.hidden = false;
+    word.textContent = displayWord;
+    scaleHeadword(word, displayWord);
+    el("slip-pos").textContent = entry.word_type || "";
+    el("slip-mean").hidden = false;
+    el("slip-mean").textContent = entry.definitions?.[0] || "";
+    const first = el("slip-example");
+    first.hidden = false;
+    first.replaceChildren();
+    if (entry.examples?.length) renderExample(first, entry.examples[0]);
+    el("slip-senses").hidden = true;
+    el("slip-examples").hidden = true;
+
+    const extraSenses = Math.max(0, (entry.definitions?.length || 0) - 1);
+    const extraExamples = Math.max(0, (entry.examples?.length || 0) - 1);
+    const labels = [];
+    if (extraSenses) labels.push(`${extraSenses} more sense${extraSenses === 1 ? "" : "s"}`);
+    if (extraExamples) labels.push(`${extraExamples} more example${extraExamples === 1 ? "" : "s"}`);
+    this.collapsedLabel = labels.join(" · ");
+    this.more.hidden = labels.length === 0;
+    el("more-label").textContent = this.collapsedLabel;
+    this.more.setAttribute("aria-expanded", "false");
+  }
+
+  setRibbon(label, note) {
+    this.ribbon.hidden = false;
+    el("ribbon-label").textContent = label;
+    el("ribbon-note").textContent = note;
+  }
+
+  dismissToBlank({ preserveMessage = false } = {}) {
+    this.input.value = "";
+    writeStorage(this.draftKey(), "");
+    this.showCapture({ preserveMessage });
   }
 
   async lookUp(duplicateAction = "reject") {
@@ -159,7 +292,10 @@ export class CaptureView {
       }, { scope: "capture-ai", timeout: 130000 });
       this.showPreview(preview);
     } catch (error) {
-      if (error.code === "duplicate_entry") this.showDuplicate(error);
+      if (error.code === "duplicate_entry" && error.details?.existing_entry) {
+        this.pendingDuplicateText = this.input.value.trim();
+        this.showCollected(error.details.existing_entry);
+      }
       else if (!ignoreCancelled(error)) this.showMessage(error.message);
     } finally {
       this.setBusy(false);
@@ -176,13 +312,18 @@ export class CaptureView {
         method: "POST",
         body: JSON.stringify({ token: preview.token, use_original: useOriginal }),
       }, { scope: "capture-save" });
-      this.input.value = "";
-      writeStorage(this.draftKey(), "");
-      this.showCapture({ preserveMessage: true });
+      this.dismissToBlank({ preserveMessage: true });
+      const addedDefinitions = saved.added_definitions || 0;
+      const addedExamples = saved.added_examples || 0;
+      const mergedAddition = addedDefinitions
+        ? countLabel(addedDefinitions, "sense")
+        : countLabel(addedExamples, "example");
       this.showMessage(
         saved.action === "merged"
-          ? `${saved.word} now includes the new senses.`
-          : `${saved.word} is in your collection.`,
+          ? `${saved.word} gained ${mergedAddition}.`
+          : (saved.action === "unchanged"
+            ? `Nothing changed — ${saved.word} already had those senses.`
+            : `${saved.word} is in your collection.`),
         { ok: true },
       );
       await this.onSaved();
@@ -194,7 +335,7 @@ export class CaptureView {
   }
 
   toggleExpanded() {
-    if (!this.preview) return;
+    if (!this.displayedEntry) return;
     // Measure, mutate, then let CSS settle the new layout and measure again.
     // Reading the settled height rather than scrollHeight matters because the
     // expanded body is flex-sized inside the slip; releasing the inline height
@@ -249,13 +390,11 @@ export class CaptureView {
     }
     el("slip-mean").hidden = true;
     first.hidden = true;
-    senses.replaceChildren(...this.preview.definitions.map((definition) => {
-      const item = document.createElement("li"); item.textContent = definition; return item;
-    }));
+    senses.replaceChildren(...this.displayedEntry.definitions.map((definition) => renderSense(definition)));
     senses.hidden = false;
     examples.replaceChildren();
-    this.preview.examples.forEach((example) => renderExample(examples, example));
-    examples.hidden = this.preview.examples.length === 0;
+    this.displayedEntry.examples.forEach((example) => renderExample(examples, example));
+    examples.hidden = this.displayedEntry.examples.length === 0;
     el("more-label").textContent = "Show less";
   }
 
@@ -274,7 +413,11 @@ export class CaptureView {
     }
     this.primary.classList.toggle("is-loading", busy);
     this.primary.setAttribute("aria-busy", String(busy));
-    this.primary.disabled = busy || (!this.preview && !this.input.value.trim());
+    this.primary.disabled = busy || (
+      this.mode === "capture" && (!this.input.value.trim() || !navigator.onLine)
+    );
+    this.discard.disabled = busy;
+    this.variant.disabled = busy;
   }
 
   wire() {
@@ -283,7 +426,6 @@ export class CaptureView {
       autoGrow(this.input);
       writeStorage(this.draftKey(), this.input.value);
       this.primary.disabled = !this.input.value.trim() || !navigator.onLine;
-      this.duplicateActions.hidden = true;
       this.pendingDuplicateText = "";
     });
     // A size step started on that input event has not landed yet, so the
@@ -297,26 +439,39 @@ export class CaptureView {
     // textarea's own line box accepts a tap, which is a 39px target inside a
     // card several times its height.
     this.slip.addEventListener("click", (event) => {
-      if (!this.preview && !event.target.closest("button")) this.input.focus();
+      if (this.mode === "capture" && !event.target.closest("button")) this.input.focus();
     });
     this.input.addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        if (!this.primary.disabled) this.lookUp();
+        if (this.mode === "capture" && !this.primary.disabled) this.lookUp();
       }
     });
     this.primary.addEventListener("click", () => {
-      if (this.preview) this.save();
-      else this.lookUp();
+      if (this.mode === "capture") this.lookUp();
+      else if (this.mode === "collected" || this.isNothingNew()) this.dismissToBlank();
+      else this.save();
     });
     this.discard.addEventListener("click", () => {
-      if (this.preview?.route_recommended) this.onRouteSentence(this.preview.original_input);
+      if (this.mode === "collected") this.lookUp("merge");
+      else if (this.preview?.duplicate_action === "merge" || this.preview?.duplicate_action === "variant") {
+        this.dismissToBlank();
+        this.input.focus();
+      } else if (this.preview?.route_recommended) this.onRouteSentence(this.preview.original_input);
       else if (this.preview?.spelling_suggestion) this.save(true);
       else { this.showCapture(); this.input.focus(); }
     });
     this.more.addEventListener("click", () => this.toggleExpanded());
-    el("merge-button").addEventListener("click", () => this.lookUp("merge"));
-    el("variant-button").addEventListener("click", () => this.lookUp("variant"));
+    this.variant.addEventListener("click", () => {
+      if (this.mode === "collected") this.lookUp("variant");
+    });
+  }
+
+  isNothingNew() {
+    return this.mode === "preview"
+      && this.preview?.duplicate_action === "merge"
+      && (this.preview.new_definitions?.length || 0) === 0
+      && (this.preview.new_examples?.length || 0) === 0;
   }
 }
 
@@ -330,9 +485,23 @@ function autoGrow(node) {
   node.style.height = `${node.scrollHeight}px`;
 }
 
-function renderExample(container, example) {
+function renderSense(definition, marking = "") {
+  const item = document.createElement("li");
+  item.appendChild(document.createTextNode(definition));
+  if (marking) {
+    item.classList.add(`is-${marking}`);
+    item.appendChild(renderTag(marking));
+  }
+  return item;
+}
+
+function renderExample(container, example, marking = "") {
   const wrapper = document.createElement("div");
   wrapper.className = "example";
+  if (marking) {
+    wrapper.classList.add(`is-${marking}`);
+    wrapper.appendChild(renderTag(marking));
+  }
   const source = document.createElement("p");
   source.className = "source";
   source.textContent = `« ${example.source} »`;
@@ -344,4 +513,17 @@ function renderExample(container, example) {
     wrapper.appendChild(target);
   }
   container.appendChild(wrapper);
+}
+
+function renderTag(marking) {
+  const tag = document.createElement("span");
+  tag.className = "tag";
+  // "Held" is our word, not the reader's. The tag has to say what it means to
+  // the person deciding whether to merge.
+  tag.textContent = marking === "new" ? "New" : "In your entry";
+  return tag;
+}
+
+function countLabel(count, singular) {
+  return `${count} ${singular}${count === 1 ? "" : "s"}`;
 }

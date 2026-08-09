@@ -7,7 +7,7 @@ two-step preview/save API suitable for a phone.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 import secrets
 import threading
@@ -16,6 +16,7 @@ from typing import Any, Callable, Optional
 from vocab_builder.core.file_safety import file_lock
 from vocab_builder.core.text_utils import sanitize_user_text
 from vocab_builder.core.vocab_application import VocabCapturePort
+from vocab_builder.core.vocab_repository import VocabRepository
 from vocab_builder.models import WordEntry
 
 from .state_store import MobileStateStore
@@ -86,6 +87,10 @@ class MobilePreview:
     duplicate_action: str = "new"
     existing_word: Optional[str] = None
     route_recommended: bool = False
+    existing_entry: Optional[dict[str, Any]] = None
+    new_definitions: list[str] = field(default_factory=list)
+    new_examples: list[tuple[str, str]] = field(default_factory=list)
+    variant_word: Optional[str] = None
 
     def as_json(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -94,6 +99,10 @@ class MobilePreview:
             {"source": source, "target": target}
             for source, target in self.examples
         ]
+        payload["new_examples"] = [
+            {"source": source, "target": target}
+            for source, target in self.new_examples
+        ]
         return payload
 
     @classmethod
@@ -101,6 +110,11 @@ class MobilePreview:
         examples = [
             (str(item.get("source", "")), str(item.get("target", "")))
             for item in payload.get("examples", [])
+            if isinstance(item, dict)
+        ]
+        new_examples = [
+            (str(item.get("source", "")), str(item.get("target", "")))
+            for item in payload.get("new_examples", [])
             if isinstance(item, dict)
         ]
         return cls(
@@ -125,6 +139,20 @@ class MobilePreview:
                 else None
             ),
             route_recommended=bool(payload.get("route_recommended", False)),
+            existing_entry=(
+                dict(payload["existing_entry"])
+                if isinstance(payload.get("existing_entry"), dict)
+                else None
+            ),
+            new_definitions=[
+                str(value) for value in payload.get("new_definitions", [])
+            ],
+            new_examples=new_examples,
+            variant_word=(
+                str(payload["variant_word"])
+                if payload.get("variant_word")
+                else None
+            ),
         )
 
 
@@ -244,7 +272,9 @@ class MobileVocabService:
             final_word = suggestion or original
             corrected_existing = self._existing_word(final_word)
             if corrected_existing and duplicate_action == "reject":
-                self._raise_if_duplicate(final_word)
+                # Generation has already completed. Return its merge diff rather
+                # than discard paid-for work and require the same call again.
+                duplicate_action = "merge"
             existing_word = corrected_existing or existing_word
 
             word_type = next(
@@ -254,6 +284,19 @@ class MobileVocabService:
             examples = list(examples)
             if word_type.lower() == "sentence" and not self.builder.sentence_examples_in_vocab:
                 examples = []
+
+            existing_entry = None
+            new_definitions: list[str] = []
+            new_examples: list[tuple[str, str]] = []
+            variant_word = None
+            if existing_word:
+                existing_entry, new_definitions, new_examples = self._merge_diff(
+                    existing_word,
+                    list(definitions),
+                    examples,
+                )
+                if duplicate_action == "variant":
+                    variant_word = self._unique_variant(final_word)
 
             preview = MobilePreview(
                 token=self._token_factory(),
@@ -275,6 +318,10 @@ class MobileVocabService:
                     and self.builder.language_config.supports_translation
                     and self.builder.target_to_eng_translator is not None
                 ),
+                existing_entry=existing_entry,
+                new_definitions=new_definitions,
+                new_examples=new_examples,
+                variant_word=variant_word,
             )
             self._previews[preview.token] = preview
             self._persist_state()
@@ -296,10 +343,40 @@ class MobileVocabService:
             with file_lock(self.builder.latex_file):
                 word = preview.original_input if use_original else preview.word
                 action = preview.duplicate_action
+                added_definitions = len(preview.definitions)
+                added_examples = len(preview.examples)
                 if action == "variant":
                     word = self._unique_variant(word)
                 elif action == "merge" and preview.existing_word:
-                    word = preview.existing_word
+                    existing_entry, new_definitions, new_examples = self._merge_diff(
+                        preview.existing_word,
+                        preview.definitions,
+                        preview.examples,
+                    )
+                    if existing_entry is None:
+                        raise SaveFailedError(
+                            "The existing entry selected for merge no longer exists."
+                        )
+                    word = str(existing_entry["word"])
+                    added_definitions = len(new_definitions)
+                    added_examples = len(new_examples)
+                    if added_definitions == 0 and added_examples == 0:
+                        receipt = {
+                            "word": word,
+                            "action": "unchanged",
+                            "entry_count": len(self.builder.word_entries),
+                            "saved_at": datetime.now(timezone.utc).isoformat(),
+                            "sync_pending": False,
+                            "added_definitions": 0,
+                            "added_examples": 0,
+                        }
+                        self._saved_receipts[token] = (
+                            datetime.now(timezone.utc),
+                            receipt,
+                        )
+                        del self._previews[token]
+                        self._persist_state()
+                        return dict(receipt)
 
                 transaction = {
                     "operation_id": token,
@@ -309,6 +386,8 @@ class MobileVocabService:
                     "primary_committed": False,
                     "history_done": False,
                     "anki_done": action == "merge",
+                    "added_definitions": added_definitions,
+                    "added_examples": added_examples,
                     "created_at": datetime.now(timezone.utc).isoformat(),
                 }
                 self._transactions[token] = transaction
@@ -332,6 +411,8 @@ class MobileVocabService:
                     "entry_count": len(self.builder.word_entries),
                     "saved_at": datetime.now(timezone.utc).isoformat(),
                     "sync_pending": True,
+                    "added_definitions": int(transaction["added_definitions"]),
+                    "added_examples": int(transaction["added_examples"]),
                 }
                 transaction["receipt"] = receipt
                 transaction["primary_committed"] = True
@@ -499,6 +580,37 @@ class MobileVocabService:
             return None
         existing = self.builder.word_entries.get(existing_key, {})
         return str(existing.get("word") or existing_key)
+
+    def _merge_diff(
+        self,
+        existing_word: str,
+        definitions: list[str],
+        examples: list[tuple[str, str]],
+    ) -> tuple[
+        Optional[dict[str, Any]],
+        list[str],
+        list[tuple[str, str]],
+    ]:
+        """Compare candidates with the current repository merge semantics."""
+        existing_key = self.builder.check_duplicate(existing_word)
+        if not existing_key:
+            return None, [], []
+        existing = self.builder.word_entries.get(existing_key)
+        if not existing:
+            return None, [], []
+        existing_entry = entry_for_json(existing)
+        existing_examples = [
+            (str(item.get("source", "")), str(item.get("target", "")))
+            for item in existing_entry["examples"]
+        ]
+        return (
+            existing_entry,
+            VocabRepository.new_definitions_for_merge(
+                existing_entry["definitions"],
+                definitions,
+            ),
+            VocabRepository.new_examples_for_merge(existing_examples, examples),
+        )
 
     def _unique_variant(self, base_word: str) -> str:
         candidate = f"{base_word} - alt"
@@ -683,6 +795,7 @@ class MobileVocabService:
                     transaction["primary_committed"] = True
 
                 if not isinstance(transaction.get("receipt"), dict):
+                    preview = MobilePreview.from_json(transaction["preview"])
                     transaction["receipt"] = {
                         "word": str(transaction["word"]),
                         "action": (
@@ -693,6 +806,12 @@ class MobileVocabService:
                         "entry_count": len(self.builder.word_entries),
                         "saved_at": datetime.now(timezone.utc).isoformat(),
                         "sync_pending": True,
+                        "added_definitions": int(
+                            transaction.get("added_definitions", len(preview.definitions))
+                        ),
+                        "added_examples": int(
+                            transaction.get("added_examples", len(preview.examples))
+                        ),
                     }
                 self._complete_transaction_auxiliary(transaction)
                 receipt = transaction.get("receipt")

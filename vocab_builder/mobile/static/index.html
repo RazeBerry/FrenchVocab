@@ -47,6 +47,10 @@
           <div class="stage">
             <div class="deck" id="deck">
               <article class="slip is-capturing" id="slip">
+                <div class="ribbon" id="slip-ribbon" hidden>
+                  <span class="ribbon-label" id="ribbon-label"></span>
+                  <span class="ribbon-note" id="ribbon-note"></span>
+                </div>
                 <div class="slip-head">
                   <label class="sr-only" id="entry-label" for="entry-input">Word or phrase</label>
                   <textarea
@@ -83,10 +87,7 @@
               <span class="button-label" id="primary-label">Look it up</span>
             </button>
           </div>
-          <div class="duplicate-actions" id="duplicate-actions" hidden>
-            <button class="quiet-button" id="merge-button" type="button">Add new senses</button>
-            <button class="quiet-button" id="variant-button" type="button">Keep as a variant</button>
-          </div>
+          <button class="tertiary" id="variant-button" type="button" hidden>Keep a separate variant instead</button>
           <p class="message" id="form-message" role="alert"></p>
           <section class="recent-strip">
             <div class="section-heading"><h2>Recently kept</h2><button data-go="library" type="button" hidden>Open library</button></div>

@@ -319,6 +319,34 @@ button { -webkit-tap-highlight-color: transparent; }
   outline-color: var(--hue);
 }
 
+.ribbon {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 20px;
+  border-bottom: 1px solid var(--line);
+  background: var(--hue-wash);
+  color: var(--hue);
+  font-size: var(--t-2xs);
+  font-weight: 750;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+/* The label is the same kind of object as .pos and takes the same treatment.
+   The note is a measured quantity ("3 senses"), so it stays sentence case and
+   refuses to wrap — the label gives way first on a narrow phone. */
+.ribbon-label { min-width: 0; }
+.ribbon-note {
+  flex: none;
+  color: var(--dim);
+  font-size: var(--t-2xs);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  white-space: nowrap;
+}
+
 .slip-head {
   padding: 22px 20px 0;
   border-bottom: 1px solid transparent;
@@ -408,6 +436,33 @@ textarea.hw::placeholder { color: var(--ghost); }
 .senses { margin: 0; padding-left: 1.15rem; font-size: var(--t-md); line-height: 1.46; }
 .senses li { margin-bottom: 9px; }
 .senses li::marker { color: var(--hue); font-size: var(--t-sm); font-weight: 700; }
+.senses li.is-held { color: var(--dim); }
+.senses li.is-held::marker { color: var(--dim); }
+.senses li.is-new { color: var(--ink); }
+.tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 7px;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  color: var(--dim);
+  font-size: var(--t-3xs);
+  font-weight: 750;
+  line-height: 1;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.senses li.is-new .tag,
+.example.is-new .tag {
+  border-color: var(--hue);
+  background: var(--hue);
+  color: var(--on-hue);
+}
+.example.is-held .source,
+.example.is-held .target { color: var(--dim); }
+.example.is-new .source,
+.example.is-new .target { color: var(--ink); }
 
 /* ---------------- tap to expand ---------------- */
 .more {
@@ -754,12 +809,20 @@ footer {
   cursor: pointer;
 }
 .quiet-button:active, .ghost-button:active { background: var(--hue-wash); }
-.duplicate-actions {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
+.tertiary {
+  width: 100%;
+  min-height: var(--tap);
   margin-top: 8px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: var(--hue);
+  font-size: var(--t-sm);
+  font-weight: 650;
+  cursor: pointer;
 }
+.tertiary:active { background: var(--hue-wash); }
 
 .recent-strip { margin-top: 30px; }
 .section-heading {
