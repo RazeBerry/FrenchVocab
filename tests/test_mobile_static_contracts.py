@@ -10,8 +10,10 @@ matches, so a deliberate redesign can restate it and an accident cannot.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 
@@ -98,6 +100,71 @@ def test_no_stray_pixel_sizes_remain_on_tap_targets(styles):
     body = styles.split("--tap-lg: 48px;", 1)[1]
     strays = re.findall(r"min-height:\s*(4[2-9]|5[01])px", body)
     assert strays == []
+
+
+@pytest.fixture(scope="module")
+def index_html() -> str:
+    return (STATIC / "index.html").read_text(encoding="utf-8")
+
+
+@pytest.fixture(scope="module")
+def manifest() -> dict:
+    return json.loads((STATIC / "manifest.webmanifest").read_text(encoding="utf-8"))
+
+
+def test_icon_is_well_formed_xml():
+    """A double hyphen inside an XML comment makes the file unparseable, and a
+    browser renders the whole icon as a broken image rather than warning."""
+    ElementTree.parse(STATIC / "icon.svg")
+
+
+def test_icon_uses_only_colours_the_stylesheet_defines(styles):
+    """The icon it replaced shared none of its five colours with the app."""
+    icon = (STATIC / "icon.svg").read_text(encoding="utf-8")
+    palette = {value.lower() for value in re.findall(r"#[0-9a-fA-F]{6}", icon)}
+    assert palette, "icon declares no colours"
+    known = {value.lower() for value in re.findall(r"#[0-9a-fA-F]{6}", styles)}
+    assert palette <= known, f"off-palette colours in icon.svg: {sorted(palette - known)}"
+
+
+def test_home_screen_icon_is_a_raster(index_html):
+    """Safari accepts only PNG for apple-touch-icon; given an SVG it silently
+    falls back to a screenshot of the page."""
+    match = re.search(r'rel="apple-touch-icon"\s+href="([^"]+)"', index_html)
+    assert match, "no apple-touch-icon declared"
+    assert match.group(1).endswith(".png")
+
+
+def test_every_declared_icon_exists(index_html, manifest):
+    referenced = set(re.findall(r'href="(/static/icon[^"]*)"', index_html))
+    referenced |= {icon["src"] for icon in manifest["icons"]}
+    for src in referenced:
+        assert (STATIC / src.removeprefix("/static/")).exists(), src
+
+
+def test_manifest_ground_matches_the_app_ground(styles, manifest):
+    """The splash colour and the first painted frame have to be one value."""
+    background = re.search(r"^\s*--bg:\s*(#[0-9a-fA-F]{6});", styles, re.MULTILINE).group(1)
+    app = (STATIC / "app.js").read_text(encoding="utf-8")
+    runtime = re.search(r'light:\s*"(#[0-9a-fA-F]{6})"', app).group(1)
+    assert manifest["background_color"].lower() == background.lower()
+    assert manifest["theme_color"].lower() == background.lower()
+    assert runtime.lower() == background.lower()
+
+
+def test_maskable_icon_is_declared_separately(manifest):
+    """One icon marked "any maskable" lets a launcher circle-mask art that was
+    never drawn with a safe zone."""
+    purposes = [icon.get("purpose") for icon in manifest["icons"]]
+    assert "maskable" in purposes
+    assert not any(p and len(p.split()) > 1 for p in purposes)
+
+
+def test_precached_shell_files_all_exist():
+    """cache.addAll rejects wholesale on a single 404, taking offline with it."""
+    worker = (STATIC / "service-worker.js").read_text(encoding="utf-8")
+    for path in re.findall(r'"(/static/[^"]+)"', worker):
+        assert (STATIC / path.removeprefix("/static/")).exists(), path
 
 
 def _rule(styles: str, selector: str) -> str:

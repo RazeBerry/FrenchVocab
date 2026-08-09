@@ -10,7 +10,10 @@
     <title>VocabBuilder</title>
     <link rel="manifest" href="/manifest.webmanifest">
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="/static/icon.svg">
+    <!-- Safari accepts only a raster here; an SVG silently falls back to a
+         screenshot of the page, so the home-screen icon is a PNG. It is
+         full-bleed because iOS applies its own corner mask. -->
+    <link rel="apple-touch-icon" href="/static/icon-180.png">
     <script>
       // Stamp the theme before first paint, or the page flashes light on the
       // way to dark. The OS preference only seeds the very first visit.

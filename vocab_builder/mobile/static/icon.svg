@@ -1,7 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#f7f1e7"/>
-  <path d="M118 118c52-19 98-9 138 29v262c-40-38-86-48-138-29V118Z" fill="#d55f43"/>
-  <path d="M394 118c-52-19-98-9-138 29v262c40-38 86-48 138-29V118Z" fill="#315c4c"/>
-  <path d="M256 147v262" stroke="#23312c" stroke-width="18" stroke-linecap="round" opacity=".16"/>
-  <path d="M154 181c26-6 48-2 70 10M154 235c26-6 48-2 70 10M288 191c22-12 44-16 70-10M288 245c22-12 44-16 70-10" fill="none" stroke="#fffaf4" stroke-width="15" stroke-linecap="round" opacity=".84"/>
+  <!-- The display face is the app's personality, so the face is the mark: a
+       didone V standing on the collection hue's short rule. A single letterform
+       is the only thing that survives a 16px tab strip intact.
+       Colours are the tokens card-blank, ink and hue-fr from styles.css.
+       Note: an XML comment may not contain a double hyphen, so token names are
+       written bare here rather than in their CSS custom-property form.
+       Art spans 23-77% of the canvas, inside the maskable safe circle. -->
+  <rect width="512" height="512" rx="112" fill="#faf8f5"/>
+  <path d="M138 160h66l54 152 54-152h30l-70 216h-28Z" fill="#1c1a17"/>
+  <rect x="118" y="150" width="106" height="13" rx="6" fill="#1c1a17"/>
+  <rect x="288" y="150" width="106" height="13" rx="6" fill="#1c1a17"/>
+  <rect x="200" y="404" width="112" height="15" rx="7" fill="#1f3a6e"/>
 </svg>

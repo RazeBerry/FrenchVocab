@@ -222,6 +222,26 @@ pytest -k "anki"
 - `Unknown` is the parser's placeholder for a missing part of speech, not a part of speech. `knownType` strips it before either the badge or the full-type heading is built, so the badge is simply absent — it used to render as `UNKN.` on real entries.
 - Static assets carry **no version query**. `RevalidatingStaticFiles` sends `Cache-Control: no-cache` on everything under `/static`, so a changed file is picked up on the next load without any manual bump; the network-first service worker already makes that request, and the ETag answers 304 with no body. Do not reintroduce `?v=N`: a stale one is worse than none, because it silently pins the old asset.
 - `SHELL_CACHE` is a stable name. The activate handler purges every cache except the current name, and network-first overwrites entries in place, so it never needs versioning either.
+- The icon is a didone `V` on the blank-slip ground, standing on the collection
+  hue's short rule: the display face is the app's identity, and a single
+  letterform is the only thing that survives a 16px tab strip. Every colour in it
+  must be a token that already exists in `styles.css` — the book it replaced
+  shared none of its five colours with the product it opened.
+- An XML comment may not contain a double hyphen, so CSS custom-property names
+  cannot be written in their `--name` form inside `icon.svg`. A browser does not
+  warn about this; it renders the whole icon as a broken image.
+- `apple-touch-icon` must point at a PNG. Safari does not accept SVG there and
+  silently substitutes a screenshot of the page, so an SVG-only shell has never
+  actually had a home-screen icon.
+- Plate shape follows who applies the mask. `icon-180.png` (iOS) and
+  `icon-maskable-512.png` (Android) are full bleed because the OS rounds them;
+  `icon.svg` and `icon-512.png` fill the `any` slot and carry their own `rx`.
+  Maskable art is inset to 0.82 so its far corner clears the 80% safe circle.
+- `purpose` is never `"any maskable"` on one entry — that lets a launcher
+  circle-mask art drawn without a safe zone. Declare the two purposes separately.
+- The manifest's `background_color`/`theme_color`, `--bg`, and
+  `THEME_BACKGROUND.light` in `app.js` are one value. They disagreed by three
+  units and the iOS splash was visibly lighter than the frame that replaced it.
 - User-visible copy generated in JS (singular/plural on the entry count, on pending Anki entries, on stale tracking records) must inflect correctly at 0, 1 and n. Prefer copy that does not need a language name inflected into it at all — that is why the capture placeholder no longer takes an article.
 - Words waiting to be exported are the normal state of the Anki card, not a fault: the pill reads "Ready to export", and only stale tracking — records pointing at words that no longer exist — reads "Needs attention". Clauses whose count is zero are omitted rather than printed as "0 stale tracking records".
 - A horizontally scrolling strip looks like a clipped one, and CSS cannot ask whether an element overflows. Views that render into `.segmented` or `.type-chips` call `markScrollable` after populating them, which toggles the mask that signals more content. It engages at 320px-class widths and stays off when everything fits.
