@@ -127,6 +127,9 @@ pytest -k "anki"
 
 ### Provider and Credential System
 - `vocab_builder/core/providers/manager.py` owns provider metadata, setup wizard flows, and storage destinations.
+- Gemini defaults to the stable `gemini-3.7-flash` model. Its generation config
+  uses thinking levels and omits deprecated sampling parameters (`temperature`,
+  `top_p`, and `top_k`) that current Gemini models no longer support.
 - `provider_settings()` reports `label` (provider and model on one line, for terse
   surfaces) and `model` (the bare identifier) separately, because the phone names
   the provider in a heading and the model beneath it. Splitting a combined label
@@ -359,7 +362,7 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 
 - `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`: Provider API credentials.
 - `VOCABBUILDER_CLAUDE_MODEL`: Override Claude model ID (default `claude-sonnet-4-6`).
-- `VOCABBUILDER_GEMINI_MODEL`: Override Gemini model ID (default `gemini-3-flash-preview`).
+- `VOCABBUILDER_GEMINI_MODEL`: Override Gemini model ID (default `gemini-3.7-flash`).
 - `VOCABBUILDER_PROVIDER_TIMEOUT`: Provider request deadline in seconds (default `120`).
 - `VOCABBUILDER_PROVIDER_RETRY_COOLDOWN`: Minimum seconds between silent provider re-initialization attempts (default `30`).
 - `VOCABBUILDER_ALLOWED_TAILSCALE_USER`: Tailscale login accepted by the private mobile interface; requests are not identity-checked when unset.

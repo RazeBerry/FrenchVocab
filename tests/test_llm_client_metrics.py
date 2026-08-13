@@ -242,7 +242,7 @@ def test_model_labels_use_default_models_when_env_unset(monkeypatch):
         gemini = llm_client.GeminiClient()
         claude = llm_client.ClaudeClient(api_key="sk-ant-" + "x" * 40)
 
-        assert gemini.model_label() == "Google Gemini (gemini-3-flash-preview)"
+        assert gemini.model_label() == "Google Gemini (gemini-3.7-flash)"
         assert claude.model_label() == "Anthropic Claude (claude-sonnet-4-6)"
     finally:
         _restore_google_stub(google_saved)
@@ -298,7 +298,7 @@ def test_model_override_whitespace_falls_back_to_defaults(monkeypatch):
         gemini = llm_client.GeminiClient()
         claude = llm_client.ClaudeClient(api_key="sk-ant-" + "x" * 40)
 
-        assert gemini.model_label() == "Google Gemini (gemini-3-flash-preview)"
+        assert gemini.model_label() == "Google Gemini (gemini-3.7-flash)"
         assert claude.model_label() == "Anthropic Claude (claude-sonnet-4-6)"
     finally:
         _restore_google_stub(google_saved)
@@ -324,6 +324,18 @@ def test_resolved_models_are_used_for_provider_requests(monkeypatch):
         assert gemini_metrics["usage"]["output_tokens"] == 5
         assert gemini._client.models.last_stream_kwargs["model"] == "gemini-request-model"
         assert gemini._client.models.last_count_kwargs["model"] == "gemini-request-model"
+        gemini_config = gemini._client.models.last_stream_kwargs["config"].kwargs
+        assert gemini_config["response_mime_type"] == "text/plain"
+        assert gemini_config["max_output_tokens"] == 8192
+        assert gemini_config["thinking_config"].kwargs["thinking_level"] == "LOW"
+        for unsupported_parameter in (
+            "temperature",
+            "top_p",
+            "top_k",
+            "thinking_budget",
+            "candidate_count",
+        ):
+            assert unsupported_parameter not in gemini_config
 
         assert claude_text == "helloworld"
         assert claude_metrics["usage"]["prompt_tokens"] == 7
