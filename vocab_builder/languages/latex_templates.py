@@ -135,19 +135,20 @@ FINAL_ENG_FR_TEX_CONTENT = r"""
 \end{document}
 """
 
-AI_TRANSLATION_PROMPT_TEMPLATE = """You are an experienced English->French translator who handles literary, technical, and marketing discourse with equal ease. Infer the text's domain, intended audience, formality, and tone directly from the source and mirror them naturally in French. Preserve the author's intent, emotional hue, rhythm, and voice. Adapt idioms, cultural references, humor, and wordplay so they resonate with contemporary Francophone readers while remaining faithful to meaning.
+AI_TRANSLATION_PROMPT_TEMPLATE = """You are a senior English-to-French translator experienced in literary and specialist nonfiction.
 
-Before translating, observe any punctuation, typography, markdown, inline code, mathematical notation, HTML tags, or placeholders. Retain this scaffolding exactly unless idiomatic French demands a minimal adjustment; never invent new structure. Keep product names, terminology, and proper nouns unchanged unless a widely accepted French variant exists, and respect capitalization, honorifics, and dialogue formatting. When regional cues are present, follow the implied French variant; otherwise default to neutral international French.
+Translate the source accurately and idiomatically. Infer its domain, audience, tone, formality, and era, and reproduce them in French. Preserve meaning, agency, logical relations, quantifiers, modality, stance, voice, imagery, ambiguity, rhythm, and historical distance. Do not add, omit, summarize, intensify, soften, or modernize the source.
 
-Output only:
-French translation: <single cohesive translation matching the source's format and line breaks>
-Notes (optional): <use only to flag genuine ambiguities, justify a substantial adaptation, or offer a concise alternative phrasing>
+Translate idioms and wordplay by function when a natural French solution exists. Preserve cultural references, institutions, terminology, and proper names unless an established French equivalent genuinely exists. Infer tu/vous only from evidence in the source; when the relationship is ambiguous, prefer wording that does not invent one.
 
-If the source allows multiple plausible readings, choose the interpretation that best fits the surrounding context and mention the alternative briefly in Notes. Do not apologize or explain process details; focus on delivering a polished translation.
+Preserve paragraphs, verse lines, dialogue attribution, headings, placeholders, inline code, markup, mathematical notation, and other structural elements. Apply normal French punctuation, quotation marks, and spacing. Correct only unmistakable mechanical OCR artifacts; never silently alter names, facts, historical spelling, dialect, or deliberate nonstandard usage.
+
+Return the translation only, without a heading, quotation wrapper, notes, alternatives, or commentary.
 
 English source:
+<source_text>
 {english_text}
-"""
+</source_text>"""
 
 
 # ==============================================================================
@@ -203,8 +204,17 @@ FINAL_FR_ENG_TEX_CONTENT = r"""
 \end{document}
 """
 
-FR_TO_ENG_TRANSLATION_PROMPT_TEMPLATE = """Translate the following French text accurately and naturally into English. Provide only the English translation, without any introductory phrases, explanations, or quotation marks.
+FR_TO_ENG_TRANSLATION_PROMPT_TEMPLATE = """You are a senior French-to-English translator experienced in literature and specialist nonfiction.
 
-French: "{french_text}"
+Translate the source accurately and idiomatically. Preserve meaning, agency, logical relations, quantifiers, modality, stance, register, historical distance, voice, imagery, ambiguity, repetitions, and rhetorical force. Do not add, omit, summarize, intensify, soften, or modernize the source.
 
-English Translation:"""
+Write natural English without mechanically smoothing deliberate syntactic pressure or changing rhetorical tense. Translate idioms by function and use established English equivalents for specialist and cultural terms. Preserve the French term or proper name when no natural established equivalent exists.
+
+Preserve paragraphs, verse lines, speaker labels, stage directions, headings, placeholders, inline code, markup, mathematical notation, and other structural elements. Apply normal English punctuation and typography. Correct only unmistakable mechanical OCR artifacts; never silently alter names, facts, historical spelling, dialect, or deliberate nonstandard usage.
+
+Return the translation only, without a heading, quotation wrapper, notes, alternatives, or commentary.
+
+French source:
+<source_text>
+{french_text}
+</source_text>"""

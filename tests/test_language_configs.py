@@ -59,6 +59,41 @@ def test_german_translator_config_has_dedicated_macros():
     assert "German to English" in cfg.target_to_eng.initial_tex_content
 
 
+@pytest.mark.parametrize("language_code", ["fr", "de"])
+def test_directional_translation_prompts_use_fidelity_contract(language_code):
+    cfg = get_language_config(language_code)
+
+    for translator in (cfg.eng_to_target, cfg.target_to_eng):
+        assert translator is not None
+        prompt = translator.prompt_template
+        assert "Preserve meaning, agency, logical relations, quantifiers" in prompt
+        assert "historical distance" in prompt
+        assert "Return the translation only" in prompt
+        assert "<source_text>" in prompt
+        assert "Notes (optional)" not in prompt
+        assert "contemporary" not in prompt
+
+
+@pytest.mark.parametrize("language_code", ["fr", "de"])
+def test_auto_translation_prompts_can_decline_ambiguous_direction(language_code):
+    prompt = get_language_config(language_code).auto_prompt_template
+
+    assert prompt is not None
+    assert "|ambiguous>" in prompt
+    assert "do not guess" in prompt
+    assert 'write "none" in the Translation field' in prompt
+
+
+def test_german_translation_prompts_use_correct_quotes_and_nonmechanical_tense():
+    cfg = get_language_config("de")
+    assert cfg.eng_to_target is not None
+    assert cfg.target_to_eng is not None
+
+    assert "„…“" in cfg.eng_to_target.prompt_template
+    assert "„...\"" not in cfg.eng_to_target.prompt_template
+    assert "do not apply a fixed Perfekt-to-simple-past" in cfg.target_to_eng.prompt_template
+
+
 @pytest.mark.parametrize("language_code", ["fr", "de", "en"])
 def test_spawned_empty_latex_templates_include_placeholder_item(language_code):
     cfg = get_language_config(language_code)

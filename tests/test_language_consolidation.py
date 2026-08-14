@@ -26,10 +26,11 @@ def test_make_text_validator_sentence_mode_allows_punctuation_and_digits():
 
 def test_make_text_validator_supports_language_specific_quotes():
     base = make_text_validator()
-    assert not base("„Hallo‟", allow_sentences=True)
+    assert not base("„Hallo“", allow_sentences=True)
 
-    german = make_text_validator(frozenset({"„", "‟"}))
-    assert german("„Hallo‟", allow_sentences=True)
+    german = make_text_validator(frozenset({"„", "“"}))
+    assert german("„Hallo“", allow_sentences=True)
+    assert not german("„Hallo‟", allow_sentences=True)
 
 
 def test_consolidated_latex_translation_templates_are_unescaped_tex():

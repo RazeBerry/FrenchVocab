@@ -88,6 +88,12 @@ class MobileTranslations:
                         raise RuntimeError(
                             "The AI could not determine a translation direction."
                         )
+                    if automatic.direction_is_ambiguous(result.direction):
+                        explanation = (result.notes or "").strip()
+                        raise ValueError(
+                            explanation
+                            or "The source language is ambiguous. Choose a translation direction."
+                        )
                     translator = automatic.translator_for_direction(result.direction)
                     if translator is None:
                         raise RuntimeError(

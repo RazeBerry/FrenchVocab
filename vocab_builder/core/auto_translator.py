@@ -17,6 +17,19 @@ from .translator import TranslatorCLI
 
 
 UsageCallback = Optional[Callable[[Dict[str, int]], None]]
+AMBIGUOUS_DIRECTION_TOKENS = frozenset({"ambiguous", "uncertain", "undetermined"})
+
+
+def normalize_direction(direction: str) -> str:
+    """Normalize model-produced direction labels for safe routing."""
+    normalized = re.sub(r"[\s\-]+", "_", direction.strip().lower())
+    normalized = re.sub(r"[→>]+", "_to_", normalized)
+    return re.sub(r"_+", "_", normalized).strip("_")
+
+
+def is_ambiguous_direction(direction: str) -> bool:
+    """Return whether the model explicitly declined to guess a direction."""
+    return normalize_direction(direction) in AMBIGUOUS_DIRECTION_TOKENS
 
 
 @dataclass
@@ -86,6 +99,10 @@ class AutoTranslator:
             self.ui.error("Unable to parse auto-translation response. Please retry or use manual direction.")
             return
 
+        if self.direction_is_ambiguous(result.direction):
+            self._announce_ambiguity(result)
+            return
+
         if self.verbose:
             trunc = result.translation[:120] + ("..." if len(result.translation) > 120 else "")
             self.ui.info(f"[dim]Parsed direction={result.direction!r}  translation={trunc!r}[/dim]")
@@ -113,6 +130,11 @@ class AutoTranslator:
     def translator_for_direction(self, direction: str) -> Optional[TranslatorCLI]:
         """Resolve a detected direction to the configured directional writer."""
         return self._translator_for_direction(direction)
+
+    @staticmethod
+    def direction_is_ambiguous(direction: str) -> bool:
+        """Expose the shared ambiguity rule to headless adapters."""
+        return is_ambiguous_direction(direction)
 
     @staticmethod
     def translation_is_suspicious(source_text: str, translation: str) -> bool:
@@ -246,17 +268,15 @@ class AutoTranslator:
         if notes_header:
             notes = text[notes_header.end():].strip() or None
 
-        if not translation:
+        if is_ambiguous_direction(direction):
+            translation = ""
+        elif not translation:
             return None
 
         return AutoTranslationResult(direction=direction, translation=translation, notes=notes)
 
     def _translator_for_direction(self, direction: str) -> Optional[TranslatorCLI]:
-        # Normalize spaces, hyphens, and arrows to underscores for flexible matching
-        normalized = re.sub(r"[\s\-]+", "_", direction.strip().lower())
-        normalized = re.sub(r"[→>]+", "_to_", normalized)
-        # Collapse repeated underscores
-        normalized = re.sub(r"_+", "_", normalized).strip("_")
+        normalized = normalize_direction(direction)
 
         if normalized in self.eng_direction_tokens:
             return self.eng_to_target
@@ -290,6 +310,14 @@ class AutoTranslator:
                 border_style="dim cyan",
                 box_style=box.ROUNDED,
             )
+
+    def _announce_ambiguity(self, result: AutoTranslationResult) -> None:
+        self.ui.warning(
+            "The source language is ambiguous. Choose English → target language "
+            "or target language → English explicitly; no translation was saved."
+        )
+        if result.notes and result.notes.strip().lower() != "none":
+            self.ui.info(result.notes.strip())
 
     def _sanity_check(self, source_text: str, translation: str) -> bool:
         """Return True if the translation looks like a different language from the input."""

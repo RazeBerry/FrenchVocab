@@ -92,21 +92,25 @@ STEP 1 — Detect the source language:
 Examine the input text for linguistic signals.
 • French signals: accented characters (é è ê ë à â ù û ô î ï ç), French function words (le, la, les, un, une, des, est, sont, je, tu, il, nous, vous, ils, de, du, au, aux, pas, ne, que, qui, avec, pour, dans, sur, ce, cette), French spelling patterns.
 • English signals: English function words (the, is, are, was, were, have, has, do, does, not, and, but, for, with, this, that, it, I, we, they), English spelling patterns.
-Classify the input as English or French — no other languages.
+Classify the input as English or French only when the linguistic evidence is sufficient. For a genuinely ambiguous word, name, abbreviation, or fragment, do not guess; classify it as ambiguous.
 
-STEP 2 — Translate into the opposite language, preserving tone, register, and formatting (paragraphs, markdown, inline code, punctuation, quotes).
+STEP 2 — When the direction is known, translate into the opposite language accurately and idiomatically. Preserve meaning, agency, logical relations, quantifiers, modality, stance, register, historical distance, voice, imagery, ambiguity, and structural formatting. Translate idioms by function, but do not broadly domesticate cultural references or institutions. Preserve proper names and established specialist terminology. Correct only unmistakable mechanical OCR artifacts; never alter names, facts, historical spelling, dialect, or deliberate nonstandard usage. Apply normal target-language punctuation and typography while preserving paragraphs, verse lines, dialogue attribution, headings, placeholders, inline code, markup, and mathematical notation.
+
+When the direction is ambiguous, do not translate and write "none" in the Translation field.
 
 No preamble, no extra text before the template. Respond EXACTLY with:
 
-Direction: <english_to_french|french_to_english>
+Direction: <english_to_french|french_to_english|ambiguous>
 Translation:
-<translation text here, mirroring original formatting>
+<translation text preserving structural formatting, or "none" when ambiguous>
 
 Notes:
-<optional single paragraph with concise clarifications; write "none" if unnecessary>
+<when ambiguous, briefly ask the user to choose a direction; otherwise write "none">
 
-Input:
+Input data:
+<source_text>
 {source_text}
+</source_text>
 """.strip()
 
 FRENCH_COMPOSITION_GRADING_PROMPT = """

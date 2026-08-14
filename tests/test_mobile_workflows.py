@@ -335,8 +335,19 @@ class _FakeAutoTranslator:
         return self.translator
 
     @staticmethod
+    def direction_is_ambiguous(direction):
+        return direction == "ambiguous"
+
+    @staticmethod
     def translation_is_suspicious(source, translation):
         return source.casefold() in translation.casefold()
+
+
+class _AmbiguousAutoTranslator(_FakeAutoTranslator):
+    def preview_translation(self, _source):
+        return _TranslationResult(
+            "", "ambiguous", "The source can be English or French; choose a direction."
+        )
 
 
 def test_translation_preview_save_and_retry_share_one_idempotent_use_case():
@@ -370,6 +381,33 @@ def test_translation_preview_save_and_retry_share_one_idempotent_use_case():
     assert mobile.pairs("eng_to_target")["items"] == [
         {"source": "hello", "target": "bonjour"}
     ]
+
+
+def test_mobile_auto_translation_surfaces_ambiguity_without_creating_preview():
+    translator = _FakeTranslator()
+    builder = SimpleNamespace(
+        api_available=True,
+        api_error_reason=None,
+        eng_to_target_translator=translator,
+        target_to_eng_translator=translator,
+        auto_translator=_AmbiguousAutoTranslator(translator),
+        try_restore_ai=lambda: True,
+    )
+    previews = {}
+    mobile = MobileTranslations(
+        builder,
+        previews=previews,
+        token_factory=lambda: "unused",
+        persist=lambda: None,
+        ai_lock=threading.Lock(),
+        state_lock=threading.RLock(),
+    )
+
+    with pytest.raises(ValueError, match="choose a direction"):
+        mobile.preview("auto", "Bank")
+
+    assert previews == {}
+    assert translator.save_calls == 0
 
 
 def test_competing_translation_does_not_acquire_this_requests_history():

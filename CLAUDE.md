@@ -150,6 +150,20 @@ pytest -k "anki"
   useful definition-or-usage-note entries with exactly one ordered example per
   entry. Fewer genuine senses are better than padded or speculative ones; only
   sentence analysis retains its explicit three-part prompt structure.
+- French and German directional translation prompts share the same fidelity
+  floor while retaining language-specific idiom guidance: preserve agency,
+  logical relations, quantifiers, modality, historical distance, structural
+  labels, and specialist terminology; never modernize period prose, broadly
+  domesticate cultural references, or silently alter names and facts. These
+  prompts return translation text only. Do not add a Notes field unless the
+  directional translation data model and UI are changed to retain and display
+  it instead of stripping it before persistence.
+- Auto translation may return an explicit `ambiguous` direction for words,
+  names, abbreviations, and fragments whose language cannot be established.
+  Ambiguity is a successful detection outcome, not a parse failure: the CLI and
+  mobile adapters must stop before routing or saving and ask the user to choose
+  a direction. Orthographic hints such as German noun capitalization are
+  evidence, never a mandatory fallback guess.
 - `ParsedAIResponse.contract_issues` reports definition/example count drift
   without truncating the parsed lists. Flexible aligned payloads flow unchanged
   through preview, LaTeX, merge, and Anki consumers; the headless mobile service

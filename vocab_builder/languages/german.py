@@ -22,8 +22,8 @@ from .german_tex import (
 )
 from .anki_shared_styles import get_anki_css, compute_template_hash
 
-# German has additional quote characters: „ (opening) and ‟ (closing)
-_validate_german_text = make_text_validator(frozenset({"„", "‟"}))
+# German has additional quote characters: „ (opening) and “ (closing)
+_validate_german_text = make_text_validator(frozenset({"„", "“"}))
 
 _UI_STRINGS: Dict[str, str] = {
     "app.title": "German Vocabulary LaTeX Builder",
@@ -35,26 +35,35 @@ _UI_STRINGS: Dict[str, str] = {
     "menu.anki_reconcile": "Reconcile Anki exports (German -> English)",
 }
 
-GERMAN_ENG_TO_DE_PROMPT = """You are an experienced English->German translator equally comfortable with literary, technical, and marketing texts. Derive the domain, target audience, formality, tone, and era directly from the source and recreate them authentically in German. Preserve the author's intent, emotional register, rhythm, and narrative voice. Recast idioms, cultural references, humor, and wordplay so they feel native to contemporary German readers while staying faithful to meaning.
+GERMAN_ENG_TO_DE_PROMPT = """You are a senior English-to-German translator experienced in literary and specialist nonfiction.
 
-Before translating, observe any punctuation, typography, markdown, inline code, mathematical notation, HTML tags, placeholders, or dialogue markers. Copy this scaffolding exactly unless idiomatic German requires a minimal adjustment; never invent new structure. Keep product names, terminology, and proper nouns unchanged unless a widely used German equivalent exists, and respect capitalization and honorifics. Convert English "..." to German „..." (or »...« where the source is set in that style); apply German conventions for dashes, ellipses, and dialogue markers. Where direct address occurs, infer Du/Sie from register and relationship; default to Sie in formal or neutral prose and Du with intimates, children, or informal peer address; mirror any register shift in the source. Silently normalize obvious source noise (mid-word line breaks, doubled or stray whitespace, single-character typos in proper nouns) without preserving them in the translation; preserve only intentional formatting. When regional cues appear, adopt the matching German variant; otherwise default to neutral Standarddeutsch.
+Translate the source accurately and idiomatically. Infer its domain, audience, tone, formality, and era, and reproduce them in German. Preserve meaning, agency, logical relations, quantifiers, modality, stance, voice, imagery, ambiguity, rhythm, and historical distance. Do not add, omit, summarize, intensify, soften, or modernize the source, and do not manufacture archaic spelling.
 
-Output only:
-German translation: <single cohesive translation mirroring paragraph and line breaks>
-Notes (optional): <use only to flag genuine ambiguities, justify a significant adaptation, or offer a concise alternate phrasing>
+Translate idioms and wordplay by function when a natural German solution exists. Preserve cultural references, institutions, terminology, and proper names unless an established German equivalent genuinely exists. Infer du/Sie only from evidence in the source; when the relationship is ambiguous, prefer wording that does not invent one.
 
-If the source allows multiple plausible readings, pick the interpretation that best fits context and mention the alternative briefly in Notes. Do not apologize or describe your process; deliver a polished translation.
+Preserve paragraphs, verse lines, dialogue attribution, speaker labels, headings, placeholders, inline code, markup, mathematical notation, and other structural elements. Apply normal German punctuation and typography, including „…“, or »…« when required by the source or house style. Correct only unmistakable mechanical OCR artifacts; never silently alter names, facts, historical spelling, dialect, or deliberate nonstandard usage.
+
+Return the translation only, without a heading, quotation wrapper, notes, alternatives, or commentary.
 
 English source:
+<source_text>
 {english_text}
-"""
+</source_text>"""
 
-GERMAN_DE_TO_ENG_PROMPT = """Translate the following German text into idiomatic, context-appropriate English. Preserve register, tone, and rhetorical devices (questions, exclamations, dashes) while keeping paragraph and line breaks. Detect idioms, figurative language, and fixed expressions: when the source is idiomatic, deliver an equally idiomatic English expression at the same register; switch to a faithful literal rendering only when an idiomatic counterpart would distort meaning, keeping notable imagery intact. Favour fluent English phrasing over word-for-word translations, yet retain proper nouns and culture-specific terms when no natural equivalent exists. Render German Perfekt as English simple past in narrative prose; reserve the English perfect only where the German marks present relevance. Where the German uses Konjunktiv I for reported speech, signal it in English through backshift, reporting verbs, or a slight register shift—don't flatten the layered voice into either a direct quote or neutral paraphrase. Produce only the English translation—no commentary, no quotation marks.
+GERMAN_DE_TO_ENG_PROMPT = """You are a senior German-to-English translator experienced in literary and specialist nonfiction.
 
-German Text:
+Translate the source accurately and idiomatically. Preserve meaning, agency, logical relations, quantifiers, modality, stance, register, historical distance, voice, imagery, ambiguity, rhetorical devices, and deliberate syntactic pressure. Do not add, omit, summarize, intensify, soften, or modernize the source.
+
+Choose English tense and reported-speech constructions according to their discourse function. Preserve temporal viewpoint, reportedness, and evidential distance; do not apply a fixed Perfekt-to-simple-past or Konjunktiv-I-to-backshift rule. Translate idioms by function while retaining salient imagery. Use established English terminology for German institutions when available, and retain the German term or proper name when no natural equivalent exists.
+
+Preserve paragraphs, verse lines, speaker labels, stage directions, headings, placeholders, inline code, markup, mathematical notation, numbers, dates, and other structural elements. Apply normal English punctuation and typography. Correct only unmistakable mechanical OCR artifacts; never silently alter names, facts, historical spelling, dialect, or deliberate nonstandard usage.
+
+Return the translation only, without a heading, quotation wrapper, notes, alternatives, or commentary.
+
+German source:
+<source_text>
 {german_text}
-
-English Translation:"""
+</source_text>"""
 
 _CARD_FRONT_TEMPLATE = """
 <div class="entry-card entry-card--front">
@@ -110,22 +119,25 @@ STEP 1 — Detect the source language:
 Examine the input text for linguistic signals.
 • German signals: umlauts (ä ö ü), ß, German function words (der, die, das, ist, und, nicht, ein, eine, ich, wir, haben, werden, auch, für, mit, auf), German sentence structure.
 • English signals: English function words (the, is, are, was, were, have, has, do, does, not, and, but, for, with, this, that, it, I, we, they), English spelling patterns.
-When function-word signals are absent (single noun phrases, headlines, fragments), use German noun capitalization, ß, and umlauts as primary signals; failing those, treat capitalized standalone nouns as German. If genuinely ambiguous, pick the more plausible reading and flag the alternative in Notes.
-Classify the input as English or German — no other languages.
+When function-word signals are absent, use spelling, morphology, capitalization, ß, and umlauts as evidence, but do not treat capitalization alone as decisive. For a genuinely ambiguous word, name, abbreviation, headline, or fragment, do not guess; classify it as ambiguous.
 
-STEP 2 — Translate into the opposite language, preserving tone, register, punctuation, paragraphing, markdown, and inline code.
+STEP 2 — When the direction is known, translate into the opposite language accurately and idiomatically. Preserve meaning, agency, logical relations, quantifiers, modality, stance, register, historical distance, voice, imagery, ambiguity, and structural formatting. Translate idioms by function, but do not broadly domesticate cultural references or institutions. Preserve proper names and established specialist terminology. Choose tense and reported-speech constructions by discourse function rather than a fixed grammatical mapping. Correct only unmistakable mechanical OCR artifacts; never alter names, facts, historical spelling, dialect, or deliberate nonstandard usage. Apply normal target-language punctuation and typography while preserving paragraphs, verse lines, speaker labels, stage directions, headings, placeholders, inline code, markup, and mathematical notation.
+
+When the direction is ambiguous, do not translate and write "none" in the Translation field.
 
 No preamble, no extra text before the template. Respond EXACTLY with:
 
-Direction: <english_to_german|german_to_english>
+Direction: <english_to_german|german_to_english|ambiguous>
 Translation:
-<translation text preserving formatting>
+<translation text preserving structural formatting, or "none" when ambiguous>
 
 Notes:
-<optional short clarification; write "none" if there is nothing noteworthy>
+<when ambiguous, briefly ask the user to choose a direction; otherwise write "none">
 
-Input:
+Input data:
+<source_text>
 {source_text}
+</source_text>
 """.strip()
 
 GERMAN_COMPOSITION_GRADING_PROMPT = """

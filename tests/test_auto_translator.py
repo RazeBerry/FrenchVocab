@@ -131,6 +131,63 @@ def test_auto_translator_handles_target_direction(monkeypatch):
     assert eng_translator.calls == []
 
 
+def test_auto_translator_declines_ambiguous_direction_without_saving(monkeypatch):
+    prompt = "Input:\n{source_text}"
+    config = _language_config(prompt)
+    eng_translator = _SpyTranslator()
+    target_translator = _SpyTranslator()
+    response = (
+        "Direction: ambiguous\n"
+        "Translation:\nnone\n\n"
+        "Notes:\n'Bank' is valid in both languages; choose a direction."
+    )
+    client = _FakeLLMClient(response)
+    translator = AutoTranslator(
+        console=Console(),
+        client=client,
+        language_config=config,
+        eng_to_target=eng_translator,
+        target_to_eng=target_translator,
+        prompt_template=config.auto_prompt_template,
+        prompt_variable="source_text",
+    )
+
+    result = translator.preview_translation("Bank")
+
+    assert result is not None
+    assert translator.direction_is_ambiguous(result.direction)
+    assert result.translation == ""
+    assert "choose a direction" in (result.notes or "")
+
+    monkeypatch.setattr(translator, "_collect_multiline_input", lambda: "Bank")
+    translator.run()
+
+    assert eng_translator.calls == []
+    assert target_translator.calls == []
+
+
+def test_auto_translator_accepts_empty_translation_for_ambiguous_direction():
+    prompt = "Input:\n{source_text}"
+    config = _language_config(prompt)
+    translator = AutoTranslator(
+        console=Console(),
+        client=_FakeLLMClient(""),
+        language_config=config,
+        eng_to_target=_SpyTranslator(),
+        target_to_eng=_SpyTranslator(),
+        prompt_template=config.auto_prompt_template,
+        prompt_variable="source_text",
+    )
+
+    result = translator._parse_response(
+        "Direction: ambiguous\nTranslation:\n\nNotes:\nChoose a direction."
+    )
+
+    assert result is not None
+    assert result.translation == ""
+    assert result.notes == "Choose a direction."
+
+
 def test_auto_translator_ignores_notes_without_blank_separator(monkeypatch):
     prompt = "Input:\n{source_text}"
     config = _language_config(prompt)
