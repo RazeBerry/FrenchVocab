@@ -53,7 +53,49 @@ def test_installer_prepares_operator_owned_export_directory() -> None:
     assert '"$DATA_DIR/exports"' in installer
 
 
-def test_macos_launcher_safely_forwards_cli_arguments(tmp_path: Path) -> None:
+def test_macos_launcher_starts_local_remote_client(tmp_path: Path) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    captured = tmp_path / "python-arguments.txt"
+    fake_python = fake_bin / "python"
+    fake_python.write_text(
+        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$CAPTURED_ARGUMENTS\"\n",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+    env = {
+        **os.environ,
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+        "CAPTURED_ARGUMENTS": str(captured),
+        "VOCABBUILDER_REMOTE_HOST": "private-vm",
+        "VOCABBUILDER_LAUNCHER_CONFIG": str(tmp_path / "missing.env"),
+    }
+
+    subprocess.run(
+        [
+            str(ROOT / "scripts" / "macos" / "vocab"),
+            "--language",
+            "de",
+            "--provider",
+            "gemini",
+        ],
+        check=True,
+        env=env,
+    )
+
+    assert captured.read_text(encoding="utf-8").splitlines() == [
+        "-m",
+        "vocab_builder.cli.remote_client",
+        "--remote-host",
+        "private-vm",
+        "--language",
+        "de",
+        "--provider",
+        "gemini",
+    ]
+
+
+def test_macos_launcher_retains_explicit_legacy_ssh_escape_hatch(tmp_path: Path) -> None:
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     captured = tmp_path / "tailscale-arguments.txt"
@@ -69,18 +111,12 @@ def test_macos_launcher_safely_forwards_cli_arguments(tmp_path: Path) -> None:
         "CAPTURED_ARGUMENTS": str(captured),
         "VOCABBUILDER_REMOTE_USER": "vm-user",
         "VOCABBUILDER_REMOTE_HOST": "private-vm",
+        "VOCABBUILDER_LEGACY_SSH_CLI": "1",
         "VOCABBUILDER_LAUNCHER_CONFIG": str(tmp_path / "missing.env"),
     }
 
     subprocess.run(
-        [
-            str(ROOT / "scripts" / "macos" / "vocab"),
-            "--language",
-            "de",
-            "--latex-file",
-            "/tmp/My Vocab.tex",
-            "quote'and;operators",
-        ],
+        [str(ROOT / "scripts" / "macos" / "vocab"), "quote'and;operators"],
         check=True,
         env=env,
     )
@@ -89,6 +125,5 @@ def test_macos_launcher_safely_forwards_cli_arguments(tmp_path: Path) -> None:
         "ssh",
         "vm-user@private-vm",
         "-t",
-        "sudo /usr/local/sbin/vocabbuilder-cli '--language' 'de' "
-        "'--latex-file' '/tmp/My Vocab.tex' 'quote'\\''and;operators'",
+        "sudo /usr/local/sbin/vocabbuilder-cli 'quote'\\''and;operators'",
     ]

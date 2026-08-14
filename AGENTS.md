@@ -24,7 +24,7 @@ An optional private web interface (`vocabbuilder-mobile`, extras `[mobile]`) ser
 ## Project Structure and Module Organization
 - All source code lives under the `vocab_builder/` package.
 - `vocab_builder/cli/main.py` is the primary CLI entry point.
-- `vocab_builder/cli/` contains bootstrap flow, interactive menu/navigation helpers, and compatibility shims.
+- `vocab_builder/cli/` contains bootstrap flow, interactive menu/navigation helpers, the local private-API terminal adapter, and compatibility shims.
 - `vocab_builder/core/` contains application workflows (vocab ingestion, translators, auto translator, Anki export, LLM/provider lifecycle, history logging, menu/session UI helpers).
 - `vocab_builder/core/providers/manager.py` encapsulates provider selection, credential validation, and secure storage.
 - `vocab_builder/languages/` contains language registry, validators, prompts, and LaTeX/Anki configuration (`english.py`, `english_tex.py`, `french.py`, `german.py`, `german_tex.py`).
@@ -34,7 +34,7 @@ An optional private web interface (`vocabbuilder-mobile`, extras `[mobile]`) ser
 - `vocab_builder/mobile/` contains the optional FastAPI web interface, headless mobile use-case adapters, durable request state, and its no-build static front end.
 - `FrenchVocab.py` is a deprecated shim that delegates to `vocab_builder.cli.main`.
 - `scripts/` contains utility and demo scripts, including `scripts/bulk_add.py` for operator-reviewed structured JSON vocabulary batches.
-- `scripts/deploy/` holds VM provisioning and backup scripts; `scripts/macos/vocab` is the Mac launcher for the remote CLI.
+- `scripts/deploy/` holds VM provisioning and backup scripts; `scripts/macos/vocab` launches the local Rich client backed by the VM API.
 - `deploy/` holds the systemd unit and timer files for the mobile server and its daily backup.
 - `tests/` is a pytest suite (`test_*.py`) for architecture boundaries, onboarding, translators, language config, exporters, and UI behavior.
 
@@ -90,13 +90,20 @@ pytest -k "anki"
 - `vocab_builder/core/menu_loop.py` drives menu orchestration; `vocab_builder/cli/menu.py` remains a compatibility shim.
 - `pyproject.toml` defines the `vocabbuilder` console script entry point.
 
-#### Remote interaction cost
-- The CLI is routinely driven over SSH through `scripts/macos/vocab`, so treat
-  keystrokes and redraws as billed at network latency, not as free local work.
+#### Local terminal boundary
+- `scripts/macos/vocab` normally launches `vocab_builder.cli.remote_client` on
+  the Mac. Rich rendering, arrow navigation, and prompt editing stay local;
+  only complete status, data, AI, and mutation requests cross the private
+  Tailscale HTTPS boundary. The VM remains the only data store.
+- `remote_client.py` adapts terminal interactions to the existing `/api`
+  contracts. Do not duplicate repository, translation, duplicate, provider, or
+  persistence rules there; those stay in the shared VM services.
+- `VOCABBUILDER_LEGACY_SSH_CLI=1` restores the full VM-side CLI for diagnostics.
+  It is an explicit escape hatch because every keypress then pays the SSH path's
+  round-trip latency.
 - `vocab_builder/cli/navigation.py` renders menus with `Live(auto_refresh=False)`
   and repaints only when the selection moves. Re-enabling Rich's refresh thread
-  restreams the whole panel about 24 times a second for as long as a menu is
-  open, which is invisible locally and continuous traffic remotely.
+  repaints the whole panel about 24 times a second for as long as a menu is open.
 - `_read_escape_remainder` stops as soon as the buffered bytes form a complete
   CSI or SS3 sequence. Without that early exit, every arrow key waits out a full
   `VOCABBUILDER_ESC_SEQUENCE_TIMEOUT` for a continuation byte that never comes,
@@ -110,11 +117,10 @@ pytest -k "anki"
   menu has nine or fewer choices; do not add ordinals or numeric shortcuts to
   the Rich interface. The numbered line-mode fallback exists only for non-TTY
   environments where raw arrow input is unavailable.
-- The deployed SSH launcher preserves the Rich raw-key menus, arrow navigation,
-  immediate Escape handling, and prompt-toolkit text editing. Do not replace
-  that interaction contract with canonical numbered-line menus as a latency
-  optimization; reduce startup work, redundant waits, and redraws without
-  changing how the operator uses the CLI.
+- The local launcher preserves Rich raw-key menus, arrow navigation, immediate
+  Escape handling, and prompt-toolkit text editing. Do not replace that
+  interaction contract with canonical numbered-line menus.
+
 ### Core Application (`vocab_builder/core/`)
 - `vocab.py` contains `VocabBuilder`, the main controller.
 - `vocab_repository.py` handles LaTeX parsing, persistence, entry indexing, and counts.
@@ -188,10 +194,10 @@ pytest -k "anki"
 - The mobile surface constructs every builder with `interactive=False`; no code reachable from a request may prompt. `UIHelper` raises `NonInteractiveError` as a backstop if a future request path accidentally attempts console input.
 - Blocking provider and repository work is exposed through synchronous FastAPI handlers so Starlette runs it in worker threads; do not call those workflows directly from an `async def` route.
 - Tailscale Serve supplies private HTTPS and identity; provider credentials stay server-side and are never sent to the browser.
-- Run exactly one `vocabbuilder-mobile` process worker. Data-file writes remain safe against the separately launched SSH CLI through filesystem locks, but the mobile request journal is an intentionally single-worker state machine.
+- Run exactly one `vocabbuilder-mobile` process worker. The local terminal client uses that worker's API; filesystem locks still protect data-file writes from the legacy separately launched SSH CLI. The mobile request journal is an intentionally single-worker state machine.
 
 #### Mobile product philosophy
-- The phone and remote Mac CLI are two interfaces to the same application and
+- The phone and local Mac terminal client are two interfaces to the same application and
   authoritative VM collection, not separate applications or databases. The
   phone should reproduce every meaningful non-interactive CLI capability while
   adapting terminal prompts into touch-friendly preview/confirm steps.
@@ -312,7 +318,7 @@ pytest -k "anki"
 ### Persistence and Concurrency Model
 - In the deployed topology, `/var/lib/vocabbuilder` is the only writable source of truth. The phone surface and the Mac `vocab` launcher operate on that VM state; repository-local vocabulary files are migration snapshots, not a second database. Do not introduce bidirectional file sync.
 - Every persisted read-modify-write must use `vocab_builder.core.file_safety.file_lock(path)`. It acquires the catalog-wide `.vocabbuilder.lock` before the artifact sidecar `.<filename>.lock`; nested acquisition in one thread is deliberately reentrant.
-- Cross-process lock files must remain beside the authoritative data/config root, never in the temporary directory. The systemd service uses `PrivateTmp=true`, so `/tmp` locks would split the phone and SSH CLI into different lock domains and reintroduce silent lost updates.
+- Cross-process lock files must remain beside the authoritative data/config root, never in the temporary directory. The systemd service uses `PrivateTmp=true`, so `/tmp` locks would split the API worker and legacy SSH CLI into different lock domains and reintroduce silent lost updates.
 - Reload authoritative disk state only after acquiring the commit lock. Duplicate checks, merge calculations, insertion decisions, and Anki state reconciliation must be recomputed inside that transaction rather than trusting pre-lock caches.
 - Keep a vocabulary mutation, its history append, and its Anki acquisition-order update inside one outer catalog transaction. Continue using atomic replacement for rewritten files and `flush` + `fsync` for append-only JSONL.
 - Each language service has a short-lived state lock and a dedicated AI lock. Provider calls are serialized within one language so mutable provider clients and usage counters cannot overlap; separate language services may still generate concurrently. Read-only library/status work remains responsive while capture AI is running.

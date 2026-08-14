@@ -1,8 +1,7 @@
-"""Round-trip cost of the interactive input loop.
+"""Responsiveness of the interactive input loop.
 
-The CLI is routinely driven over SSH, where every avoidable ``select`` wait and
-every avoidable redraw is paid at network latency. These tests pin the two
-behaviors that keep that cost proportional to actual keypresses.
+The local Rich client should respond once a key sequence is complete, without
+adding an avoidable ``select`` wait or redraw. These tests pin those behaviors.
 """
 
 from __future__ import annotations

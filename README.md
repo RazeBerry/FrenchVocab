@@ -28,7 +28,7 @@ Mac terminal interface all work against that same data.
 
 Install the optional server dependencies with `pip install '.[mobile]'`, then
 see [docs/MOBILE.md](docs/MOBILE.md) for the multilingual one-source-of-truth
-architecture, private deployment layout, phone installation, and Mac SSH launcher.
+architecture, private deployment layout, phone installation, and local Rich launcher.
 
 ---
 

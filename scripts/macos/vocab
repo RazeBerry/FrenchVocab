@@ -10,6 +10,34 @@ if [ -r "$LAUNCHER_CONFIG" ]; then
 fi
 
 REMOTE_HOST=${VOCABBUILDER_REMOTE_HOST:-vocabbuilder-mobile}
+
+# The normal path keeps Rich rendering and keyboard handling on this Mac.  The
+# private HTTPS API remains the authority for every read and mutation.
+if [ "${VOCABBUILDER_LEGACY_SSH_CLI:-0}" != "1" ]; then
+  SOURCE_PATH=$0
+  while [ -L "$SOURCE_PATH" ]; do
+    SOURCE_DIR=$(CDPATH='' cd -- "$(dirname -- "$SOURCE_PATH")" && pwd)
+    LINK_TARGET=$(readlink "$SOURCE_PATH")
+    case "$LINK_TARGET" in
+      /*) SOURCE_PATH=$LINK_TARGET ;;
+      *) SOURCE_PATH="$SOURCE_DIR/$LINK_TARGET" ;;
+    esac
+  done
+  SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$SOURCE_PATH")" && pwd)
+  PROJECT_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../.." && pwd)
+  if [ -n "${PYTHONPATH:-}" ]; then
+    LOCAL_PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
+  else
+    LOCAL_PYTHONPATH=$PROJECT_ROOT
+  fi
+  exec env PYTHONPATH="$LOCAL_PYTHONPATH" \
+    "${VOCABBUILDER_LOCAL_PYTHON:-python}" \
+    -m vocab_builder.cli.remote_client \
+    --remote-host "$REMOTE_HOST" \
+    "$@"
+fi
+
+# Explicit diagnostic escape hatch for the former remote-rendered TUI.
 REMOTE_USER=${VOCABBUILDER_REMOTE_USER:-}
 if [ -z "$REMOTE_USER" ]; then
   echo "Set VOCABBUILDER_REMOTE_USER in $LAUNCHER_CONFIG or your shell environment." >&2

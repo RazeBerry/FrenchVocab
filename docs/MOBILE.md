@@ -7,7 +7,7 @@ independent copies that need bidirectional synchronization.
 ```text
 iPhone home-screen app ─┐
                         ├─ Tailscale ─ VM ─ FrenchVocab.tex + history + backups
-Mac browser / SSH CLI ──┘
+Mac browser / Rich CLI ─┘
 ```
 
 ## Everyday use
@@ -23,9 +23,9 @@ Mac browser / SSH CLI ──┘
   views are hidden until their phone UI is ready. English is monolingual and
   therefore presents Add alone.
 - On Mac, use the same website or run `vocab` for the Rich terminal interface.
-  The remote CLI asks which language collection to open, then reads and writes
-  the same authoritative files as the phone. Neither surface synchronizes a
-  local copy.
+  Menus and text editing run locally while complete operations use the same
+  private HTTPS API as the phone. The VM remains authoritative; neither surface
+  synchronizes a local copy.
 - Do not run the old local `vocabbuilder` command against the repository's local
   vocabulary files after cutover. They become migration snapshots, not a second
   production database.
@@ -42,7 +42,7 @@ service keeps its own repository lock, AI lock, durable preview/receipt journal,
 history, and authoritative LaTeX file while sharing the authenticated HTTPS
 surface and provider credential. Run one web worker: the journal is a
 single-process request state machine, while file locks make the underlying data
-safe when the remote CLI and phone operate at the same time.
+safe if the legacy SSH CLI and phone operate at the same time.
 
 The phone deliberately has no arbitrary edit, delete, upload, or restore API.
 Those are not normal CLI workflows either. Current files, backups, and generated
@@ -58,21 +58,25 @@ mkdir -p ~/.local/bin
 ln -sf "$PWD/scripts/macos/vocab" ~/.local/bin/vocab
 ```
 
-Keep the VM login in the private per-user launcher configuration rather than
-hardcoding deployment identity in the public repository:
+The host defaults to the private MagicDNS name `vocabbuilder-mobile`; override
+it in the private per-user launcher configuration if the Tailscale machine name
+changes:
 
 ```text
 # ~/.config/vocabbuilder/remote.env
-VOCABBUILDER_REMOTE_USER=your-vm-login
+VOCABBUILDER_REMOTE_HOST=your-machine-name
 ```
 
-The host defaults to the private MagicDNS name `vocabbuilder-mobile`; override
-it in the same file with `VOCABBUILDER_REMOTE_HOST` if the Tailscale machine
-name changes. `VOCABBUILDER_LAUNCHER_CONFIG` can select a different config
-path. The launcher uses `tailscale ssh`, which verifies the VM host key against
-your tailnet and does not depend on a manually maintained `known_hosts` entry.
-It preserves CLI options, so commands such as `vocab --language de` behave like
-their direct `vocabbuilder` equivalents on the VM.
+The launcher asks the local Tailscale daemon for the machine's certificate DNS
+name, then calls its private HTTPS API. `VOCABBUILDER_REMOTE_URL` can override
+that URL, `VOCABBUILDER_LOCAL_PYTHON` can select the local interpreter, and
+`VOCABBUILDER_LAUNCHER_CONFIG` can select a different config path. Language and
+provider flags are preserved, so `vocab --language de --provider gemini` opens
+that collection directly.
+
+For VM-side diagnostics only, set `VOCABBUILDER_LEGACY_SSH_CLI=1` and
+`VOCABBUILDER_REMOTE_USER=your-vm-login`. This restores the former Tailscale SSH
+launcher, including its unavoidable per-key network latency.
 
 ## Storage and recovery
 
@@ -87,7 +91,7 @@ entire VM or disk.
 - `/opt/vocabbuilder`: read-only installed application
 - `/opt/vocabbuilder/.venv`: Python runtime and mobile dependencies
 - `/var/lib/vocabbuilder`: vocabulary, history, exports, and backups
-- `/var/lib/vocabbuilder/exports`: operator-enforced destination for remote CLI and mobile Anki packages
+- `/var/lib/vocabbuilder/exports`: operator-enforced destination for terminal-client and mobile Anki packages
 - `/etc/vocabbuilder/mobile.env`: root-readable allowed identity and non-secret service settings
 - `/var/lib/vocabbuilder/.env`: service-readable provider credentials
 - `/usr/local/sbin/vocabbuilder-cli`: root wrapper that sets authoritative
