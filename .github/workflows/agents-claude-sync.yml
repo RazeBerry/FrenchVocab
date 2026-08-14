@@ -10,7 +10,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Ensure CLAUDE.md mirrors canonical AGENTS.md
         run: python3 scripts/sync_agent_docs.py --check

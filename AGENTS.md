@@ -406,6 +406,7 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 - Concurrency changes must cover both in-process threads and POSIX processes. Keep the isolated-`tempfile.tempdir` regression in `tests/test_concurrency_transactions.py`; it models systemd `PrivateTmp` without touching production data.
 - Mobile changes should exercise the ASGI surface in `tests/test_mobile_service.py`, including duplicate commits, save retries, language routing, Tailscale identity enforcement, and cross-language worker-thread behavior.
 - CI installs the project with its `[mobile]` extra before collecting the full suite because the mobile service tests import FastAPI directly. Keep the extra in the lint-and-test dependency install unless those tests move to a separately provisioned job.
+- GitHub workflows use the Node 24 generations of the official actions (`actions/checkout@v7` and `actions/setup-python@v7`). Older Node 20 generations are deprecated and produce runner warnings; update all workflow references uniformly when advancing either action.
 - Ruff linting deliberately selects the stable `E4`, `E7`, `E9`, and `F` rule families in `pyproject.toml`, and CI constrains Ruff to the `0.16.x` compatibility line. Ruff minor releases can change defaults incompatibly, so update the rule policy and CI constraint together and review newly enabled rules before adopting a later line.
 - Run `ruff check .` before opening a pull request.
 - Run `pytest` before opening a pull request.
