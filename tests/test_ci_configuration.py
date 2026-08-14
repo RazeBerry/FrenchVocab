@@ -16,3 +16,9 @@ def test_ci_constrains_ruff_to_reviewed_compatibility_line() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
 
     assert '"ruff~=0.16.0"' in workflow
+
+
+def test_ci_installs_mobile_dependencies_before_full_test_collection() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+
+    assert 'pip install -e ".[mobile]"' in workflow
