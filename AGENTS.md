@@ -75,6 +75,7 @@ python scripts/sync_agent_docs.py --write
 python scripts/sync_agent_docs.py --check
 
 # Tests
+ruff check .
 pytest
 pytest tests/test_sentence_flow.py
 pytest tests/test_agent_docs_sync.py
@@ -404,6 +405,8 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 - Use stubs/fixtures (`tests/_stubs.py`) to avoid real API calls.
 - Concurrency changes must cover both in-process threads and POSIX processes. Keep the isolated-`tempfile.tempdir` regression in `tests/test_concurrency_transactions.py`; it models systemd `PrivateTmp` without touching production data.
 - Mobile changes should exercise the ASGI surface in `tests/test_mobile_service.py`, including duplicate commits, save retries, language routing, Tailscale identity enforcement, and cross-language worker-thread behavior.
+- Ruff linting deliberately selects the stable `E4`, `E7`, `E9`, and `F` rule families in `pyproject.toml`, and CI constrains Ruff to the `0.16.x` compatibility line. Ruff minor releases can change defaults incompatibly, so update the rule policy and CI constraint together and review newly enabled rules before adopting a later line.
+- Run `ruff check .` before opening a pull request.
 - Run `pytest` before opening a pull request.
 - When changing repository knowledge, edit `AGENTS.md`, run
   `python scripts/sync_agent_docs.py --write`, then run
