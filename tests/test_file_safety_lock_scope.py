@@ -23,13 +23,19 @@ def test_lock_lives_beside_the_data_file(tmp_path):
     assert lock_path.name == ".FrenchVocab.tex.lock"
 
 
-def test_lock_is_not_placed_under_the_temp_directory(tmp_path):
-    data = tmp_path / "GermanVocab.tex"
+def test_lock_ignores_the_process_temp_directory(tmp_path, monkeypatch):
+    data_root = tmp_path / "authoritative"
+    data_root.mkdir()
+    data = data_root / "GermanVocab.tex"
     data.write_text("", encoding="utf-8")
+    private_temp = tmp_path / "private-tmp"
+    private_temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(private_temp))
 
     lock_path = _lock_path_for(data)
 
-    assert Path(tempfile.gettempdir()) not in lock_path.parents
+    assert lock_path.parent == data_root.resolve()
+    assert private_temp.resolve() not in lock_path.parents
 
 
 def test_same_file_resolves_to_one_lock_through_different_paths(tmp_path):
