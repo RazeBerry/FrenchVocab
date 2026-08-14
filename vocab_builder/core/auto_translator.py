@@ -13,6 +13,7 @@ from rich import box
 from vocab_builder.languages import LanguageConfig
 from vocab_builder.llm_client import LLMClient
 from vocab_builder.ui_helper import UIHelper, read_line
+from .input_config import input_cancel_label
 from .translator import TranslatorCLI
 
 
@@ -167,10 +168,11 @@ class AutoTranslator:
         return True
 
     def _collect_multiline_input(self) -> Optional[str]:
+        cancel_label = input_cancel_label()
         instructions = (
             "[#E67E50]Enter text to translate.[/#E67E50]\n"
             "[dim]- Type or paste your text, then press Enter.\n"
-            "- Press Esc to cancel.[/dim]"
+            f"- Press {cancel_label} to cancel.[/dim]"
         )
         self.ui.panel(
             instructions,
@@ -179,7 +181,7 @@ class AutoTranslator:
         )
 
         try:
-            line = read_line("Text (Esc to cancel): ")
+            line = read_line(f"Text ({cancel_label} to cancel): ")
         except EOFError:
             self.ui.warning("Translation cancelled.")
             return None

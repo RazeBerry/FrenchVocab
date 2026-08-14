@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from vocab_builder.ui_helper import read_line
+from .input_config import input_cancel_label
 
 
 class VocabDisplayMixin:
@@ -45,7 +46,10 @@ class VocabDisplayMixin:
 
     def _prompt_definition_number(self) -> Optional[int]:
         try:
-            choice = read_line("Show full definitions for # (Enter/Esc to finish): ").strip()
+            cancel_label = input_cancel_label()
+            choice = read_line(
+                f"Show full definitions for # (Enter/{cancel_label} to finish): "
+            ).strip()
         except (EOFError, KeyboardInterrupt):
             return None
 
@@ -491,7 +495,9 @@ class VocabDisplayMixin:
             self.display_existing_entry(word_key)
 
             try:
-                again = read_line("Another? (Enter = yes, Esc/n = done) ").strip()
+                again = read_line(
+                    f"Another? (Enter = yes, {input_cancel_label()}/n = done) "
+                ).strip()
             except (EOFError, KeyboardInterrupt):
                 return
             if again.lower() in ("n", "no") or "\x1b" in again:

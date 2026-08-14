@@ -9,6 +9,7 @@ from rich import box
 from typing import List, Dict, Any, Optional, Tuple, Sequence
 from enum import Enum
 from vocab_builder.core.esc_config import read_esc_sequence_timeout
+from vocab_builder.core.input_config import low_latency_input_requested
 
 try:
     from vocab_builder.diagnostics import esc_latency
@@ -44,9 +45,10 @@ _PATCH_STDOUT = None
 
 def read_line(prompt: str = "", *, console: Optional[Console] = None) -> str:
     """Return a single line of user input with shared history & arrow support."""
-    result = _prompt_with_prompt_toolkit(prompt)
-    if result is not None:
-        return result
+    if not low_latency_input_requested():
+        result = _prompt_with_prompt_toolkit(prompt)
+        if result is not None:
+            return result
 
     result = _prompt_with_console(prompt, console)
     if result is not None:

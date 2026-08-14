@@ -13,6 +13,7 @@ from vocab_builder.languages import LanguageConfig, TranslatorConfig, default_la
 from typing import TYPE_CHECKING
 
 from .history_logger import TranslationLogger
+from .input_config import input_cancel_label
 from .vocab_repository import VocabRepository
 from .llm_coordinator import LLMCoordinator
 from .anki_manager import AnkiExportManager
@@ -345,7 +346,10 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
     ) -> tuple[float, float]:
         from vocab_builder.llm_client import ProviderFactory
 
-        self.eager_provider = eager_provider or (provider is not None)
+        # Selecting a provider and deciding when to initialize it are separate
+        # concerns. Only --eager-llm should put provider SDK/network work on the
+        # startup critical path.
+        self.eager_provider = eager_provider
         requested_provider = provider or ProviderFactory.default_provider()
         provider_metadata: ProviderMetadata = self.provider_manager.get_metadata(requested_provider)
 
@@ -882,7 +886,7 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
         if getattr(self, "max_word_length", None):
             limit_descriptors.append(f"≤{self.max_word_length} chars")
         limit_hint = f" [{' • '.join(limit_descriptors)}]" if limit_descriptors else ""
-        return f"\nEnter {language_name} text{limit_hint} (Esc to cancel): "
+        return f"\nEnter {language_name} text{limit_hint} ({input_cancel_label()} to cancel): "
 
     def _read_word_input_line(self, prompt: str) -> str:
         try:
@@ -931,7 +935,7 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
 
         Instructions:
         - Type or paste your text, then press Enter to submit.
-        - Press Esc to cancel.
+        - Use the cancellation key shown in the prompt.
         """
         prompt = self._build_word_input_prompt()
         line = self._read_word_input_line(prompt)

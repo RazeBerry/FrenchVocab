@@ -56,6 +56,7 @@ def test_builder_enters_degraded_mode_when_setup_fails(monkeypatch, tmp_path):
     builder = VocabBuilder(
         latex_file=str(tmp_path / "vocab.tex"),
         provider="gemini",
+        eager_provider=True,
     )
 
     assert builder.client is None
@@ -92,6 +93,7 @@ def test_reconfigure_provider_restores_client(monkeypatch, tmp_path):
     builder = VocabBuilder(
         latex_file=str(tmp_path / "reconfigure.tex"),
         provider="gemini",
+        eager_provider=True,
     )
 
     assert builder.client is None
@@ -118,6 +120,7 @@ def test_ensure_llm_ready_skip_returns_false(monkeypatch, tmp_path):
     builder = VocabBuilder(
         latex_file=str(tmp_path / "ensure.tex"),
         provider="gemini",
+        eager_provider=True,
     )
 
     assert builder.client is None
@@ -138,6 +141,23 @@ def test_ensure_llm_ready_skip_returns_false(monkeypatch, tmp_path):
     assert result is False
     assert prompts["count"] == 1
     assert builder.client is None
+
+
+def test_provider_selection_does_not_force_eager_initialization(monkeypatch, tmp_path):
+    started = {"background": False}
+
+    def _start_background(self):
+        started["background"] = True
+
+    monkeypatch.setattr(LLMCoordinator, "_start_background_init", _start_background)
+
+    builder = VocabBuilder(
+        latex_file=str(tmp_path / "lazy.tex"),
+        provider="gemini",
+    )
+
+    assert builder.eager_provider is False
+    assert started["background"] is True
 
 
 def test_background_init_wait_timeout_does_not_block_forever(monkeypatch):

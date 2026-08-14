@@ -76,10 +76,6 @@ def _composition_debt_count(app: Any) -> Optional[int]:
 def resolve_welcome_provider_name(app: Any) -> str:
     from vocab_builder.core.llm_coordinator import InitState
 
-    if app._llm.init_state == InitState.IN_PROGRESS:
-        # Give background init a moment to settle so the welcome screen does not
-        # get stuck showing "initializing" when no credentials are present.
-        app._llm.await_init(timeout=0.2)
     state = app._llm.init_state
 
     provider_name = app.provider_metadata.display_name if hasattr(app, "provider_metadata") else "Unknown"
@@ -178,8 +174,6 @@ def show_main_menu(app: Any) -> str:
     # Use the state machine for clean, unambiguous status.
     from vocab_builder.core.llm_coordinator import InitState
 
-    if app._llm.init_state == InitState.IN_PROGRESS:
-        app._llm.await_init(timeout=0.2)
     state = app._llm.init_state
 
     if state == InitState.READY:

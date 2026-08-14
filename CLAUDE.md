@@ -111,6 +111,13 @@ pytest -k "anki"
   and a repaint. Above nine the ordinal would need two keystrokes, so those
   menus stay arrow-only and `_numbered_choice` refuses the digit — the affordance
   and the behaviour are derived from the same threshold so they cannot drift.
+- The deployed SSH launcher defaults `VOCABBUILDER_LOW_LATENCY_INPUT=1` because
+  the remote path can exceed 100 ms per round trip. In that mode menus and
+  confirmations use canonical line input instead of raw-key Rich redraws, and
+  text entry bypasses prompt-toolkit's per-character terminal refreshes. Menus
+  use a number plus Enter, `0` returns, and `Ctrl+C` cancels text input; set the
+  variable to `0` only when the full local-style editing experience is worth the
+  remote latency.
 
 ### Core Application (`vocab_builder/core/`)
 - `vocab.py` contains `VocabBuilder`, the main controller.
@@ -131,6 +138,11 @@ pytest -k "anki"
 - Gemini defaults to the stable `gemini-3.7-flash` model. Its generation config
   uses thinking levels and omits deprecated sampling parameters (`temperature`,
   `top_p`, and `top_k`) that current Gemini models no longer support.
+- `--provider` selects provider metadata but does not make initialization eager;
+  only `--eager-llm` puts provider SDK import, client construction, and credential
+  verification on the startup critical path. Background initialization status
+  is rendered from the current state without waiting in the welcome or main-menu
+  path.
 - `provider_settings()` reports `label` (provider and model on one line, for terse
   surfaces) and `model` (the bare identifier) separately, because the phone names
   the provider in a heading and the model beneath it. Splitting a combined label
