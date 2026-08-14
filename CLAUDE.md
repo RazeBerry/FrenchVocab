@@ -105,12 +105,11 @@ pytest -k "anki"
   because the first menu refresh blocks on an authoritative entry count.
   Scheduling the parse later leaves nothing for it to overlap with and puts it
   in front of the welcome screen.
-- Menus of nine options or fewer print an ordinal in place of the bullet, and a
-  digit selects that option outright. Cutting the cost of one arrow press does
-  not help if reaching option six still takes five of them, each a round trip
-  and a repaint. Above nine the ordinal would need two keystrokes, so those
-  menus stay arrow-only and `_numbered_choice` refuses the digit — the affordance
-  and the behaviour are derived from the same threshold so they cannot drift.
+- Interactive TTY menus deliberately show bullets and accept navigation only
+  through the arrow keys followed by Enter. Digit keys are ignored even when a
+  menu has nine or fewer choices; do not add ordinals or numeric shortcuts to
+  the Rich interface. The numbered line-mode fallback exists only for non-TTY
+  environments where raw arrow input is unavailable.
 - The deployed SSH launcher preserves the Rich raw-key menus, arrow navigation,
   immediate Escape handling, and prompt-toolkit text editing. Do not replace
   that interaction contract with canonical numbered-line menus as a latency
