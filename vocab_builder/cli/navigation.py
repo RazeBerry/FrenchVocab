@@ -15,7 +15,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich import box
 from vocab_builder.core.esc_config import read_esc_sequence_timeout
-from vocab_builder.core.input_config import low_latency_input_requested
 
 
 def _restore_cursor_on_exit() -> None:
@@ -128,13 +127,8 @@ def interactive_select(
     if not options:
         raise ValueError("interactive_select requires at least one option.")
 
-    low_latency = low_latency_input_requested()
-    if low_latency or not getattr(sys.stdin, "isatty", lambda: False)():
-        instructions = (
-            "Enter one option number and press Enter."
-            if low_latency
-            else instructions or _INSTRUCTION_DEFAULT
-        )
+    if not getattr(sys.stdin, "isatty", lambda: False)():
+        instructions = instructions or _INSTRUCTION_DEFAULT
         return _fallback_interactive_select(
             console,
             title,
@@ -502,7 +496,7 @@ def interactive_confirm(
     Returns:
         True if Yes was selected, False if No was selected.
     """
-    if low_latency_input_requested() or not getattr(sys.stdin, "isatty", lambda: False)():
+    if not getattr(sys.stdin, "isatty", lambda: False)():
         return _fallback_confirm(console, message, default=default)
 
     # Flush any buffered input to prevent accidental double-Enter from

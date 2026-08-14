@@ -143,33 +143,6 @@ def test_number_selects_an_option_in_one_keypress(monkeypatch):
     assert result == "export"
 
 
-def test_low_latency_tty_uses_one_line_numbered_menu(monkeypatch):
-    """Remote mode must not enter raw mode or wait on individual keypresses."""
-    monkeypatch.setenv("VOCABBUILDER_LOW_LATENCY_INPUT", "1")
-    monkeypatch.setattr(navigation.sys, "stdin", _Stdin())
-    console = _InputConsole(["2"])
-
-    result = navigation.interactive_select(
-        console,
-        "Menu",
-        [("add", "Add"), ("browse", "Browse")],
-        "Use arrows and Esc.",
-    )
-
-    assert result == "browse"
-    assert console.prompts == [
-        "Select an option by number [0-2] (Enter for 1, 0 to cancel): "
-    ]
-
-
-def test_low_latency_tty_confirm_uses_line_input(monkeypatch):
-    monkeypatch.setenv("VOCABBUILDER_LOW_LATENCY_INPUT", "true")
-    monkeypatch.setattr(navigation.sys, "stdin", _Stdin())
-    console = _InputConsole(["n"])
-
-    assert navigation.interactive_confirm(console, "Proceed?", default=True) is False
-
-
 def test_out_of_range_digit_is_ignored(monkeypatch):
     monkeypatch.setattr(navigation, "Live", _PassiveLive)
     monkeypatch.setattr(navigation, "_flush_stdin", lambda: None)
@@ -250,17 +223,6 @@ class _RecordingConsole:
 
     def print(self, *_args, **_kwargs) -> None:
         pass
-
-
-class _InputConsole(_RecordingConsole):
-    def __init__(self, responses) -> None:
-        super().__init__()
-        self.responses = list(responses)
-        self.prompts: list[str] = []
-
-    def input(self, prompt: str) -> str:
-        self.prompts.append(prompt)
-        return self.responses.pop(0)
 
 
 def _noop_context(_stream):

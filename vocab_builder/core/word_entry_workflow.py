@@ -15,7 +15,6 @@ from vocab_builder.ui_helper import UIHelper, read_line
 from .spelling_checker import SpellingChecker
 from .file_safety import file_lock
 from .history_logger import TranslationLogger
-from .input_config import input_cancel_label
 from .text_utils import detect_input_type, sanitize_user_text, translator_title
 
 if TYPE_CHECKING:
@@ -490,7 +489,7 @@ class WordEntryWorkflow:
         if self.max_word_length:
             limit_parts.append(f"{self.max_word_length} chars")
         limit_hint = f" [{' '.join(limit_parts)}]" if limit_parts else ""
-        return f"\nEnter {language_name} text{limit_hint} ({input_cancel_label()} to cancel): "
+        return f"\nEnter {language_name} text{limit_hint} (Esc to cancel): "
 
     def _read_user_input_line(self, prompt: str) -> str:
         try:

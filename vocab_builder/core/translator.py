@@ -19,7 +19,6 @@ from vocab_builder.compat import runtime_root
 from vocab_builder.languages import TranslatorConfig
 from vocab_builder.llm_client import LLMClient
 from vocab_builder.ui_helper import UIHelper, read_line
-from vocab_builder.core.input_config import input_cancel_label
 from vocab_builder.core.history_logger import TranslationLogger
 from vocab_builder.core.file_safety import atomic_copy_file, atomic_write_text, file_lock
 from vocab_builder.latex_repository import parse_balanced_group
@@ -349,12 +348,11 @@ class TranslatorCLI:
         )
 
     def _collect_multiline_input(self) -> Optional[str]:
-        cancel_label = input_cancel_label()
         # Instructions panel: wrapped for contextual info
         instructions = (
             "[#E67E50]Enter text to translate.[/#E67E50]\n"
             "[dim]- Type or paste your text, then press Enter.\n"
-            f"- Press {cancel_label} to cancel.[/dim]"
+            "- Press Esc to cancel.[/dim]"
         )
         self.ui.panel(
             instructions,
@@ -363,7 +361,7 @@ class TranslatorCLI:
         )
 
         try:
-            line = read_line(f"Text ({cancel_label} to cancel): ")
+            line = read_line("Text (Esc to cancel): ")
         except EOFError:
             self.ui.warning("Translation cancelled.")
             return None

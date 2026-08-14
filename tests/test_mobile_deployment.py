@@ -37,12 +37,12 @@ def test_deployment_keeps_rotatable_credentials_out_of_systemd_environment() -> 
     assert 'ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"' not in launcher
 
 
-def test_remote_cli_defaults_to_low_latency_line_input() -> None:
+def test_remote_cli_preserves_rich_interactive_input() -> None:
     launcher = (ROOT / "scripts" / "deploy" / "run_remote_cli.sh").read_text(
         encoding="utf-8"
     )
 
-    assert 'VOCABBUILDER_LOW_LATENCY_INPUT="${VOCABBUILDER_LOW_LATENCY_INPUT:-1}"' in launcher
+    assert "VOCABBUILDER_LOW_LATENCY_INPUT" not in launcher
 
 
 def test_installer_prepares_operator_owned_export_directory() -> None:

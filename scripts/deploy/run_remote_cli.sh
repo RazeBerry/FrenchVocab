@@ -20,7 +20,6 @@ exec runuser -u vocabbuilder -- env \
   VOCABBUILDER_HISTORY_DIR=/var/lib/vocabbuilder/history \
   VOCABBUILDER_ANKI_EXPORT_DIR=/var/lib/vocabbuilder/exports \
   VOCABBUILDER_SKIP_KEYRING=1 \
-  VOCABBUILDER_LOW_LATENCY_INPUT="${VOCABBUILDER_LOW_LATENCY_INPUT:-1}" \
   /opt/vocabbuilder/.venv/bin/vocabbuilder \
   --provider "$PROVIDER" \
   "$@"

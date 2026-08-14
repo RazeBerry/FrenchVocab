@@ -111,14 +111,11 @@ pytest -k "anki"
   and a repaint. Above nine the ordinal would need two keystrokes, so those
   menus stay arrow-only and `_numbered_choice` refuses the digit — the affordance
   and the behaviour are derived from the same threshold so they cannot drift.
-- The deployed SSH launcher defaults `VOCABBUILDER_LOW_LATENCY_INPUT=1` because
-  the remote path can exceed 100 ms per round trip. In that mode menus and
-  confirmations use canonical line input instead of raw-key Rich redraws, and
-  text entry bypasses prompt-toolkit's per-character terminal refreshes. Menus
-  use a number plus Enter, `0` returns, and `Ctrl+C` cancels text input; set the
-  variable to `0` only when the full local-style editing experience is worth the
-  remote latency.
-
+- The deployed SSH launcher preserves the Rich raw-key menus, arrow navigation,
+  immediate Escape handling, and prompt-toolkit text editing. Do not replace
+  that interaction contract with canonical numbered-line menus as a latency
+  optimization; reduce startup work, redundant waits, and redraws without
+  changing how the operator uses the CLI.
 ### Core Application (`vocab_builder/core/`)
 - `vocab.py` contains `VocabBuilder`, the main controller.
 - `vocab_repository.py` handles LaTeX parsing, persistence, entry indexing, and counts.

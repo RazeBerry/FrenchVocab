@@ -22,7 +22,6 @@ from vocab_builder.core.composition_scheduler import (
     VERDICT_NOT_USED,
 )
 from vocab_builder.core.history_logger import CompositionLogger
-from vocab_builder.core.input_config import input_cancel_label
 from vocab_builder.languages import CompositionConfig, LanguageConfig
 from vocab_builder.ui_helper import UIHelper, read_line
 
@@ -370,20 +369,19 @@ class CompositionCoach:
         )
 
     def _collect_multiline_input(self) -> Optional[str]:
-        cancel_label = input_cancel_label()
         input_instruction = self.config.input_instruction_template.format(
             language=self.language_config.display_name,
         )
         instructions = (
             f"[#E67E50]{_escape_markup(input_instruction)}[/#E67E50]\n"
             "[dim]- Press Enter on an empty line to submit.\n"
-            f"- Press {cancel_label} to cancel this daily set.[/dim]"
+            "- Press Esc to cancel this daily set.[/dim]"
         )
         self.ui.panel(instructions, border_style="dark_orange", box_style=box.ROUNDED)
 
         lines: list[str] = []
         while True:
-            prompt = f"Composition ({cancel_label} to cancel): " if not lines else ""
+            prompt = "Composition (Esc to cancel): " if not lines else ""
             try:
                 line = read_line(prompt)
             except (EOFError, KeyboardInterrupt):
