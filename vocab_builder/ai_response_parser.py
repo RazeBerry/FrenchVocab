@@ -1,6 +1,6 @@
 """Utilities for parsing structured AI responses into vocabulary components."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 import re
 
@@ -12,7 +12,8 @@ class ParsedAIResponse:
     word_type: List[str]
     definitions: List[str]
     examples: List[Tuple[str, str]]
-    parsing_warnings: List[str]  # Tracks what couldn't be parsed
+    parsing_warnings: List[str]  # Parse failures and contract diagnostics
+    contract_issues: List[str] = field(default_factory=list)
 
 
 # Known section headers for robust extraction
@@ -170,6 +171,33 @@ def _parse_bracketed_line_examples(section: str) -> List[Tuple[str, str]]:
     return examples
 
 
+def _structured_contract_issues(
+    definitions: List[str],
+    examples: List[Tuple[str, str]],
+) -> List[str]:
+    """Return cardinality problems without discarding any parsed content."""
+    issues: List[str] = []
+    definition_count = len(definitions)
+    example_count = len(examples)
+
+    if definition_count > 3:
+        issues.append(
+            "Structured vocabulary response must contain at most 3 definition "
+            f"entries; parsed {definition_count}"
+        )
+    if example_count > 3:
+        issues.append(
+            "Structured vocabulary response must contain at most 3 examples; "
+            f"parsed {example_count}"
+        )
+    if definition_count != example_count:
+        issues.append(
+            "Structured vocabulary response must contain one example per definition "
+            f"entry; parsed {definition_count} definitions and {example_count} examples"
+        )
+    return issues
+
+
 def parse_ai_response_text(response: str) -> ParsedAIResponse:
     """Parse the raw AI response into discrete vocabulary components.
 
@@ -190,9 +218,13 @@ def parse_ai_response_text(response: str) -> ParsedAIResponse:
     if not examples:
         parsing_warnings.append("Could not parse any examples from AI response")
 
+    contract_issues = _structured_contract_issues(definitions, examples)
+    parsing_warnings.extend(contract_issues)
+
     return ParsedAIResponse(
         word_type=word_type,
         definitions=definitions,
         examples=examples,
         parsing_warnings=parsing_warnings,
+        contract_issues=contract_issues,
     )

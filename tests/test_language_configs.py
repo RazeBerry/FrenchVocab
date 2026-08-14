@@ -105,3 +105,17 @@ def test_english_config_is_monolingual_with_dedicated_anki_fields():
     assert cfg.anki.default_deck_name == "English Vocabulary"
     assert tuple(cfg.anki.field_names) == ("Word", "Type", "Definitions", "Examples")
     assert "{{Word}}" in cfg.anki.card_templates[0].question_format
+
+
+def test_french_prompt_uses_flexible_aligned_lexical_contract():
+    prompt = get_language_config("fr").prompt_template
+    normalized_prompt = " ".join(prompt.split())
+
+    assert "one lexical identity" in normalized_prompt
+    assert "lexicalized plural" in normalized_prompt
+    assert "provide one to three entries" in normalized_prompt
+    assert "exactly one example for each Definitions entry" in normalized_prompt
+    assert "same headword and part of speech" in normalized_prompt
+    assert "never force an unnatural future-tense sentence" in normalized_prompt
+    assert "Allocate your three definition slots" not in normalized_prompt
+    assert "use Present for 1" not in normalized_prompt

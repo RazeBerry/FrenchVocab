@@ -261,10 +261,18 @@ class MobileVocabService:
                 reason = self.builder.api_error_reason or "The AI provider returned no result."
                 raise AIUnavailableError(reason)
 
-            word_type, definitions, examples = self.builder.parse_ai_response(response)
+            parsed = self.builder.parse_ai_response_detailed(response)
+            word_type = parsed.word_type
+            definitions = parsed.definitions
+            examples = parsed.examples
             if not definitions:
                 raise AIUnavailableError(
                     "The AI response did not contain a usable definition. Please try again."
+                )
+            if parsed.contract_issues:
+                raise AIUnavailableError(
+                    "The AI response did not preserve the definition/example structure. "
+                    "Please try again. " + " ".join(parsed.contract_issues)
                 )
 
             input_type = self.builder.detect_input_type(original)

@@ -14,6 +14,7 @@ import httpx
 import pytest
 from rich.console import Console
 
+from vocab_builder.anki_exporter import AnkiExportEntry, AnkiExporter
 from vocab_builder.core.llm_coordinator import LLMCoordinator
 from vocab_builder.core.vocab import VocabBuilder
 from vocab_builder.mobile.app import create_app
@@ -114,6 +115,79 @@ def test_preview_and_save_reuse_existing_workflow(tmp_path, monkeypatch):
     assert re.search(r"\\entry\{Chrysanthème\}\{noun\}", content)
     assert service.search("flower")[0]["word"] == "Chrysanthème"
     assert service.recent()[0]["word"] == "Chrysanthème"
+
+
+def test_flexible_response_survives_mobile_save_reload_and_anki_export(
+    tmp_path,
+    monkeypatch,
+):
+    service = build_service(tmp_path, monkeypatch)
+    service.builder.client.response = """Spelling Check: OK
+Correctly Spelt Word: encombrants
+Word Type: noun
+Definitions:
+a. Bulky household waste collected separately by a municipality.
+b. Usage note: Usually used in the plural for discarded furniture and appliances.
+Examples:
+1. La mairie ramasse les encombrants mardi.
+(The council collects bulky waste on Tuesday.)
+2. Ce vieux canapé partira avec les encombrants.
+(This old sofa will go out with the bulky-waste collection.)
+"""
+
+    preview = service.preview("encombrants")
+
+    assert preview.word == "encombrants"
+    assert preview.word_type == "noun"
+    assert len(preview.definitions) == 2
+    assert len(preview.examples) == 2
+    assert preview.definitions[1].startswith("Usage note:")
+
+    service.save(preview.token)
+    service.builder._vocab_repo.load_existing_entries()
+    stored = service.builder.word_entries["encombrants"]
+
+    assert stored["definitions_list"] == preview.definitions
+    assert stored["examples_list"] == preview.examples
+
+    config = service.builder.language_config
+    deck = AnkiExporter(config.anki.default_deck_name, config.anki).build_deck(
+        [
+            AnkiExportEntry(
+                word=stored["word"],
+                word_type=stored["type"],
+                definitions=stored["definitions_list"],
+                examples=stored["examples_list"],
+            )
+        ]
+    )
+    fields = deck.notes[0].fields
+    assert "Bulky household waste" in fields[2]
+    assert "Usage note:" in fields[2]
+    assert "La mairie ramasse" in fields[3]
+    assert "Ce vieux canapé" in fields[3]
+
+
+def test_mobile_rejects_misaligned_response_instead_of_saving_it_silently(
+    tmp_path,
+    monkeypatch,
+):
+    service = build_service(tmp_path, monkeypatch)
+    service.builder.client.response = """Correctly Spelt Word: dépanner
+Word Type: verb
+Definitions:
+a. to help someone out of a practical difficulty
+b. to repair a vehicle temporarily
+Examples:
+1. Tu peux me dépanner ce soir ?
+(Can you help me out tonight?)
+"""
+
+    with pytest.raises(AIUnavailableError, match="one example per definition"):
+        service.preview("dépanner")
+
+    assert "dépanner" not in service.builder.word_entries
+    assert service._previews == {}
 
 
 @pytest.mark.parametrize(

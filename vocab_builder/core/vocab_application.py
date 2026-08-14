@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional, Protocol, Sequence
 
+from vocab_builder.ai_response_parser import ParsedAIResponse
 from vocab_builder.languages import LanguageConfig
 from vocab_builder.models import WordEntry
 
@@ -47,6 +48,8 @@ class VocabCapturePort(Protocol):
         self,
         response: str,
     ) -> tuple[Any, list[str], list[tuple[str, str]]]: ...
+
+    def parse_ai_response_detailed(self, response: str) -> ParsedAIResponse: ...
 
     def suggest_spelling(self, word: str, ai_response: str) -> Optional[str]: ...
 

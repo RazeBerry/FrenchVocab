@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from pathlib import Path
 from rich.console import Console
 from vocab_builder.anki_exporter import latex_to_anki_format as latex_to_anki_html
-from vocab_builder.ai_response_parser import parse_ai_response_text
+from vocab_builder.ai_response_parser import ParsedAIResponse, parse_ai_response_text
 import time
 import threading
 from vocab_builder.languages import LanguageConfig, TranslatorConfig, default_language_code, get_language_config
@@ -995,8 +995,13 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
                 - list of definitions (List[str])
                 - list of examples, each a tuple of (French, English) (List[Tuple[str, str]])
         """
-        parsed = parse_ai_response_text(response)
+        parsed = self.parse_ai_response_detailed(response)
         return parsed.word_type, parsed.definitions, parsed.examples
+
+    @staticmethod
+    def parse_ai_response_detailed(response: str) -> ParsedAIResponse:
+        """Parse a response while retaining warnings and contract violations."""
+        return parse_ai_response_text(response)
 
     @staticmethod
     def format_latex_entry(

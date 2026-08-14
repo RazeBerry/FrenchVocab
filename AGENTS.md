@@ -144,6 +144,15 @@ pytest -k "anki"
 - `__init__.py` lazily registers/loads language configs and resolves aliases with `get_language_config(code)`.
 - `english.py`, `french.py`, and `german.py` define prompts, validators, learning-mode behavior, and Anki metadata.
 - English is monolingual: it omits translation workflows and uses plain-English example paraphrases as active-recall cues.
+- French word and expression generation stays within one lexical identity and
+  part of speech, preserves lexicalized inflected forms, and emits one to three
+  useful definition-or-usage-note entries with exactly one ordered example per
+  entry. Fewer genuine senses are better than padded or speculative ones; only
+  sentence analysis retains its explicit three-part prompt structure.
+- `ParsedAIResponse.contract_issues` reports definition/example count drift
+  without truncating the parsed lists. Flexible aligned payloads flow unchanged
+  through preview, LaTeX, merge, and Anki consumers; the headless mobile service
+  rejects misaligned payloads before they can be saved silently.
 - `english_tex.py` and `german_tex.py` contain dedicated language-specific LaTeX templates.
 - `latex_templates.py`, `anki_shared_styles.py`, and `anki_themes.py` provide shared assets.
 
