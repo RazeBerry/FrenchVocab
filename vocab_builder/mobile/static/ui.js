@@ -47,7 +47,9 @@ export function makeButton(label, value, active = false) {
    that would fix it declaratively.
 
    The threshold keeps Safari's collapsing address bar (~50px) from reading as a
-   keyboard, which would strip the tab bar out from under a scroll. */
+   keyboard, while the touch-and-focus checks keep desktop zoom from doing the
+   same thing. A software keyboard can only cover this layout while a text field
+   is focused on a touch-capable device. */
 const KEYBOARD_MIN_INSET = 120;
 
 export function trackKeyboardInset() {
@@ -60,7 +62,13 @@ export function trackKeyboardInset() {
     // and the inset would fall back under the threshold mid-keystroke,
     // flickering the tab bar and the whole column with it.
     const inset = Math.max(0, window.innerHeight - viewport.height);
-    const open = inset > KEYBOARD_MIN_INSET;
+    const active = document.activeElement;
+    const acceptsText = active?.matches?.(
+      "input, textarea, [contenteditable='true']",
+    );
+    const open = navigator.maxTouchPoints > 0
+      && acceptsText
+      && inset > KEYBOARD_MIN_INSET;
     document.documentElement.style.setProperty(
       "--kb",
       `${open ? Math.round(inset) : 0}px`,

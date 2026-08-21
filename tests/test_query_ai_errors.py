@@ -130,6 +130,50 @@ def test_handle_ai_exception_degrades_cleanly_on_quota_failure(monkeypatch):
     assert "quota" in (coordinator.api_error_reason or "").lower()
 
 
+def test_transient_provider_error_preserves_ready_state_and_precise_reason(monkeypatch):
+    class TransientClient:
+        def model_label(self):
+            return "Anthropic Claude (test)"
+
+        def stream(self, _prompt):
+            raise RuntimeError(
+                "503 UNAVAILABLE. {'error': {'code': 503, 'message': "
+                "'This model is currently experiencing high demand.'}}"
+            )
+            yield ""  # pragma: no cover - keeps this a generator
+
+    ui = _CaptureUI()
+    coordinator = LLMCoordinator(
+        ui,
+        provider_manager=SimpleNamespace(),
+        provider_metadata=_MockProviderMetadata(),
+        client=TransientClient(),
+        interactive=False,
+    )
+    reason = (
+        "Anthropic Claude rejected the request with 503 UNAVAILABLE "
+        "(reported high demand)."
+    )
+    monkeypatch.setattr(
+        LLMCoordinator,
+        "_classify_provider_error",
+        staticmethod(lambda _provider, _exc: ("transient", reason)),
+    )
+
+    response, _metrics = coordinator.query(
+        "prompt",
+        on_exception=lambda exc, label: coordinator.handle_ai_exception(
+            exc,
+            label,
+        ),
+    )
+
+    assert response == ""
+    assert coordinator.api_available is True
+    assert coordinator.api_error_reason is None
+    assert coordinator.last_query_error_reason == reason
+
+
 def test_queries_on_one_coordinator_are_serialized():
     first_started = threading.Event()
     release_first = threading.Event()

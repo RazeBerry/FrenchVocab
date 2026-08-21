@@ -13,11 +13,14 @@ from vocab_builder.core.translator import TranslationDraft
 class TranslationBuilder(Protocol):
     api_available: bool
     api_error_reason: Optional[str]
+    last_query_error_reason: Optional[str]
     eng_to_target_translator: Any
     target_to_eng_translator: Any
     auto_translator: Any
 
     def try_restore_ai(self) -> bool: ...
+
+    def clear_last_query_error(self) -> None: ...
 
 
 class MobileTranslations:
@@ -72,9 +75,15 @@ class MobileTranslations:
             raise RuntimeError(
                 self.builder.api_error_reason or "The AI provider is unavailable."
             )
-
         with self._workflow_lock:
             with self._ai_lock:
+                clear_query_error = getattr(
+                    self.builder,
+                    "clear_last_query_error",
+                    None,
+                )
+                if callable(clear_query_error):
+                    clear_query_error()
                 notes = None
                 suspicious = False
                 if direction == "auto":
@@ -86,7 +95,8 @@ class MobileTranslations:
                     result = automatic.preview_translation(source)
                     if result is None:
                         raise RuntimeError(
-                            "The AI could not determine a translation direction."
+                            getattr(self.builder, "last_query_error_reason", None)
+                            or "The AI could not determine a translation direction."
                         )
                     if automatic.direction_is_ambiguous(result.direction):
                         explanation = (result.notes or "").strip()
@@ -115,7 +125,10 @@ class MobileTranslations:
                     draft = translator.preview_translation(source)
 
             if draft is None:
-                raise RuntimeError("The AI provider returned no translation.")
+                raise RuntimeError(
+                    getattr(self.builder, "last_query_error_reason", None)
+                    or "The AI provider returned no translation."
+                )
             token = self._token_factory()
             payload = {
                 "token": token,

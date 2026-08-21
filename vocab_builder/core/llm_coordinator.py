@@ -145,6 +145,7 @@ class LLMCoordinator:
         self._usage_lock = threading.Lock()
         self._client: Optional["LLMClient"] = client
         self._api_error_reason: Optional[str] = None
+        self._last_query_error_reason: Optional[str] = None
         self._init_generation: int = 0
         self._last_silent_reinit_attempt: Optional[float] = None
         self._silent_reinit_in_progress = False
@@ -237,6 +238,20 @@ class LLMCoordinator:
         """Set the API error reason."""
         with self._state_lock:
             self._api_error_reason = value
+
+    @property
+    def last_query_error_reason(self) -> Optional[str]:
+        """Return the most recent request-scoped provider error, if any."""
+        with self._state_lock:
+            return self._last_query_error_reason
+
+    def _set_last_query_error(self, reason: Optional[str]) -> None:
+        with self._state_lock:
+            self._last_query_error_reason = reason
+
+    def clear_last_query_error(self) -> None:
+        """Clear request-scoped provider feedback before a direct client query."""
+        self._set_last_query_error(None)
 
     @property
     def provider(self) -> str:
@@ -796,6 +811,7 @@ class LLMCoordinator:
             Tuple of (response_text, metrics_dict)
         """
         with self._query_lock:
+            self._set_last_query_error(None)
             label = progress_label or self.provider_label
             # Snapshot the client exactly once. A concurrent lifecycle change
             # may affect the next query, but cannot turn a second property read
@@ -803,6 +819,7 @@ class LLMCoordinator:
             client = self.client
             if client is None:
                 reason = self.api_error_reason or f"{label} client is not configured."
+                self._set_last_query_error(reason)
                 self._ui.error(f"Cannot query AI provider: {reason}")
                 self._ui.info("AI-powered suggestions are disabled. Retry provider setup to continue.")
                 return "", {}
@@ -835,15 +852,22 @@ class LLMCoordinator:
                             break
                 except Exception as e:
                     # Also catch providers that fail while constructing a stream.
+                    self._set_last_query_error(
+                        str(e).strip() or f"{label} request failed."
+                    )
                     handled = False
                     if on_exception:
                         handled = on_exception(e, label)
                     if not handled:
                         classified = self._classify_provider_error(self.provider, e)
                         if classified is not None:
-                            _, reason = classified
-                            self._enter_degraded_mode(reason)
-                            self._ui.error(f"{label} is unavailable: {reason}")
+                            category, reason = classified
+                            self._set_last_query_error(reason)
+                            if category == "transient":
+                                self._ui.error(reason)
+                            else:
+                                self._enter_degraded_mode(reason)
+                                self._ui.error(f"{label} is unavailable: {reason}")
                             handled = True
                     if not handled:
                         self._ui.error(f"Error during {label} stream: {e}")
@@ -890,6 +914,11 @@ class LLMCoordinator:
             return False
 
         category, reason = classified
+        self._set_last_query_error(reason)
+        if category == "transient":
+            self._ui.error(reason, with_panel=True)
+            return True
+
         self._enter_degraded_mode(reason)
 
         if category == "region_blocked":

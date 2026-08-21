@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from dataclasses import dataclass
 import logging
 import math
 import os
@@ -169,6 +168,7 @@ def classify_provider_error(provider_name: str, exc: Exception) -> Optional[Tupl
         "insufficient funds",
         "credit balance",
     )
+    is_transient_503 = "503" in lower and "unavailable" in lower
 
     if any(marker in lower for marker in auth_markers):
         return "auth", f"{display_name} credentials were rejected or revoked."
@@ -176,6 +176,17 @@ def classify_provider_error(provider_name: str, exc: Exception) -> Optional[Tupl
         return "billing", f"{display_name} billing is preventing requests."
     if any(marker in lower for marker in quota_markers):
         return "quota", f"{display_name} quota is exhausted or unavailable."
+    if is_transient_503:
+        reported_cause = (
+            " (reported high demand)"
+            if "high demand" in lower
+            else ""
+        )
+        return (
+            "transient",
+            f"{display_name} rejected the request with 503 UNAVAILABLE"
+            f"{reported_cause}.",
+        )
     return None
 
 
@@ -219,13 +230,6 @@ class GeminiClient(LLMClient):
         "Choose a different provider or try from a supported location."
     )
 
-    @dataclass(frozen=True)
-    class _StreamState:
-        ttft: float
-        t_first: float
-        pieces: list[str]
-        usage_metadata: Any | None
-
     def __init__(self, api_key: str | None = None):
         key = api_key or os.getenv("GEMINI_API_KEY")
         if not key:
@@ -236,14 +240,18 @@ class GeminiClient(LLMClient):
         from google.genai import types
 
         self._types = types
-        try:
-            http_options = types.HttpOptions(
-                timeout=int(_provider_timeout_seconds() * 1000)
-            )
-            self._client = genai.Client(api_key=key, http_options=http_options)
-        except (AttributeError, TypeError, ValueError):
-            # Older google-genai releases may not accept HttpOptions/timeout.
-            self._client = genai.Client(api_key=key)
+        retry_options = types.HttpRetryOptions(
+            attempts=3,
+            initial_delay=1.0,
+            max_delay=2.0,
+            exp_base=2.0,
+            http_status_codes=[503],
+        )
+        http_options = types.HttpOptions(
+            timeout=int(_provider_timeout_seconds() * 1000),
+            retry_options=retry_options,
+        )
+        self._client = genai.Client(api_key=key, http_options=http_options)
         self._model_name = _resolve_model_name(
             "VOCABBUILDER_GEMINI_MODEL",
             self.MODEL_NAME,
@@ -278,9 +286,9 @@ class GeminiClient(LLMClient):
             thinking_config=self._types.ThinkingConfig(thinking_level=sdk_level),
         )
 
-    def _create_stream(self, client: Any, model_name: str, contents: Any, cfg: Any):
+    def _generate_content(self, client: Any, model_name: str, contents: Any, cfg: Any):
         try:
-            return client.models.generate_content_stream(
+            return client.models.generate_content(
                 model=model_name,
                 contents=contents,
                 config=cfg,
@@ -288,62 +296,6 @@ class GeminiClient(LLMClient):
         except Exception as exc:
             self._maybe_raise_mapped_error(exc)
             raise
-
-    def _yield_text_and_collect(self, stream: Any, t0: float):
-        pieces: list[str] = []
-        usage_metadata: Any | None = None
-
-        try:
-            first_chunk = next(stream)
-        except StopIteration:
-            t_first = perf_counter()
-            ttft = t_first - t0
-            logging.getLogger(__name__).warning("Gemini returned no tokens.")
-            return self._StreamState(
-                ttft=ttft, t_first=t_first, pieces=pieces, usage_metadata=usage_metadata
-            )
-        except Exception as exc:
-            self._maybe_raise_mapped_error(exc)
-            raise
-
-        t_first = perf_counter()
-        ttft = t_first - t0
-
-        first_text = first_chunk.text or ""
-        pieces.append(first_text)
-        yield first_text
-        usage_metadata = getattr(first_chunk, "usage_metadata", None) or usage_metadata
-
-        for chunk in stream:
-            chunk_text = chunk.text or ""
-            if chunk_text:
-                pieces.append(chunk_text)
-                yield chunk_text
-
-            chunk_usage = getattr(chunk, "usage_metadata", None)
-            if chunk_usage is not None:
-                usage_metadata = chunk_usage
-
-        return self._StreamState(ttft=ttft, t_first=t_first, pieces=pieces, usage_metadata=usage_metadata)
-
-    @staticmethod
-    def _maybe_get_stream_response(stream: Any) -> Any | None:
-        response_attr = getattr(stream, "response", None)
-        if response_attr is None:
-            return None
-        if callable(response_attr):
-            try:
-                return response_attr()
-            except Exception:
-                return None
-        return response_attr
-
-    def _merge_usage_metadata(self, usage_metadata: Any | None, stream: Any) -> Any | None:
-        final_response = self._maybe_get_stream_response(stream)
-        if final_response is None:
-            return usage_metadata
-        final_usage = getattr(final_response, "usage_metadata", None)
-        return final_usage or usage_metadata
 
     def _usage_summary_from_metadata(self, usage_metadata: Any | None) -> Dict[str, int]:
         if usage_metadata is None:
@@ -387,11 +339,6 @@ class GeminiClient(LLMClient):
         return out_tokens, updated_usage
 
     @staticmethod
-    def _compute_tps(out_tokens: int, t_first: float, t_last: float) -> float:
-        duration = max(t_last - t_first, 1e-9) if t_first else 1e-9
-        return (out_tokens / duration) if out_tokens else 0.0
-
-    @staticmethod
     def _build_metrics(
         ttft: float,
         out_tokens: int,
@@ -405,7 +352,7 @@ class GeminiClient(LLMClient):
 
     def stream(self, prompt: str, *, thinking_level: str = "low"):
         """
-        Yields chunks of text while calculating TTFT and TPS.
+        Yield Gemini's complete response while calculating request metrics.
 
         Args:
             prompt: The text prompt to send to the model.
@@ -418,21 +365,26 @@ class GeminiClient(LLMClient):
         client = self._client
         model_name = self._model_name
 
-        t0 = perf_counter()
+        started_at = perf_counter()
         sdk_level = self._resolve_thinking_level(thinking_level)
         contents = self._build_prompt_contents(prompt)
         cfg = self._build_generate_content_config(sdk_level)
-        stream = self._create_stream(client, model_name, contents, cfg)
+        response = self._generate_content(client, model_name, contents, cfg)
+        completed_at = perf_counter()
 
-        state = yield from self._yield_text_and_collect(stream, t0)
-        t_last = perf_counter()
-
-        usage_metadata = self._merge_usage_metadata(state.usage_metadata, stream)
+        full_text = response.text or ""
+        usage_metadata = getattr(response, "usage_metadata", None)
         usage_summary = self._usage_summary_from_metadata(usage_metadata)
-        full_text = "".join(state.pieces)
         out_tokens, usage_summary = self._resolve_output_tokens(client, model_name, usage_summary, full_text)
-        tps = self._compute_tps(out_tokens, state.t_first, t_last)
-        return self._build_metrics(state.ttft, out_tokens, tps, usage_summary)
+        duration = max(completed_at - started_at, 1e-9)
+        if full_text:
+            yield full_text
+        return self._build_metrics(
+            duration,
+            out_tokens,
+            out_tokens / duration if out_tokens else 0.0,
+            usage_summary,
+        )
 
     def model_label(self) -> str:
         return f"Google Gemini ({self._model_name})"
@@ -504,6 +456,7 @@ class GeminiClient(LLMClient):
         return "leaked" in msg or (
             "permission_denied" in msg and "api key" in msg
         )
+
 
 class ClaudeClient(LLMClient):
     MODEL_NAME = "claude-sonnet-4-6"

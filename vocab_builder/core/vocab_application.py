@@ -28,6 +28,7 @@ class VocabCapturePort(Protocol):
     target_to_eng_translator: Any
     api_available: bool
     api_error_reason: Optional[str]
+    last_query_error_reason: Optional[str]
     word_entries: dict[str, dict[str, Any]]
 
     @property
@@ -41,6 +42,8 @@ class VocabCapturePort(Protocol):
     def detect_input_type(self, text: str) -> str: ...
 
     def query_ai(self, word: str) -> str: ...
+
+    def clear_last_query_error(self) -> None: ...
 
     def try_restore_ai(self) -> bool: ...
 

@@ -5,26 +5,17 @@ import types
 from types import SimpleNamespace
 
 
-class _FakeStream:
-    def __init__(self):
-        self._iterator = iter([SimpleNamespace(text="hello"), SimpleNamespace(text="world")])
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        return next(self._iterator)
-
-
 class _Models:
-    def __init__(self, stream_factory=None):
-        self.last_stream_kwargs = None
+    def __init__(self, response_factory=None):
+        self.last_generate_kwargs = None
         self.last_count_kwargs = None
-        self._stream_factory = stream_factory or _FakeStream
+        self._response_factory = response_factory or (
+            lambda: SimpleNamespace(text="helloworld", usage_metadata=None)
+        )
 
-    def generate_content_stream(self, **kwargs):
-        self.last_stream_kwargs = kwargs
-        return self._stream_factory()
+    def generate_content(self, **kwargs):
+        self.last_generate_kwargs = kwargs
+        return self._response_factory()
 
     def count_tokens(self, **kwargs):
         self.last_count_kwargs = kwargs
@@ -32,10 +23,10 @@ class _Models:
 
 
 class _Client:
-    def __init__(self, api_key=None, stream_factory=None, http_options=None):
+    def __init__(self, api_key=None, response_factory=None, http_options=None):
         self.api_key = api_key
         self.http_options = http_options
-        self.models = _Models(stream_factory)
+        self.models = _Models(response_factory)
 
 
 class _Part:
@@ -71,7 +62,12 @@ class _HttpOptions:
         self.kwargs = kwargs
 
 
-def _install_google_stub(stream_factory=None):
+class _HttpRetryOptions:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+
+def _install_google_stub(response_factory=None):
     saved = {
         name: sys.modules.get(name)
         for name in ("google", "google.genai", "google.genai.types")
@@ -86,10 +82,11 @@ def _install_google_stub(stream_factory=None):
     types_mod.ThinkingConfig = _ThinkingConfig
     types_mod.ThinkingLevel = _ThinkingLevel
     types_mod.HttpOptions = _HttpOptions
+    types_mod.HttpRetryOptions = _HttpRetryOptions
 
     genai_mod.Client = lambda api_key=None, http_options=None: _Client(
         api_key=api_key,
-        stream_factory=stream_factory,
+        response_factory=response_factory,
         http_options=http_options,
     )
     genai_mod.types = types_mod
@@ -198,6 +195,29 @@ def _clear_model_env(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
+def test_transient_classifier_only_reports_high_demand_when_provider_does():
+    llm_client = _load_real_llm_client()
+
+    generic = llm_client.classify_provider_error(
+        "gemini",
+        RuntimeError("503 UNAVAILABLE: service unavailable"),
+    )
+    reported_demand = llm_client.classify_provider_error(
+        "gemini",
+        RuntimeError("503 UNAVAILABLE: model is experiencing high demand"),
+    )
+
+    assert generic == (
+        "transient",
+        "Google Gemini rejected the request with 503 UNAVAILABLE.",
+    )
+    assert reported_demand == (
+        "transient",
+        "Google Gemini rejected the request with 503 UNAVAILABLE "
+        "(reported high demand).",
+    )
+
+
 def test_gemini_client_uses_structured_token_payload(tmp_path):
     os.environ["GEMINI_API_KEY"] = "AIza" + "x" * 36
     saved = _install_google_stub()
@@ -227,6 +247,25 @@ def test_gemini_client_uses_structured_token_payload(tmp_path):
         assert content.parts[0]["text"] == "helloworld"
         assert metrics["usage"]["output_tokens"] == 5
         assert metrics["usage"]["total_tokens"] == 5
+    finally:
+        _restore_google_stub(saved)
+
+
+def test_gemini_delegates_narrow_503_retries_to_google_sdk(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
+    saved = _install_google_stub()
+    try:
+        llm_client = _load_real_llm_client()
+        client = llm_client.GeminiClient()
+        retry_options = client._client.http_options.kwargs["retry_options"]
+
+        assert retry_options.kwargs == {
+            "attempts": 3,
+            "initial_delay": 1.0,
+            "max_delay": 2.0,
+            "exp_base": 2.0,
+            "http_status_codes": [503],
+        }
     finally:
         _restore_google_stub(saved)
 
@@ -322,9 +361,9 @@ def test_resolved_models_are_used_for_provider_requests(monkeypatch):
 
         assert gemini_text == "helloworld"
         assert gemini_metrics["usage"]["output_tokens"] == 5
-        assert gemini._client.models.last_stream_kwargs["model"] == "gemini-request-model"
+        assert gemini._client.models.last_generate_kwargs["model"] == "gemini-request-model"
         assert gemini._client.models.last_count_kwargs["model"] == "gemini-request-model"
-        gemini_config = gemini._client.models.last_stream_kwargs["config"].kwargs
+        gemini_config = gemini._client.models.last_generate_kwargs["config"].kwargs
         assert gemini_config["response_mime_type"] == "text/plain"
         assert gemini_config["max_output_tokens"] == 8192
         assert gemini_config["thinking_config"].kwargs["thinking_level"] == "LOW"
@@ -355,9 +394,9 @@ def test_resolved_models_are_used_for_provider_requests(monkeypatch):
 def test_gemini_client_reports_usage_metadata(tmp_path):
     os.environ["GEMINI_API_KEY"] = "AIza" + "x" * 36
 
-    def stream_factory():
-        stream = _FakeStream()
-        stream.response = SimpleNamespace(
+    def response_factory():
+        return SimpleNamespace(
+            text="helloworld",
             usage_metadata=SimpleNamespace(
                 prompt_token_count=11,
                 candidates_token_count=23,
@@ -367,9 +406,7 @@ def test_gemini_client_reports_usage_metadata(tmp_path):
                 cached_content_token_count=None,
             )
         )
-        return stream
-
-    saved = _install_google_stub(stream_factory=stream_factory)
+    saved = _install_google_stub(response_factory=response_factory)
     try:
         sys.modules.pop("vocab_builder.llm_client", None)
         sys.modules.pop("llm_client", None)

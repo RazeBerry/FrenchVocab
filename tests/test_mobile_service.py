@@ -254,6 +254,48 @@ def test_classified_provider_error_is_503_without_reading_stdin(
     }
 
 
+def test_transient_provider_error_preserves_precise_mobile_feedback(
+    tmp_path,
+    monkeypatch,
+):
+    class FailingClient:
+        def stream(self, _prompt):
+            raise RuntimeError("503 UNAVAILABLE: reported high demand")
+            yield ""  # pragma: no cover - keeps this a generator
+
+        def model_label(self):
+            return "Google Gemini (test)"
+
+    reason = (
+        "Google Gemini rejected the request with 503 UNAVAILABLE "
+        "(reported high demand)."
+    )
+    service = build_service(tmp_path, monkeypatch)
+    service.builder.client = FailingClient()
+    monkeypatch.setattr(
+        LLMCoordinator,
+        "_classify_provider_error",
+        staticmethod(lambda _provider, _exc: ("transient", reason)),
+    )
+    app = create_app(service)
+
+    async def exercise_app():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.post("/api/preview", json={"text": "chrysantheme"})
+
+    import asyncio
+
+    response = asyncio.run(exercise_app())
+    assert response.status_code == 503
+    assert response.json()["error"] == {
+        "code": "ai_unavailable",
+        "message": reason,
+    }
+    assert service.builder.api_available is True
+    assert service.builder.api_error_reason is None
+
+
 def test_inflight_preview_does_not_block_same_service_status(tmp_path, monkeypatch):
     started = threading.Event()
     release = threading.Event()

@@ -132,6 +132,15 @@ def test_capture_actions_stay_reachable_when_the_keyboard_opens(styles, shell_js
     assert "none" in _rule(styles, ":root.is-keyboard .recent-strip")
 
 
+def test_desktop_zoom_is_not_mistaken_for_a_software_keyboard(shell_js):
+    """Pinch/page zoom can shrink the visual viewport by more than the keyboard
+    threshold on a desktop. Keyboard layout is valid only with touch capability
+    and an editable element focused."""
+    assert "navigator.maxTouchPoints > 0" in shell_js
+    assert "document.activeElement" in shell_js
+    assert "input, textarea, [contenteditable='true']" in shell_js
+
+
 def test_duplicate_markings_use_only_colour_and_type_scale_tokens(styles):
     """Duplicate affordances share the collection palette and type scale instead
     of introducing a light-only literal or a nearly-identical font size."""

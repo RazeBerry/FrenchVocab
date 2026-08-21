@@ -258,7 +258,11 @@ class MobileVocabService:
 
         with self._lock:
             if not response:
-                reason = self.builder.api_error_reason or "The AI provider returned no result."
+                reason = (
+                    getattr(self.builder, "last_query_error_reason", None)
+                    or self.builder.api_error_reason
+                    or "The AI provider returned no result."
+                )
                 raise AIUnavailableError(reason)
 
             parsed = self.builder.parse_ai_response_detailed(response)

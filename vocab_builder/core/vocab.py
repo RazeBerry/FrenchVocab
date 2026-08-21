@@ -436,6 +436,15 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
         self._llm.api_error_reason = value
 
     @property
+    def last_query_error_reason(self) -> Optional[str]:
+        """Reason the most recent provider request failed, if it failed."""
+        return self._llm.last_query_error_reason
+
+    def clear_last_query_error(self) -> None:
+        """Clear request-scoped provider feedback before direct client use."""
+        self._llm.clear_last_query_error()
+
+    @property
     def entry_count(self) -> int:
         """Live count of vocabulary entries (delegated to VocabRepository)."""
         if hasattr(self, "_vocab_repo") and self._vocab_repo is not None:

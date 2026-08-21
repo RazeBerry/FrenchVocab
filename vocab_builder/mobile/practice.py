@@ -95,7 +95,10 @@ class MobilePractice:
                     record_history=False,
                 )
             if feedback is None:
-                raise RuntimeError("The composition grader returned no usable feedback.")
+                raise RuntimeError(
+                    getattr(self.builder, "last_query_error_reason", None)
+                    or "The composition grader returned no usable feedback."
+                )
 
             response = asdict(feedback.parsed)
             response.update(
