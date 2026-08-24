@@ -209,7 +209,7 @@ class AutoTranslator:
         try:
             with self.console.status("[cyan]Detecting translation direction..."):
                 chunks: list[str] = []
-                stream = self.client.stream(prompt, thinking_level="medium")
+                stream = self.client.stream(prompt, thinking_level="low")
                 while True:
                     try:
                         chunk = next(stream)

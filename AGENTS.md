@@ -140,12 +140,23 @@ pytest -k "anki"
 - Gemini defaults to the stable `gemini-3.7-flash` model. Its generation config
   uses thinking levels and omits deprecated sampling parameters (`temperature`,
   `top_p`, and `top_k`) that current Gemini models no longer support.
+- The Google Gen AI Python SDK is constrained to `>=2.19.0,<3.0.0`. Version
+  2.19 is the tested floor for Gemini 3.7; the upper bound follows Google's
+  published warning that direct model-call behavior changes in the next major.
 - Gemini generation is atomic because every application caller consumes a full
-  response before using it. The official Google SDK retries only HTTP 503 twice
-  (three attempts total, exponential backoff capped at two seconds); do not add a
-  second application retry loop or switch this path back to an SSE stream.
-  Exhaustion preserves the provider's status and reported reason for the
-  requesting surface without degrading an otherwise configured client.
+  response before using it. Each application action makes exactly one generation
+  request to the selected model. SDK retries are disabled (`attempts=1`), there
+  is no model fallback, automatic function calling is disabled, and a 503 is
+  surfaced immediately. Do not add application or SDK retry/fallback loops, a
+  token-count follow-up request, or an SSE stream.
+- Vocabulary generation, directional translation, and automatic direction
+  detection all use Gemini's low thinking level. Raise it only when a measured
+  quality gain justifies the latency and hidden-token cost on representative
+  prompts.
+- Provider diagnostics record model, elapsed time, classified outcome, and
+  exception type but never prompt text. A request taking at least 10 seconds and
+  every failure emits a warning to the service journal so production latency can
+  be reconstructed without making journald another vocabulary-history store.
 - `--provider` selects provider metadata but does not make initialization eager;
   only `--eager-llm` puts provider SDK import, client construction, and credential
   verification on the startup critical path. Background initialization status

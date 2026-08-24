@@ -4,20 +4,26 @@ import sys
 import types
 from types import SimpleNamespace
 
+import pytest
+
 
 class _Models:
     def __init__(self, response_factory=None):
         self.last_generate_kwargs = None
         self.last_count_kwargs = None
+        self.generate_calls = 0
+        self.count_calls = 0
         self._response_factory = response_factory or (
             lambda: SimpleNamespace(text="helloworld", usage_metadata=None)
         )
 
     def generate_content(self, **kwargs):
+        self.generate_calls += 1
         self.last_generate_kwargs = kwargs
         return self._response_factory()
 
     def count_tokens(self, **kwargs):
+        self.count_calls += 1
         self.last_count_kwargs = kwargs
         return SimpleNamespace(total_tokens=5)
 
@@ -57,6 +63,11 @@ class _ThinkingLevel:
     HIGH = "HIGH"
 
 
+class _AutomaticFunctionCallingConfig:
+    def __init__(self, **_kwargs):
+        self.kwargs = _kwargs
+
+
 class _HttpOptions:
     def __init__(self, **kwargs):
         self.kwargs = kwargs
@@ -81,6 +92,7 @@ def _install_google_stub(response_factory=None):
     types_mod.GenerateContentConfig = _GenerateContentConfig
     types_mod.ThinkingConfig = _ThinkingConfig
     types_mod.ThinkingLevel = _ThinkingLevel
+    types_mod.AutomaticFunctionCallingConfig = _AutomaticFunctionCallingConfig
     types_mod.HttpOptions = _HttpOptions
     types_mod.HttpRetryOptions = _HttpRetryOptions
 
@@ -218,7 +230,7 @@ def test_transient_classifier_only_reports_high_demand_when_provider_does():
     )
 
 
-def test_gemini_client_uses_structured_token_payload(tmp_path):
+def test_gemini_client_does_not_send_a_second_request_for_missing_usage(tmp_path):
     os.environ["GEMINI_API_KEY"] = "AIza" + "x" * 36
     saved = _install_google_stub()
     try:
@@ -239,19 +251,21 @@ def test_gemini_client_uses_structured_token_payload(tmp_path):
         assert "".join(chunks) == "helloworld"
 
         models = client._client.models
-        payload = models.last_count_kwargs["contents"]
+        payload = models.last_generate_kwargs["contents"]
         assert isinstance(payload, list)
         assert len(payload) == 1
         content = payload[0]
         assert getattr(content, "role", None) == "user"
-        assert content.parts[0]["text"] == "helloworld"
-        assert metrics["usage"]["output_tokens"] == 5
-        assert metrics["usage"]["total_tokens"] == 5
+        assert content.parts[0]["text"] == "prompt"
+        assert models.generate_calls == 1
+        assert models.count_calls == 0
+        assert metrics["tokens_out"] == 0
+        assert "usage" not in metrics
     finally:
         _restore_google_stub(saved)
 
 
-def test_gemini_delegates_narrow_503_retries_to_google_sdk(monkeypatch):
+def test_gemini_disables_google_sdk_retries(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
     saved = _install_google_stub()
     try:
@@ -260,12 +274,70 @@ def test_gemini_delegates_narrow_503_retries_to_google_sdk(monkeypatch):
         retry_options = client._client.http_options.kwargs["retry_options"]
 
         assert retry_options.kwargs == {
-            "attempts": 3,
-            "initial_delay": 1.0,
-            "max_delay": 2.0,
-            "exp_base": 2.0,
-            "http_status_codes": [503],
+            "attempts": 1,
         }
+        assert not hasattr(client, "_fallback_client")
+    finally:
+        _restore_google_stub(saved)
+
+
+def test_gemini_surfaces_503_after_exactly_one_generation_call(monkeypatch, caplog):
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
+    _clear_model_env(monkeypatch)
+    saved = _install_google_stub()
+    try:
+        llm_client = _load_real_llm_client()
+        client = llm_client.GeminiClient()
+
+        class PrimaryModels(_Models):
+            def generate_content(self, **kwargs):
+                self.generate_calls += 1
+                self.last_generate_kwargs = kwargs
+                raise RuntimeError("503 UNAVAILABLE: model is experiencing high demand")
+
+        primary_models = PrimaryModels()
+        client._client.models = primary_models
+
+        with caplog.at_level("WARNING"), pytest.raises(
+            RuntimeError,
+            match="503 UNAVAILABLE",
+        ):
+            _consume_stream(client.stream("prompt"))
+
+        assert primary_models.generate_calls == 1
+        assert primary_models.last_generate_kwargs["model"] == "gemini-3.7-flash"
+        assert "category=transient" in caplog.text
+        assert "prompt" not in caplog.text
+    finally:
+        _restore_google_stub(saved)
+
+
+def test_gemini_surfaces_non_503_failure_after_one_call(monkeypatch, caplog):
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
+    _clear_model_env(monkeypatch)
+    saved = _install_google_stub()
+    try:
+        llm_client = _load_real_llm_client()
+        client = llm_client.GeminiClient()
+
+        class FailingModels(_Models):
+            def generate_content(self, **kwargs):
+                self.generate_calls += 1
+                self.last_generate_kwargs = kwargs
+                raise RuntimeError("400 INVALID_ARGUMENT")
+
+        failing_models = FailingModels()
+        client._client.models = failing_models
+
+        with caplog.at_level("WARNING"), pytest.raises(
+            RuntimeError,
+            match="INVALID_ARGUMENT",
+        ):
+            _consume_stream(client.stream("prompt"))
+
+        assert failing_models.generate_calls == 1
+        assert "category=unclassified" in caplog.text
+        assert "prompt" not in caplog.text
     finally:
         _restore_google_stub(saved)
 
@@ -360,13 +432,14 @@ def test_resolved_models_are_used_for_provider_requests(monkeypatch):
         claude_text, claude_metrics = _consume_stream(claude.stream("prompt"))
 
         assert gemini_text == "helloworld"
-        assert gemini_metrics["usage"]["output_tokens"] == 5
+        assert gemini_metrics["tokens_out"] == 0
         assert gemini._client.models.last_generate_kwargs["model"] == "gemini-request-model"
-        assert gemini._client.models.last_count_kwargs["model"] == "gemini-request-model"
+        assert gemini._client.models.last_count_kwargs is None
         gemini_config = gemini._client.models.last_generate_kwargs["config"].kwargs
         assert gemini_config["response_mime_type"] == "text/plain"
         assert gemini_config["max_output_tokens"] == 8192
         assert gemini_config["thinking_config"].kwargs["thinking_level"] == "LOW"
+        assert gemini_config["automatic_function_calling"].kwargs == {"disable": True}
         for unsupported_parameter in (
             "temperature",
             "top_p",

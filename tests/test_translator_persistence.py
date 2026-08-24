@@ -8,20 +8,32 @@ from vocab_builder.languages import get_language_config
 
 
 class _StubClient:
+    def __init__(self):
+        self.last_thinking_level = None
+
     def stream(self, _prompt: str, *, thinking_level: str = "low"):  # noqa: ARG002
+        self.last_thinking_level = thinking_level
         yield "bonjour"
 
     def model_label(self) -> str:
         return "Stub Translator"
 
 
-def _translator(tmp_path: Path) -> TranslatorCLI:
+def _translator(tmp_path: Path, client: _StubClient | None = None) -> TranslatorCLI:
     return TranslatorCLI(
         console=Console(),
-        client=_StubClient(),
+        client=client or _StubClient(),
         config=get_language_config("fr").eng_to_target,
         latex_file_path=tmp_path / "translations.tex",
     )
+
+
+def test_translation_uses_low_thinking_for_latency(tmp_path):
+    client = _StubClient()
+    translator = _translator(tmp_path, client)
+
+    assert translator.query_ai_for_translation("hello") == "bonjour"
+    assert client.last_thinking_level == "low"
 
 
 def test_translate_and_save_stops_on_file_write_failure(tmp_path):

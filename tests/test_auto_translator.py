@@ -12,8 +12,10 @@ from rich.console import Console
 class _FakeLLMClient:
     def __init__(self, response_text: str):
         self.response_text = response_text
+        self.last_thinking_level = None
 
     def stream(self, _prompt: str, *, thinking_level: str = "low"):
+        self.last_thinking_level = thinking_level
         response_text = self.response_text
 
         def _generator():
@@ -102,6 +104,7 @@ def test_auto_translator_routes_to_english_direction(monkeypatch):
 
     assert eng_translator.calls == [("Hello!", "Bonjour !")]
     assert target_translator.calls == []
+    assert client.last_thinking_level == "low"
     assert usage_events and usage_events[0]["output_tokens"] == 12
 
 

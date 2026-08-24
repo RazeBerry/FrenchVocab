@@ -11,6 +11,7 @@ from vocab_builder.compat import get_env
 
 
 _PROVIDER_TIMEOUT_S = 120.0
+_SLOW_PROVIDER_REQUEST_S = 10.0
 
 
 def _provider_timeout_seconds() -> float:
@@ -197,8 +198,8 @@ class LLMClient(ABC):
 
         Args:
             prompt: The text prompt to send to the model.
-            thinking_level: Reasoning depth - "low" for simple tasks (vocabulary),
-                           "medium" for moderate complexity (translation).
+            thinking_level: Reasoning depth. Latency-sensitive application
+                           workflows use "low".
         """
         ...
 
@@ -240,22 +241,18 @@ class GeminiClient(LLMClient):
         from google.genai import types
 
         self._types = types
+        self._model_name = _resolve_model_name(
+            "VOCABBUILDER_GEMINI_MODEL",
+            self.MODEL_NAME,
+        )
         retry_options = types.HttpRetryOptions(
-            attempts=3,
-            initial_delay=1.0,
-            max_delay=2.0,
-            exp_base=2.0,
-            http_status_codes=[503],
+            attempts=1,
         )
         http_options = types.HttpOptions(
             timeout=int(_provider_timeout_seconds() * 1000),
             retry_options=retry_options,
         )
         self._client = genai.Client(api_key=key, http_options=http_options)
-        self._model_name = _resolve_model_name(
-            "VOCABBUILDER_GEMINI_MODEL",
-            self.MODEL_NAME,
-        )
 
     def _maybe_raise_mapped_error(self, exc: Exception) -> None:
         if self._is_leaked_key_error(exc):
@@ -284,59 +281,65 @@ class GeminiClient(LLMClient):
             response_mime_type="text/plain",
             max_output_tokens=8192,
             thinking_config=self._types.ThinkingConfig(thinking_level=sdk_level),
+            automatic_function_calling=self._types.AutomaticFunctionCallingConfig(
+                disable=True,
+            ),
         )
 
-    def _generate_content(self, client: Any, model_name: str, contents: Any, cfg: Any):
+    @staticmethod
+    def _error_category(exc: Exception) -> str:
+        classified = classify_provider_error("gemini", exc)
+        return classified[0] if classified is not None else "unclassified"
+
+    @staticmethod
+    def _request_log(
+        level: int,
+        message: str,
+        *args: Any,
+    ) -> None:
+        # Prompt text is intentionally absent: the production journal records
+        # provider behavior without becoming a second vocabulary-history store.
+        logging.getLogger(__name__).log(level, message, *args)
+
+    def _generate_content(
+        self,
+        contents: Any,
+        cfg: Any,
+    ) -> Any:
+        started_at = perf_counter()
         try:
-            return client.models.generate_content(
-                model=model_name,
+            response = self._client.models.generate_content(
+                model=self._model_name,
                 contents=contents,
                 config=cfg,
             )
         except Exception as exc:
+            self._request_log(
+                logging.WARNING,
+                "Gemini generation failed model=%s elapsed_s=%.3f "
+                "category=%s exception=%s",
+                self._model_name,
+                perf_counter() - started_at,
+                self._error_category(exc),
+                exc.__class__.__name__,
+            )
             self._maybe_raise_mapped_error(exc)
             raise
+
+        elapsed = perf_counter() - started_at
+        if elapsed >= _SLOW_PROVIDER_REQUEST_S:
+            self._request_log(
+                logging.WARNING,
+                "Gemini generation was slow model=%s elapsed_s=%.3f",
+                self._model_name,
+                elapsed,
+            )
+        return response
 
     def _usage_summary_from_metadata(self, usage_metadata: Any | None) -> Dict[str, int]:
         if usage_metadata is None:
             return {}
         return self._extract_usage_counts(usage_metadata)
-
-    def _count_tokens_best_effort(self, client: Any, model_name: str, text: str) -> int:
-        try:
-            token_payload = [
-                self._types.Content(
-                    role="user",
-                    parts=[self._types.Part.from_text(text=text)],
-                )
-            ]
-            token_info = client.models.count_tokens(model=model_name, contents=token_payload)
-        except Exception as exc:
-            logging.getLogger(__name__).error("Failed to count tokens: %s", exc)
-            return 0
-        return int(getattr(token_info, "total_tokens", 0) or 0)
-
-    def _resolve_output_tokens(
-        self,
-        client: Any,
-        model_name: str,
-        usage_summary: Dict[str, int],
-        full_text: str,
-    ) -> tuple[int, Dict[str, int]]:
-        out_tokens = int(usage_summary.get("output_tokens", 0) or 0)
-        if out_tokens:
-            return out_tokens, usage_summary
-        if not full_text:
-            return 0, usage_summary
-
-        out_tokens = self._count_tokens_best_effort(client, model_name, full_text)
-        if not out_tokens:
-            return 0, usage_summary
-
-        updated_usage = dict(usage_summary) if usage_summary else {}
-        updated_usage.setdefault("output_tokens", out_tokens)
-        updated_usage.setdefault("total_tokens", out_tokens)
-        return out_tokens, updated_usage
 
     @staticmethod
     def _build_metrics(
@@ -356,26 +359,23 @@ class GeminiClient(LLMClient):
 
         Args:
             prompt: The text prompt to send to the model.
-            thinking_level: Reasoning depth - "low" for simple tasks,
-                           "medium" for moderate complexity.
+            thinking_level: Reasoning depth. Application workflows use "low"
+                           to minimize latency.
 
         Returns a dictionary with performance metrics upon generator completion.
         Example return: {'ttft': 0.5, 'tps': 50.0, 'tokens_out': 100, 'usage': {...}}
         """
-        client = self._client
-        model_name = self._model_name
-
         started_at = perf_counter()
         sdk_level = self._resolve_thinking_level(thinking_level)
         contents = self._build_prompt_contents(prompt)
         cfg = self._build_generate_content_config(sdk_level)
-        response = self._generate_content(client, model_name, contents, cfg)
+        response = self._generate_content(contents, cfg)
         completed_at = perf_counter()
 
         full_text = response.text or ""
         usage_metadata = getattr(response, "usage_metadata", None)
         usage_summary = self._usage_summary_from_metadata(usage_metadata)
-        out_tokens, usage_summary = self._resolve_output_tokens(client, model_name, usage_summary, full_text)
+        out_tokens = int(usage_summary.get("output_tokens", 0) or 0)
         duration = max(completed_at - started_at, 1e-9)
         if full_text:
             yield full_text
