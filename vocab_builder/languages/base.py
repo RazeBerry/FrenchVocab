@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, FrozenSet, Literal, Mapping, Sequence, Tuple
 
 InputValidator = Callable[[str, bool], bool]
@@ -146,6 +146,7 @@ class AnkiConfig:
     card_templates: Sequence[AnkiCardTemplate]
     card_css: str = ""
     version_id: str | None = None
+    guid_headword_aliases: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

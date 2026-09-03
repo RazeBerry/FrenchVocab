@@ -2,6 +2,7 @@ import os
 import tempfile
 import types
 import unittest
+import uuid
 from pathlib import Path
 
 from vocab_builder.core import VocabBuilder
@@ -161,6 +162,36 @@ class TestExportToAnki(unittest.TestCase):
         self.assertEqual(len(deck.notes), 1)
         self.assertEqual(deck.notes[0].fields[0], 'Salut')
         self.assertIn('salut', builder.exported_words)
+
+    def test_corrected_french_headword_preserves_existing_note_guid(self):
+        builder = object.__new__(VocabBuilder)
+        builder.ui = _StubUI()
+        builder.console = types.SimpleNamespace()
+        builder.word_entries = {
+            'palpitant': {
+                'word': 'Palpitant',
+                'type': 'adjective',
+                'definitions': 'Thrilling',
+                'definitions_list': ['Thrilling'],
+                'examples': 'Le film est palpitant. (The film is thrilling.)',
+                'examples_list': [('Le film est palpitant.', 'The film is thrilling.')],
+            },
+        }
+        builder.exported_words = set()
+        builder.exported_deck_version = None
+        builder.save_exported_words = lambda: None
+
+        with tempfile.TemporaryDirectory() as tmp:
+            builder.exported_words_file = os.path.join(tmp, 'exported_words.json')
+            builder.export_to_anki('Test Deck')
+
+        note = self.package_cls.last_deck.notes[0]
+        expected = uuid.uuid5(
+            uuid.NAMESPACE_URL,
+            'frenchdeck::paipitant',
+        ).hex
+        self.assertEqual(note.fields[0], 'Palpitant')
+        self.assertEqual(note.guid, expected)
 
     def test_export_strips_brace_artifacts(self):
         builder = object.__new__(VocabBuilder)

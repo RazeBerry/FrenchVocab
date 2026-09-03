@@ -140,6 +140,11 @@ pytest -k "anki"
 - `text_utils.py` centralizes text normalization and input-type detection.
 - `session_ui.py` builds menu/welcome/status screen content.
 - `anki_manager.py` coordinates export state and Anki generation, including persistent acquisition order so decks do not inherit LaTeX alphabetization.
+- Anki note GUIDs normally derive from the normalized headword. A corrected
+  historical headword must retain its former GUID through
+  `AnkiConfig.guid_headword_aliases`, keyed by the corrected normalized form,
+  so rebuilding a deck updates the existing note instead of creating a
+  duplicate. The alias mapping is part of the complete-snapshot hash.
 - `llm_coordinator.py` manages provider initialization lifecycle, degraded mode, and usage metrics, and uses generation-guarded background init so stale workers cannot overwrite newer provider changes.
 - `history_logger.py` writes append-only JSONL history.
 - `file_safety.py` provides atomic file operations and backup/restore support.

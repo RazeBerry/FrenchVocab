@@ -662,6 +662,7 @@ class AnkiExportManager:
             "deck_namespace": anki_config.deck_namespace,
             "model_seed": anki_config.model_seed,
             "field_names": list(anki_config.field_names),
+            "guid_headword_aliases": sorted(anki_config.guid_headword_aliases.items()),
             "template_version": self._resolve_template_version(),
             "entry_order": list(self._entry_order),
             "entries": entries,

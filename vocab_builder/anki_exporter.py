@@ -415,8 +415,10 @@ class AnkiExporter:
     ) -> genanki.Note:
         genanki_mod = _get_genanki()
         normalized = entry.word.strip().lower()
+        guid_headword = self.config.guid_headword_aliases.get(normalized, normalized)
+        guid_headword = guid_headword.strip().lower()
         guid_namespace = self.config.deck_namespace.lower()
-        guid = uuid.uuid5(uuid.NAMESPACE_URL, f"{guid_namespace}::{normalized}").hex
+        guid = uuid.uuid5(uuid.NAMESPACE_URL, f"{guid_namespace}::{guid_headword}").hex
         definitions_text = latex_to_anki_format(entry.definitions_text())
         examples_text = latex_to_anki_format(entry.examples_text())
         field_values = [
