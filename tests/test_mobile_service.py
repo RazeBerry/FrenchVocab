@@ -871,6 +871,44 @@ def test_library_index_ships_slim_rows_sorted_by_the_collection_key(
     ]
 
 
+def test_library_search_scans_rich_content_but_ships_only_finder_rows(
+    tmp_path,
+    monkeypatch,
+):
+    """Typing search must not move every matching definition and example.
+
+    The server still searches those cold fields, then the existing entry route
+    supplies them only if the reader opens one result.
+    """
+    service = build_service(tmp_path, monkeypatch)
+    report = service.builder.add_vocab_entries(
+        [
+            WordEntry(
+                word="Dot",
+                type="noun",
+                definitions=["A dowry.", "A historical legal sense."],
+                examples=[("La dot fut versée.", "The hidden search phrase.")],
+            )
+        ],
+        on_duplicate="error",
+    )
+    assert report.count("added") == 1
+    app = create_app(service)
+
+    response = get_api(app, "/api/library/search?q=hidden%20search&limit=200")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "items": [{"word": "Dot", "word_type": "noun", "gloss": "A dowry."}],
+        "total": 1,
+    }
+    detail = get_api(app, "/api/library/entry?word=Dot").json()
+    assert detail["definitions"] == ["A dowry.", "A historical legal sense."]
+    assert detail["examples"] == [
+        {"source": "La dot fut versée.", "target": "The hidden search phrase."}
+    ]
+
+
 def test_library_index_added_sort_follows_the_anki_acquisition_order(
     tmp_path,
     monkeypatch,

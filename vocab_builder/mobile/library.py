@@ -34,27 +34,15 @@ class MobileLibrary:
         needle = sanitize_user_text(query).casefold()
         type_filter = sanitize_user_text(word_type).casefold()
 
-        entries = []
+        entries: list[dict[str, Any]] = []
         with self._state_lock:
             for entry in self.builder.word_entries.values():
-                row = entry_for_json(entry)
-                searchable = " ".join(
-                    [
-                        row["word"],
-                        row["word_type"],
-                        *row["definitions"],
-                        *(
-                            text
-                            for example in row["examples"]
-                            for text in (example["source"], example["target"])
-                        ),
-                    ]
-                ).casefold()
-                if needle and needle not in searchable:
+                word_type_text = _type_text(entry.get("type", ""))
+                if needle and not _entry_contains(entry, needle):
                     continue
-                if type_filter and type_filter not in row["word_type"].casefold():
+                if type_filter and type_filter not in word_type_text.casefold():
                     continue
-                entries.append(row)
+                entries.append(entry_for_json(entry))
 
         entries.sort(key=lambda item: self.builder.normalize_word(item["word"]))
         total = len(entries)
@@ -65,6 +53,32 @@ class MobileLibrary:
             "page_size": safe_size,
             "total": total,
             "has_more": start + safe_size < total,
+        }
+
+    def search_index(self, query: str, *, limit: int = 200) -> dict[str, Any]:
+        """Search rich entry content but return only finder-row data.
+
+        Search is an input hot path. Sending every matching definition and
+        example made a broad query move the cold detail payload for 200 entries,
+        even though the glossary renders only a word, type, and first gloss.
+        Full detail remains available from ``entry()`` when a row is opened.
+        """
+        needle = sanitize_user_text(query).casefold()
+        safe_limit = max(1, min(limit, 200))
+        if not needle:
+            return {"items": [], "total": 0}
+
+        matches: list[dict[str, str]] = []
+        with self._state_lock:
+            for entry in self.builder.word_entries.values():
+                if not _entry_contains(entry, needle):
+                    continue
+                matches.append(_index_row(entry))
+
+        matches.sort(key=lambda item: self.builder.normalize_word(item["word"]))
+        return {
+            "items": matches[:safe_limit],
+            "total": len(matches),
         }
 
     def index(self, *, sort: IndexSort = "alpha") -> dict[str, Any]:
@@ -116,17 +130,17 @@ class MobileLibrary:
 
     def stats(self) -> dict[str, Any]:
         with self._state_lock:
-            entries = [
-                entry_for_json(value) for value in self.builder.word_entries.values()
-            ]
-        type_counts = Counter(
-            entry["word_type"] or "Unknown"
-            for entry in entries
-        )
-        with_examples = sum(bool(entry["examples"]) for entry in entries)
-        with_multiple_senses = sum(len(entry["definitions"]) > 1 for entry in entries)
+            total = 0
+            with_examples = 0
+            with_multiple_senses = 0
+            type_counts: Counter[str] = Counter()
+            for entry in self.builder.word_entries.values():
+                total += 1
+                type_counts[_type_text(entry.get("type", "")) or "Unknown"] += 1
+                with_examples += bool(entry.get("examples_list"))
+                with_multiple_senses += len(entry.get("definitions_list", [])) > 1
         return {
-            "total": len(entries),
+            "total": total,
             "with_examples": with_examples,
             "with_multiple_senses": with_multiple_senses,
             "types": [
@@ -167,12 +181,27 @@ def _type_text(value: Any) -> str:
 
 def _index_row(entry: dict[str, Any]) -> dict[str, str]:
     """Reduce one repository record to what an index row can show."""
-    definitions = list(entry.get("definitions_list", []))
+    definitions = entry.get("definitions_list", [])
     return {
         "word": str(entry.get("word", "")),
         "word_type": _type_text(entry.get("type", "")),
         "gloss": str(definitions[0]) if definitions else "",
     }
+
+
+def _entry_contains(entry: dict[str, Any], needle: str) -> bool:
+    """Search raw entry fields without first building a rich public record."""
+    if needle in str(entry.get("word", "")).casefold():
+        return True
+    if needle in _type_text(entry.get("type", "")).casefold():
+        return True
+    for definition in entry.get("definitions_list", []):
+        if needle in str(definition).casefold():
+            return True
+    for source, target in entry.get("examples_list", []):
+        if needle in str(source).casefold() or needle in str(target).casefold():
+            return True
+    return False
 
 
 def _letter_bucket(normalized_word: str) -> str:

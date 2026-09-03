@@ -298,8 +298,10 @@ def test_group_headings_are_real_elements_and_carry_their_count(entry_list, styl
 def test_history_order_never_prints_alphabetical_dividers(entry_list, capture_view):
     """Letter dividers over a history-ordered list would contradict the order.
     The two groupings are separate options and the day path returns first."""
-    day_branch = entry_list.split('options.groupBy === "day"', 1)[1]
-    assert day_branch.split("return;", 1)[0].count("options.grouped") == 0
+    renderer = entry_list.split("export function renderEntries", 1)[1].split(
+        "\nfunction appendRow", 1
+    )[0]
+    assert '} else if (options.grouped) {' in renderer
     assert 'groupBy: "day"' in capture_view
     assert "grouped" not in capture_view
 
@@ -414,6 +416,7 @@ def test_the_glossary_asks_for_the_index_once_and_the_entry_on_open(
     omits is fetched when the row opens — building 573 detail panels for the one
     that gets opened is the cost that made the slim index worth having."""
     assert "/api/library/index?sort=${this.sort}" in library_view
+    assert "/api/library/search?${params}" in library_view
     assert "/api/library/entry?word=" in library_view
     assert 'scope: "library-entry"' in library_view
     assert "Opening…" in library_view
@@ -424,6 +427,54 @@ def test_the_glossary_asks_for_the_index_once_and_the_entry_on_open(
     assert "entry.gloss ?? entry.definitions?.[0]" in entry_list
     reset = library_view.split("  reset() {", 1)[1].split("\n  }", 1)[0]
     assert "this.entries.clear()" in reset
+
+
+def test_glossary_input_paths_do_work_proportional_to_the_change(
+    library_view,
+    entry_list,
+):
+    """A key moves one cursor and a render publishes one completed fragment.
+
+    Walking every row twice per arrow press and appending hundreds of live DOM
+    nodes made input cost scale with collection size instead of the change.
+    """
+    cursor = library_view.split("  setCursor(next) {", 1)[1].split("\n  }", 1)[0]
+    assert "this.rows.forEach" not in cursor
+    assert "this.rows[this.cursor]" in cursor
+    assert "this.rows[next]" in cursor
+    focus = library_view.split('addEventListener("focusin"', 1)[1].split("});", 1)[0]
+    assert "event.target === this.rows[this.cursor]" in focus
+
+    renderer = entry_list.split("export function renderEntries", 1)[1].split(
+        "\nfunction appendRow", 1
+    )[0]
+    assert "document.createDocumentFragment()" in renderer
+    assert "container.replaceChildren(fragment)" in renderer
+    assert "return rows" in renderer
+    render = library_view.split("  render() {", 1)[1].split("\n  }", 1)[0]
+    assert 'this.rows = renderEntries(el("entry-list")' in render
+    assert "querySelectorAll" not in render
+    abbreviation = entry_list.split("function abbreviateType", 1)[1].split(
+        "\n}", 1
+    )[0]
+    assert "TYPE_ABBREVIATIONS.find" in abbreviation
+    assert "const pairs" not in abbreviation
+
+
+def test_search_clear_is_immediate_and_remote_results_stay_slim(library_view):
+    """Clearing search is local and must not wait out the network debounce.
+    Remote hits are finder rows; opening one follows the existing detail path.
+    """
+    search = library_view.split('el("search-input").addEventListener', 1)[1].split(
+        'el("stats-button")', 1
+    )[0]
+    empty = search.split("if (!this.query)", 1)[1].split("return;", 1)[0]
+    assert "this.render()" in empty
+    assert "setTimeout" not in empty
+    run_search = library_view.split("  async runSearch() {", 1)[1].split("\n  }", 1)[0]
+    assert "/api/library/search?${params}" in run_search
+    assert "this.entries.set" not in run_search
+    assert "SEARCH_DEBOUNCE = 120" in library_view
 
 
 def test_acquisition_order_prints_no_dividers(library_view):
@@ -489,7 +540,10 @@ def test_the_glossary_answers_the_keyboard_without_moving_focus_off_the_list(
     assert 'event.key === "Escape"' in library_view
     assert "/^[a-z]$/i" in library_view
     assert "row.tabIndex = at === 0 ? 0 : -1" in library_view
-    assert "row.tabIndex = at === next ? 0 : -1" in library_view
+    cursor = library_view.split("  setCursor(next) {", 1)[1].split("\n  }", 1)[0]
+    assert "previous.tabIndex = -1" in cursor
+    assert "current.tabIndex = 0" in cursor
+    assert "this.rows.forEach" not in cursor
     # Escape closes the open row first and only then clears the query.
     escape = library_view.split("  escape(search) {", 1)[1].split("\n  }", 1)[0]
     assert escape.index("open.click()") < escape.index('this.query = ""')

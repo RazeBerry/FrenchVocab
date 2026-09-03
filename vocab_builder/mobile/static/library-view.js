@@ -11,7 +11,7 @@ import {
 /* A-Z plus the bucket everything else falls into. The server's letter census
    uses the same keys, so a letter is offered exactly when it holds words. */
 const RAIL_LETTERS = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "#"];
-const SEARCH_DEBOUNCE = 220;
+const SEARCH_DEBOUNCE = 120;
 /* The search endpoint's own ceiling. Nothing is dropped quietly: when a query
    matches more than this, the foot says so and asks for a narrower one. */
 const SEARCH_PAGE_SIZE = 200;
@@ -98,22 +98,16 @@ export class LibraryView {
 
   async runSearch() {
     const query = this.query;
-    const params = new URLSearchParams({
-      q: query,
-      page: "1",
-      page_size: String(SEARCH_PAGE_SIZE),
-    });
+    const params = new URLSearchParams({ q: query, limit: String(SEARCH_PAGE_SIZE) });
     try {
       const payload = await this.api.request(
-        `/api/library?${params}`,
+        `/api/library/search?${params}`,
         {},
         { scope: "library-search" },
       );
       if (query !== this.query) return;
       this.results = payload.items;
       this.searchTotal = payload.total;
-      // A hit arrives complete, so opening one of these rows costs nothing.
-      payload.items.forEach((entry) => this.entries.set(entryKey(entry.word), entry));
       this.showMessage("");
       this.render();
     } catch (error) {
@@ -139,14 +133,13 @@ export class LibraryView {
   render() {
     const searching = Boolean(this.query);
     const rows = this.visibleRows(searching ? this.results : this.index);
-    renderEntries(el("entry-list"), rows, {
+    this.rows = renderEntries(el("entry-list"), rows, {
       // Letter dividers over search results or acquisition order would
       // contradict the order the rows are in.
       grouped: !searching && this.sort === "alpha",
       highlight: searching ? this.query : "",
       loadDetail: (entry, detail) => this.fillDetail(entry, detail),
     });
-    this.rows = Array.from(el("entry-list").querySelectorAll(".index-row"));
     // Roving tabindex: one stop for the whole list, then the arrow keys move
     // inside it, so Tab never has to walk 573 rows to reach the footer.
     this.rows.forEach((row, at) => { row.tabIndex = at === 0 ? 0 : -1; });
@@ -366,10 +359,17 @@ export class LibraryView {
   }
 
   setCursor(next) {
-    this.rows.forEach((row, at) => {
-      row.tabIndex = at === next ? 0 : -1;
-      row.classList.toggle("is-cursor", at === next);
-    });
+    if (next === this.cursor) return;
+    const previous = this.rows[this.cursor];
+    if (previous) {
+      previous.tabIndex = -1;
+      previous.classList.remove("is-cursor");
+    }
+    const current = this.rows[next];
+    if (current) {
+      current.tabIndex = 0;
+      current.classList.add("is-cursor");
+    }
     this.cursor = next;
   }
 
@@ -447,10 +447,13 @@ export class LibraryView {
     el("search-input").addEventListener("input", (event) => {
       window.clearTimeout(this.timer);
       this.query = event.target.value.trim();
-      this.timer = window.setTimeout(
-        () => (this.query ? this.runSearch() : this.render()),
-        SEARCH_DEBOUNCE,
-      );
+      if (!this.query) {
+        this.results = [];
+        this.searchTotal = 0;
+        this.render();
+        return;
+      }
+      this.timer = window.setTimeout(() => this.runSearch(), SEARCH_DEBOUNCE);
     });
     el("stats-button").addEventListener("click", () => {
       const panel = el("stats-panel");
@@ -458,6 +461,7 @@ export class LibraryView {
     });
     el("random-button").addEventListener("click", () => this.showRandom());
     el("entry-list").addEventListener("focusin", (event) => {
+      if (event.target === this.rows[this.cursor]) return;
       const at = this.rows.indexOf(event.target);
       if (at >= 0) this.setCursor(at);
     });

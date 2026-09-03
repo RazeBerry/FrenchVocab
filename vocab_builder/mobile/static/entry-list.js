@@ -7,32 +7,47 @@ const CALENDAR_DAY = new Intl.DateTimeFormat(undefined, {
   month: "short",
 });
 
+/* One immutable lookup shared by every row. Constructing these nested arrays
+   inside abbreviateType allocated them again for every word in every render. */
+const TYPE_ABBREVIATIONS = [
+  ["separable verb", "v. sep."], ["pronominal verb", "v. pron."],
+  ["conjunction", "conj."], ["expression", "expr."],
+  ["adjective", "adj."], ["adverb", "adv."], ["pronoun", "pron."],
+  ["sentence", "sent."], ["noun", "n."], ["verb", "v."],
+];
+
 export function renderEntries(container, entries, options = {}) {
-  container.replaceChildren();
+  const fragment = document.createDocumentFragment();
+  const rows = [];
+  const append = (entry) => {
+    rows.push(appendRow(fragment, container, entry, options));
+  };
   /* Alphabetical dividers would contradict a history-ordered list, so the two
      groupings are separate options and only one can run. */
   if (options.groupBy === "day") {
     dayGroups(entries).forEach((group) => {
-      container.appendChild(divider("index-day", group.label, group.entries.length));
-      group.entries.forEach((entry) => appendRow(container, entry, options));
+      fragment.appendChild(divider("index-day", group.label, group.entries.length));
+      group.entries.forEach(append);
     });
-    return;
-  }
-  if (options.grouped) {
+  } else if (options.grouped) {
     /* Counted from the rows actually rendered rather than from the server's
        census, so the heading stays true when a type chip narrows the list.
        Over the whole collection the two agree: the letter below is the same
        key the server sorted and counted by. */
     letterGroups(entries).forEach((group) => {
-      container.appendChild(divider("index-letter", group.letter, group.entries.length));
-      group.entries.forEach((entry) => appendRow(container, entry, options));
+      fragment.appendChild(divider("index-letter", group.letter, group.entries.length));
+      group.entries.forEach(append);
     });
-    return;
+  } else {
+    entries.forEach(append);
   }
-  entries.forEach((entry) => appendRow(container, entry, options));
+  // Build off-DOM and publish once: style and accessibility trees see one
+  // coherent list instead of hundreds of incremental insertions.
+  container.replaceChildren(fragment);
+  return rows;
 }
 
-function appendRow(container, entry, options) {
+function appendRow(target, container, entry, options) {
   const row = document.createElement("button");
   row.type = "button";
   row.className = "index-row";
@@ -46,8 +61,9 @@ function appendRow(container, entry, options) {
   row.appendChild(element("span", "index-word", entry.word));
   const abbreviation = abbreviateType(entry.word_type);
   if (abbreviation) row.appendChild(element("span", "index-type", abbreviation));
-  // The slim index row carries `gloss`; a history record and a search hit carry
-  // the definitions themselves. Both are the same row.
+  // Finder rows carry `gloss`; richer history and random-card records carry
+  // definitions. Both use the same row renderer without hauling cold detail
+  // through index and search responses.
   row.appendChild(glossNode(entry.gloss ?? entry.definitions?.[0] ?? "", options.highlight));
   const mark = mergeMark(entry);
   if (mark) row.appendChild(mark);
@@ -61,7 +77,8 @@ function appendRow(container, entry, options) {
     }
     toggleRow(container, row, detail);
   });
-  container.append(row, detail);
+  target.append(row, detail);
+  return row;
 }
 
 /* The searched fragment is a real <mark>, not a CSS decoration: a screen
@@ -299,13 +316,7 @@ function knownType(type) {
 function abbreviateType(type) {
   const value = knownType(type).toLowerCase();
   if (!value) return "";
-  const pairs = [
-    ["separable verb", "v. sep."], ["pronominal verb", "v. pron."],
-    ["conjunction", "conj."], ["expression", "expr."],
-    ["adjective", "adj."], ["adverb", "adv."], ["pronoun", "pron."],
-    ["sentence", "sent."], ["noun", "n."], ["verb", "v."],
-  ];
-  return pairs.find(([full]) => value.startsWith(full))?.[1]
+  return TYPE_ABBREVIATIONS.find(([full]) => value.startsWith(full))?.[1]
     || (value.length <= 5 ? value : `${value.slice(0, 4)}.`);
 }
 

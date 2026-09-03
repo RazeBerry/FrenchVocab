@@ -12,6 +12,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
+from starlette.middleware.gzip import GZipMiddleware
 
 from .catalog import MobileVocabCatalog
 from .library import IndexSort
@@ -100,6 +101,10 @@ def create_app(
         redoc_url=None,
         openapi_url=None,
     )
+    # The glossary crosses a private transatlantic link. Compressing its JSON
+    # and static shell avoids moving tens or hundreds of kilobytes of repeated
+    # prose while leaving small responses alone.
+    app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=5)
     expected_user = (
         allowed_tailscale_user
         if allowed_tailscale_user is not None
@@ -227,6 +232,14 @@ def create_app(
         service: MobileVocabService = Depends(resolve_service),
     ) -> dict[str, Any]:
         return service.library.index(sort=sort)
+
+    @app.get("/api/library/search", dependencies=private)
+    def library_search(
+        q: str = Query(min_length=1, max_length=200),
+        limit: int = Query(default=200, ge=1, le=200),
+        service: MobileVocabService = Depends(resolve_service),
+    ) -> dict[str, Any]:
+        return service.library.search_index(q, limit=limit)
 
     @app.get("/api/library/entry", dependencies=private)
     def library_entry(

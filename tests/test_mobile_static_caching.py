@@ -96,6 +96,14 @@ def test_static_assets_still_answer_conditional_requests(tmp_path, monkeypatch):
     assert asyncio.run(conditional()).status_code == 304
 
 
+def test_large_private_responses_are_compressed(tmp_path, monkeypatch):
+    """The VM link, not server computation, dominates glossary latency."""
+    response = _get(_app(tmp_path, monkeypatch), "/static/styles.css")
+
+    assert response.headers.get("content-encoding") == "gzip"
+    assert "Accept-Encoding" in response.headers.get("vary", "")
+
+
 def test_production_navigation_exposes_capture_translation_and_library(tmp_path, monkeypatch):
     index = _get(_app(tmp_path, monkeypatch), "/").text
     matches = re.findall(
