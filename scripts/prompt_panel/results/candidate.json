@@ -1,0 +1,884 @@
+{
+  "prompts": "candidate",
+  "model": "gemini-3.7-flash",
+  "run_at": "2026-09-03T10:58:20+00:00",
+  "summary": {
+    "passed": 18,
+    "count_ok": 20,
+    "notes_ok": 20,
+    "first_ok": 20,
+    "first_clean": 19,
+    "required_ok": 20,
+    "nothing_invented": 20,
+    "corrected_ok": 19,
+    "parsed_ok": 20,
+    "words": 20,
+    "hedged_definitions": 0,
+    "overlapping_pairs": 0,
+    "total_senses": 33,
+    "usage_notes": 15,
+    "mean_seconds": 1.3
+  },
+  "results": [
+    {
+      "language": "fr",
+      "word": "collimateur",
+      "corrected": "collimateur",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Collimator; an optical or mechanical sighting device used to align beams or target weapons.",
+        "Usage note: Met almost exclusively in the idiom \"dans le collimateur (de quelqu'un)\", meaning in someone's sights or targeted for criticism, scrutiny, or punishment."
+      ],
+      "examples": [
+        [
+          "Le technicien vérifie l'alignement du collimateur avant de lancer les mesures spectroscopiques.",
+          "The technician is checking the alignment of the collimator before starting the spectroscopic measurements."
+        ],
+        [
+          "Depuis la publication du rapport d'audit, la direction financière se retrouve directement dans le collimateur des actionnaires.",
+          "Since the audit report was published, the finance department has been directly in the shareholders' sights."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.3,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": false,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": false,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: collimateur\nWord Type: noun\n\nDefinitions:\na. Collimator; an optical or mechanical sighting device used to align beams or target weapons.\nb. Usage note: Met almost exclusively in the idiom \"dans le collimateur (de quelqu'un)\", meaning in someone's sights or targeted for criticism, scrutiny, or punishment.\n\nExamples:\n1. Le technicien vérifie l'alignement du collimateur avant de lancer les mesures spectroscopiques.\n(The technician is checking the alignment of the collimator before starting the spectroscopic measurements.)\n2. Depuis la publication du rapport d'audit, la direction financière se retrouve directement dans le collimateur des actionnaires.\n(Since the audit report was published, the finance department has been directly in the shareholders' sights.)"
+    },
+    {
+      "language": "fr",
+      "word": "recours",
+      "corrected": "recours",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Recourse, reliance, or the act of turning to someone or something for aid, relief, or a solution.",
+        "Appeal, petition, or formal legal action brought before an authority or court.",
+        "Usage note: Frequently occurs in the fixed prepositional locutions \"avoir recours à\" (to resort to / to use) and \"en dernier recours\" (as a last resort)."
+      ],
+      "examples": [
+        [
+          "Face à la crise énergétique, le gouvernement a écarté tout recours à des coupures d'électricité programmées.",
+          "Faced with the energy crisis, the government ruled out any reliance on planned power cuts."
+        ],
+        [
+          "Les riverains ont déposé un recours devant le tribunal administratif pour contester le permis de construire.",
+          "Local residents filed an appeal with the administrative court to challenge the building permit."
+        ],
+        [
+          "L'arbitrage international ne doit être envisagé qu'en dernier recours, après l'échec des négociations directes.",
+          "International arbitration should only be considered as a last resort, after direct negotiations fail."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.6,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: recours\nWord Type: noun\n\nDefinitions:\na. Recourse, reliance, or the act of turning to someone or something for aid, relief, or a solution.\nb. Appeal, petition, or formal legal action brought before an authority or court.\nc. Usage note: Frequently occurs in the fixed prepositional locutions \"avoir recours à\" (to resort to / to use) and \"en dernier recours\" (as a last resort).\n\nExamples:\n1. Face à la crise énergétique, le gouvernement a écarté tout recours à des coupures d'électricité programmées.\n(Faced with the energy crisis, the government ruled out any reliance on planned power cuts.)\n2. Les riverains ont déposé un recours devant le tribunal administratif pour contester le permis de construire.\n(Local residents filed an appeal with the administrative court to challenge the building permit.)\n3. L'arbitrage international ne doit être envisagé qu'en dernier recours, après l'échec des négociations directes.\n(International arbitration should only be considered as a last resort, after direct negotiations fail.)"
+    },
+    {
+      "language": "fr",
+      "word": "promulguer",
+      "corrected": "promulguer",
+      "word_type": [
+        "verb"
+      ],
+      "definitions": [
+        "To promulgate; to formally enact and publish a law, decree, or constitution, giving it legal force.",
+        "Usage note: Primarily reserved for official legal acts issued by a head of state (such as the President of the French Republic signing an adopted bill into law), distinct from *voter* (passing a bill in parliament) and *publier* (printing it in the official gazette)."
+      ],
+      "examples": [
+        [
+          "Le chef de l'État a refusé de promulguer la loi avant la décision du Conseil constitutionnel.",
+          "The head of state refused to promulgate the law before the Constitutional Council issued its ruling."
+        ],
+        [
+          "Bien que le texte ait été voté par le Parlement le mois dernier, le président ne l'a toujours pas promulgué.",
+          "Although the bill was passed by Parliament last month, the president has still not enacted it."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.3,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: promulguer\nWord Type: verb\n\nDefinitions:\na. To promulgate; to formally enact and publish a law, decree, or constitution, giving it legal force.\nb. Usage note: Primarily reserved for official legal acts issued by a head of state (such as the President of the French Republic signing an adopted bill into law), distinct from *voter* (passing a bill in parliament) and *publier* (printing it in the official gazette).\n\nExamples:\n1. Le chef de l'État a refusé de promulguer la loi avant la décision du Conseil constitutionnel.\n(The head of state refused to promulgate the law before the Constitutional Council issued its ruling.)\n2. Bien que le texte ait été voté par le Parlement le mois dernier, le président ne l'a toujours pas promulgué.\n(Although the bill was passed by Parliament last month, the president has still not enacted it.)"
+    },
+    {
+      "language": "fr",
+      "word": "confiseur",
+      "corrected": "confiseur",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Confectioner; a person who makes or sells sweets, candied fruits, and candies.",
+        "Usage note: Frequently encountered in the compound professional title \"chocolatier-confiseur\" or \"pâtissier-confiseur\"."
+      ],
+      "examples": [
+        [
+          "Le maître confiseur prépare les marrons glacés selon une recette transmise depuis trois générations.",
+          "The master confectioner prepares the candied chestnuts following a recipe handed down for three generations."
+        ],
+        [
+          "Cet artisan a obtenu son brevet de chocolatier-confiseur avant d'ouvrir sa propre boutique en plein centre-ville.",
+          "This artisan earned his chocolate and confectionery maker's certificate before opening his own shop right in the city centre."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.8,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: confiseur\nWord Type: noun\n\nDefinitions:\na. Confectioner; a person who makes or sells sweets, candied fruits, and candies.\nb. Usage note: Frequently encountered in the compound professional title \"chocolatier-confiseur\" or \"pâtissier-confiseur\".\n\nExamples:\n1. Le maître confiseur prépare les marrons glacés selon une recette transmise depuis trois générations.\n(The master confectioner prepares the candied chestnuts following a recipe handed down for three generations.)\n2. Cet artisan a obtenu son brevet de chocolatier-confiseur avant d'ouvrir sa propre boutique en plein centre-ville.\n(This artisan earned his chocolate and confectionery maker's certificate before opening his own shop right in the city centre.)"
+    },
+    {
+      "language": "fr",
+      "word": "basculement",
+      "corrected": "basculement",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Tipping point, shift, or sudden transition; a decisive change in a situation, balance of power, or trend.",
+        "Tilting, tipping over, or physical loss of equilibrium."
+      ],
+      "examples": [
+        [
+          "Les analystes prévoient un basculement géopolitique majeur au cours de la prochaine décennie.",
+          "Analysts foresee a major geopolitical shift over the coming decade."
+        ],
+        [
+          "Le basculement de la grue a provoqué l'évacuation immédiate du chantier.",
+          "The tipping over of the crane prompted the immediate evacuation of the construction site."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.0,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: basculement\nWord Type: noun\n\nDefinitions:\na. Tipping point, shift, or sudden transition; a decisive change in a situation, balance of power, or trend.\nb. Tilting, tipping over, or physical loss of equilibrium.\n\nExamples:\n1. Les analystes prévoient un basculement géopolitique majeur au cours de la prochaine décennie.\n(Analysts foresee a major geopolitical shift over the coming decade.)\n2. Le basculement de la grue a provoqué l'évacuation immédiate du chantier.\n(The tipping over of the crane prompted the immediate evacuation of the construction site.)"
+    },
+    {
+      "language": "fr",
+      "word": "turpitude",
+      "corrected": "turpitude",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "(Littéraire, soutenu) Baseness, moral depravity, or ignominious behavior.",
+        "Usage note: Frequently used in the plural (turpitudes) to denote specific shameful actions, moral failings, or disgraceful deeds, especially in political or journalistic discourse."
+      ],
+      "examples": [
+        [
+          "La turpitude morale de cet individu a fini par éclater au grand jour lors du procès.",
+          "The man's moral depravity was finally brought to light during the trial."
+        ],
+        [
+          "Les révélations de la presse sur les turpitudes financières du ministre ont entraîné sa démission immédiate.",
+          "The press revelations concerning the minister's financial misdeeds led to his immediate resignation."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.3,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: turpitude\nWord Type: noun\n\nDefinitions:\na. (Littéraire, soutenu) Baseness, moral depravity, or ignominious behavior.\nb. Usage note: Frequently used in the plural (turpitudes) to denote specific shameful actions, moral failings, or disgraceful deeds, especially in political or journalistic discourse.\n\nExamples:\n1. La turpitude morale de cet individu a fini par éclater au grand jour lors du procès.\n(The man's moral depravity was finally brought to light during the trial.)\n2. Les révélations de la presse sur les turpitudes financières du ministre ont entraîné sa démission immédiate.\n(The press revelations concerning the minister's financial misdeeds led to his immediate resignation.)"
+    },
+    {
+      "language": "fr",
+      "word": "douanier",
+      "corrected": "douanier",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Customs officer.",
+        "Usage note: Often met in the historical compound \"le Douanier Rousseau\", referring to the post-impressionist painter Henri Rousseau, or in the fixed administrative phrase \"cordon douanier\"."
+      ],
+      "examples": [
+        [
+          "Le douanier a demandé à examiner le contenu de notre coffre avant de nous laisser passer la frontière.",
+          "The customs officer asked to inspect the contents of our trunk before letting us cross the border."
+        ],
+        [
+          "Les toiles naïves du Douanier Rousseau fascinent toujours autant par leur végétation luxuriante.",
+          "The Douanier Rousseau's naïve paintings remain just as fascinating for their lush vegetation."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.0,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: douanier\nWord Type: noun\n\nDefinitions:\na. Customs officer.\nb. Usage note: Often met in the historical compound \"le Douanier Rousseau\", referring to the post-impressionist painter Henri Rousseau, or in the fixed administrative phrase \"cordon douanier\".\n\nExamples:\n1. Le douanier a demandé à examiner le contenu de notre coffre avant de nous laisser passer la frontière.\n(The customs officer asked to inspect the contents of our trunk before letting us cross the border.)\n2. Les toiles naïves du Douanier Rousseau fascinent toujours autant par leur végétation luxuriante.\n(The Douanier Rousseau's naïve paintings remain just as fascinating for their lush vegetation.)"
+    },
+    {
+      "language": "fr",
+      "word": "brocanteur",
+      "corrected": "brocanteur",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Second-hand dealer; junk dealer. A professional who buys and sells used goods, vintage items, and bric-a-brac without specializing in certified antiques.",
+        "Usage note: Distinguished from an \"antiquaire\", who deals in valuable, certified historical pieces, whereas a \"brocanteur\" sells miscellaneous used items and vintage curiosities."
+      ],
+      "examples": [
+        [
+          "Ce brocanteur a déniché un ensemble de chaises des années cinquante dans une vieille grange.",
+          "This second-hand dealer found a set of 1950s chairs in an old barn."
+        ],
+        [
+          "Contrairement à l'antiquaire qui certifie l'époque de ses meubles, le brocanteur propose des objets d'occasion très divers.",
+          "Unlike an antique dealer who authenticates the period of his furniture, a second-hand dealer offers a wide variety of used goods."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.4,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: brocanteur\nWord Type: noun\n\nDefinitions:\na. Second-hand dealer; junk dealer. A professional who buys and sells used goods, vintage items, and bric-a-brac without specializing in certified antiques.\nb. Usage note: Distinguished from an \"antiquaire\", who deals in valuable, certified historical pieces, whereas a \"brocanteur\" sells miscellaneous used items and vintage curiosities.\n\nExamples:\n1. Ce brocanteur a déniché un ensemble de chaises des années cinquante dans une vieille grange.\n(This second-hand dealer found a set of 1950s chairs in an old barn.)\n2. Contrairement à l'antiquaire qui certifie l'époque de ses meubles, le brocanteur propose des objets d'occasion très divers.\n(Unlike an antique dealer who authenticates the period of his furniture, a second-hand dealer offers a wide variety of used goods.)"
+    },
+    {
+      "language": "fr",
+      "word": "verser",
+      "corrected": "verser",
+      "word_type": [
+        "verb"
+      ],
+      "definitions": [
+        "Pour a liquid from one container into another.",
+        "Pay or deposit a sum of money.",
+        "Usage note: Often used figuratively with abstract nouns, meaning to lapse into or sink into an extreme or undesirable state (e.g., verser dans l'excès, verser dans la nostalgie)."
+      ],
+      "examples": [
+        [
+          "Elle a versé un peu d'huile d'olive dans la poêle chaude.",
+          "She poured a little olive oil into the hot pan."
+        ],
+        [
+          "L'employeur doit verser le salaire avant le cinq du mois.",
+          "The employer must pay the salary before the fifth of the month."
+        ],
+        [
+          "Le débat a rapidement versé dans la caricature et l'invective.",
+          "The debate quickly descended into caricature and abuse."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.3,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: verser\nWord Type: verb\n\nDefinitions:\na. Pour a liquid from one container into another.\nb. Pay or deposit a sum of money.\nc. Usage note: Often used figuratively with abstract nouns, meaning to lapse into or sink into an extreme or undesirable state (e.g., verser dans l'excès, verser dans la nostalgie).\n\nExamples:\n1. Elle a versé un peu d'huile d'olive dans la poêle chaude.\n(She poured a little olive oil into the hot pan.)\n2. L'employeur doit verser le salaire avant le cinq du mois.\n(The employer must pay the salary before the fifth of the month.)\n3. Le débat a rapidement versé dans la caricature et l'invective.\n(The debate quickly descended into caricature and abuse.)"
+    },
+    {
+      "language": "fr",
+      "word": "trancher",
+      "corrected": "trancher",
+      "word_type": [
+        "verb"
+      ],
+      "definitions": [
+        "To settle, decide, or resolve firmly, especially a dispute or difficult question.",
+        "To cut sharply, slice cleanly through, or sever.",
+        "To stand out sharply or contrast distinctly with something else (trancher avec / sur)."
+      ],
+      "examples": [
+        [
+          "Face au désaccord persistant des experts, le ministre a dû trancher rapidement.",
+          "Given the experts' ongoing disagreement, the minister had to make a firm decision quickly."
+        ],
+        [
+          "Le boucher utilise une lame bien affûtée pour trancher la viande avec précision.",
+          "The butcher uses a sharp blade to slice the meat precisely."
+        ],
+        [
+          "Les couleurs vives du tableau tranchent nettement avec les murs gris du salon.",
+          "The painting's bright colors contrast sharply with the living room's gray walls."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.2,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 3,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: trancher\nWord Type: verb\n\nDefinitions:\na. To settle, decide, or resolve firmly, especially a dispute or difficult question.\nb. To cut sharply, slice cleanly through, or sever.\nc. To stand out sharply or contrast distinctly with something else (trancher avec / sur).\n\nExamples:\n1. Face au désaccord persistant des experts, le ministre a dû trancher rapidement.\n(Given the experts' ongoing disagreement, the minister had to make a firm decision quickly.)\n2. Le boucher utilise une lame bien affûtée pour trancher la viande avec précision.\n(The butcher uses a sharp blade to slice the meat precisely.)\n3. Les couleurs vives du tableau tranchent nettement avec les murs gris du salon.\n(The painting's bright colors contrast sharply with the living room's gray walls.)"
+    },
+    {
+      "language": "de",
+      "word": "krass",
+      "corrected": "krass",
+      "word_type": [
+        "adjective"
+      ],
+      "definitions": [
+        "Extreme, blatant, or stark (gehoben: used for sharp contrasts, severe contradictions, or glaring differences).",
+        "Intense, crazy, shocking, or impressive (umgangssprachlich: expressing strong surprise, approval, or disbelief).",
+        "Usage note: In formal prose and journalism, it modifies words like \"Gegensatz\" (stark contrast) or \"Widerspruch\" (glaring contradiction); in everyday youth and colloquial speech, it functions as an all-purpose intensifier similar to \"heftig\"."
+      ],
+      "examples": [
+        [
+          "Zwischen den theoretischen Vorgaben und der praktischen Umsetzung besteht ein krasser Gegensatz.",
+          "There is a stark contrast between the theoretical guidelines and the practical implementation."
+        ],
+        [
+          "Hast du das Unwetter gestern Nacht mitbekommen? Das war echt krass!",
+          "Did you notice the storm last night? That was truly insane!"
+        ],
+        [
+          "Die Reform steht in krassem Widerspruch zu den bisherigen Beschlüssen der Kommission.",
+          "The reform stands in glaring contradiction to the commission's previous decisions."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.7,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: krass\nWord Type: adjective\n\nDefinitions:\na. Extreme, blatant, or stark (gehoben: used for sharp contrasts, severe contradictions, or glaring differences).\nb. Intense, crazy, shocking, or impressive (umgangssprachlich: expressing strong surprise, approval, or disbelief).\nc. Usage note: In formal prose and journalism, it modifies words like \"Gegensatz\" (stark contrast) or \"Widerspruch\" (glaring contradiction); in everyday youth and colloquial speech, it functions as an all-purpose intensifier similar to \"heftig\".\n\nExamples:\n1. Zwischen den theoretischen Vorgaben und der praktischen Umsetzung besteht ein krasser Gegensatz.\n(There is a stark contrast between the theoretical guidelines and the practical implementation.)\n2. Hast du das Unwetter gestern Nacht mitbekommen? Das war echt krass!\n(Did you notice the storm last night? That was truly insane!)\n3. Die Reform steht in krassem Widerspruch zu den bisherigen Beschlüssen der Kommission.\n(The reform stands in glaring contradiction to the commission's previous decisions.)"
+    },
+    {
+      "language": "de",
+      "word": "Forthaaren",
+      "corrected": "forthaaren",
+      "word_type": [
+        "separable verb"
+      ],
+      "definitions": [
+        "(Of animals) To lose excess hair or molt by shedding over a period of time."
+      ],
+      "examples": [
+        [
+          "Im Frühjahr haart unser Hund wochenlang fort.",
+          "In spring, our dog sheds hair continuously for weeks."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.0,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": false,
+        "parsed_ok": true,
+        "passed": false,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: Misspelled. The input is not an attested German word. The correct lemma is \"forthaaren\".\nCorrectly Spelt Word: forthaaren\nWord Type: separable verb\nDefinitions:\na. (Of animals) To lose excess hair or molt by shedding over a period of time.\nExamples:\n1. Im Frühjahr haart unser Hund wochenlang fort.\n(In spring, our dog sheds hair continuously for weeks.)"
+    },
+    {
+      "language": "de",
+      "word": "Einkaufsliste",
+      "corrected": "Einkaufsliste",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Shopping list.",
+        "Usage note: Frequently paired with the verbs \"schreiben\", \"erstellen\", or \"abarbeiten\"."
+      ],
+      "examples": [
+        [
+          "Ich habe die Einkaufsliste auf dem Küchentisch vergessen.",
+          "I forgot the shopping list on the kitchen table."
+        ],
+        [
+          "Sie arbeitet ihre Einkaufsliste im Supermarkt Punkt für Punkt ab.",
+          "She is working through her shopping list item by item at the supermarket."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 0.9,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: Einkaufsliste\nWord Type: noun\n\nDefinitions:\na. Shopping list.\nb. Usage note: Frequently paired with the verbs \"schreiben\", \"erstellen\", or \"abarbeiten\".\n\nExamples:\n1. Ich habe die Einkaufsliste auf dem Küchentisch vergessen.\n(I forgot the shopping list on the kitchen table.)\n2. Sie arbeitet ihre Einkaufsliste im Supermarkt Punkt für Punkt ab.\n(She is working through her shopping list item by item at the supermarket.)"
+    },
+    {
+      "language": "de",
+      "word": "Sonderfall",
+      "corrected": "Sonderfall",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Special case; an exception to a general rule or standard procedure.",
+        "Usage note: Frequently paired with verbs like \"darstellen\", \"behandeln als\", or \"vorliegen\", and often contrasted with \"Regelfall\"."
+      ],
+      "examples": [
+        [
+          "Dieser Patient stellt medizinisch gesehen einen absoluten Sonderfall dar.",
+          "Medically speaking, this patient is an absolute special case."
+        ],
+        [
+          "Wir müssen prüfen, ob hier tatsächlich ein Sonderfall vorliegt oder die Standardregelung greift.",
+          "We need to examine whether this really constitutes a special case or if standard regulations apply."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.3,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: Sonderfall\nWord Type: noun\n\nDefinitions:\na. Special case; an exception to a general rule or standard procedure.\nb. Usage note: Frequently paired with verbs like \"darstellen\", \"behandeln als\", or \"vorliegen\", and often contrasted with \"Regelfall\".\n\nExamples:\n1. Dieser Patient stellt medizinisch gesehen einen absoluten Sonderfall dar.\n(Medically speaking, this patient is an absolute special case.)\n2. Wir müssen prüfen, ob hier tatsächlich ein Sonderfall vorliegt oder die Standardregelung greift.\n(We need to examine whether this really constitutes a special case or if standard regulations apply.)"
+    },
+    {
+      "language": "de",
+      "word": "wieder",
+      "corrected": "wieder",
+      "word_type": [
+        "adverb"
+      ],
+      "definitions": [
+        "Again, once more.",
+        "Back, returning to an earlier state or place.",
+        "Usage note: Do not confuse with \"wider\" (against, contrary to); \"wieder\" always denotes repetition or return."
+      ],
+      "examples": [
+        [
+          "Er hat denselben Fehler schon wieder gemacht.",
+          "He made the exact same mistake all over again."
+        ],
+        [
+          "Wann bist du von deiner Reise wieder daheim?",
+          "When will you be back home from your trip?"
+        ],
+        [
+          "Wir müssen dieses Thema immer wieder besprechen, obwohl niemand wider die Vernunft handeln will.",
+          "We have to discuss this issue time and again, even though no one wants to act against reason."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.3,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: wieder\nWord Type: adverb\nDefinitions:\na. Again, once more.\nb. Back, returning to an earlier state or place.\nc. Usage note: Do not confuse with \"wider\" (against, contrary to); \"wieder\" always denotes repetition or return.\nExamples:\n1. Er hat denselben Fehler schon wieder gemacht.\n(He made the exact same mistake all over again.)\n2. Wann bist du von deiner Reise wieder daheim?\n(When will you be back home from your trip?)\n3. Wir müssen dieses Thema immer wieder besprechen, obwohl niemand wider die Vernunft handeln will.\n(We have to discuss this issue time and again, even though no one wants to act against reason.)"
+    },
+    {
+      "language": "de",
+      "word": "ausmachen",
+      "corrected": "ausmachen",
+      "word_type": [
+        "separable verb"
+      ],
+      "definitions": [
+        "To constitute, represent, or account for an amount or proportion.",
+        "To agree upon, settle, or arrange a date, meeting, or condition.",
+        "To turn off or extinguish a light, appliance, or fire."
+      ],
+      "examples": [
+        [
+          "Erneuerbare Energien machen inzwischen über die Hälfte des Stromverbrauchs aus.",
+          "Renewable energy now accounts for more than half of electricity consumption."
+        ],
+        [
+          "Wir haben einen neuen Termin für die mündliche Prüfung ausgemacht.",
+          "We arranged a new date for the oral exam."
+        ],
+        [
+          "Vergiss bitte nicht, das Licht im Flur auszumachen, bevor du gehst.",
+          "Please do not forget to turn off the hall light before you leave."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.1,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 3,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: ausmachen\nWord Type: separable verb\n\nDefinitions:\na. To constitute, represent, or account for an amount or proportion.\nb. To agree upon, settle, or arrange a date, meeting, or condition.\nc. To turn off or extinguish a light, appliance, or fire.\n\nExamples:\n1. Erneuerbare Energien machen inzwischen über die Hälfte des Stromverbrauchs aus.\n(Renewable energy now accounts for more than half of electricity consumption.)\n2. Wir haben einen neuen Termin für die mündliche Prüfung ausgemacht.\n(We arranged a new date for the oral exam.)\n3. Vergiss bitte nicht, das Licht im Flur auszumachen, bevor du gehst.\n(Please do not forget to turn off the hall light before you leave.)"
+    },
+    {
+      "language": "de",
+      "word": "bescheiden",
+      "corrected": "bescheiden",
+      "word_type": [
+        "adjective"
+      ],
+      "definitions": [
+        "Modest or unassuming in behavior, not drawing attention to one's own achievements.",
+        "Small, limited, or humble in size, quantity, or standard.",
+        "Usage note: Colloquially used as a mild euphemism for bad, unpleasant, or disappointing (e.g., \"das Wetter ist bescheiden\")."
+      ],
+      "examples": [
+        [
+          "Trotz seiner bahnbrechenden Entdeckungen blieb der Wissenschaftler stets bescheiden.",
+          "Despite his groundbreaking discoveries, the scientist always remained modest."
+        ],
+        [
+          "Die Familie lebte jahrelang in äußerst bescheidenen Verhältnissen.",
+          "The family lived in extremely humble circumstances for years."
+        ],
+        [
+          "Die Stimmung nach der verlorenen Wahl war gelinde gesagt bescheiden.",
+          "To put it mildly, the mood after the lost election was pretty miserable."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.2,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: bescheiden\nWord Type: adjective\n\nDefinitions:\na. Modest or unassuming in behavior, not drawing attention to one's own achievements.\nb. Small, limited, or humble in size, quantity, or standard.\nc. Usage note: Colloquially used as a mild euphemism for bad, unpleasant, or disappointing (e.g., \"das Wetter ist bescheiden\").\n\nExamples:\n1. Trotz seiner bahnbrechenden Entdeckungen blieb der Wissenschaftler stets bescheiden.\n(Despite his groundbreaking discoveries, the scientist always remained modest.)\n2. Die Familie lebte jahrelang in äußerst bescheidenen Verhältnissen.\n(The family lived in extremely humble circumstances for years.)\n3. Die Stimmung nach der verlorenen Wahl war gelinde gesagt bescheiden.\n(To put it mildly, the mood after the lost election was pretty miserable.)"
+    },
+    {
+      "language": "de",
+      "word": "rudern",
+      "corrected": "rudern",
+      "word_type": [
+        "verb"
+      ],
+      "definitions": [
+        "To row; propel a boat through water using oars.",
+        "To make frantic, sweeping arm movements to keep balance or signal distress.",
+        "Usage note: Frequently occurs in political journalism as \"zurückrudern\" (or figuratively \"rudern\"), meaning to backtrack, backpedal, or retract a previous statement."
+      ],
+      "examples": [
+        [
+          "Jeden Samstagmorgen rudert das Team auf der Alster für die bevorstehende Regatta.",
+          "Every Saturday morning the team rows on the Alster for the upcoming regatta."
+        ],
+        [
+          "Als er auf dem glatten Eis ausrutschte, ruderte er verzweifelt mit den Armen.",
+          "When he slipped on the smooth ice, he flailed his arms desperately."
+        ],
+        [
+          "Nach heftiger Kritik aus den eigenen Reihen musste der Minister eilig zurückrudern.",
+          "Following fierce criticism from his own party ranks, the minister had to backpedal hastily."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.3,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: rudern\nWord Type: verb\n\nDefinitions:\na. To row; propel a boat through water using oars.\nb. To make frantic, sweeping arm movements to keep balance or signal distress.\nc. Usage note: Frequently occurs in political journalism as \"zurückrudern\" (or figuratively \"rudern\"), meaning to backtrack, backpedal, or retract a previous statement.\n\nExamples:\n1. Jeden Samstagmorgen rudert das Team auf der Alster für die bevorstehende Regatta.\n(Every Saturday morning the team rows on the Alster for the upcoming regatta.)\n2. Als er auf dem glatten Eis ausrutschte, ruderte er verzweifelt mit den Armen.\n(When he slipped on the smooth ice, he flailed his arms desperately.)\n3. Nach heftiger Kritik aus den eigenen Reihen musste der Minister eilig zurückrudern.\n(Following fierce criticism from his own party ranks, the minister had to backpedal hastily.)"
+    },
+    {
+      "language": "de",
+      "word": "Kühlschrank",
+      "corrected": "Kühlschrank",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Refrigerator, fridge.",
+        "Usage note: Often combined with \"einräumen\" (to stock/fill) or \"ausräumen\" (to empty/clear out) in everyday household contexts."
+      ],
+      "examples": [
+        [
+          "Bitte stell die Milch wieder in den Kühlschrank, damit sie nicht sauer wird.",
+          "Please put the milk back in the fridge so it doesn't go sour."
+        ],
+        [
+          "Nach dem Großeinkauf müssen wir erst einmal den Kühlschrank einräumen.",
+          "After the big grocery run, we first need to put everything away in the fridge."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.0,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: Kühlschrank\nWord Type: noun\n\nDefinitions:\na. Refrigerator, fridge.\nb. Usage note: Often combined with \"einräumen\" (to stock/fill) or \"ausräumen\" (to empty/clear out) in everyday household contexts.\n\nExamples:\n1. Bitte stell die Milch wieder in den Kühlschrank, damit sie nicht sauer wird.\n(Please put the milk back in the fridge so it doesn't go sour.)\n2. Nach dem Großeinkauf müssen wir erst einmal den Kühlschrank einräumen.\n(After the big grocery run, we first need to put everything away in the fridge.)"
+    },
+    {
+      "language": "de",
+      "word": "reichen",
+      "corrected": "reichen",
+      "word_type": [
+        "verb"
+      ],
+      "definitions": [
+        "To be enough, suffice.",
+        "To pass, hand, or offer something to someone (gehoben).",
+        "To reach, extend, or stretch to a certain point or duration."
+      ],
+      "examples": [
+        [
+          "Das Geld wird für die gesamte Reise kaum reichen.",
+          "The money will hardly be enough for the entire trip."
+        ],
+        [
+          "Die Gastgeberin reichte den Gästen zur Begrüßung ein Glas Wein.",
+          "The hostess handed the guests a glass of wine to welcome them."
+        ],
+        [
+          "Seine Erinnerungen an diesen Sommer reichen weit zurück.",
+          "His memories of that summer reach far back."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 1.0,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 3,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: reichen\nWord Type: verb\nDefinitions:\na. To be enough, suffice.\nb. To pass, hand, or offer something to someone (gehoben).\nc. To reach, extend, or stretch to a certain point or duration.\nExamples:\n1. Das Geld wird für die gesamte Reise kaum reichen.\n(The money will hardly be enough for the entire trip.)\n2. Die Gastgeberin reichte den Gästen zur Begrüßung ein Glas Wein.\n(The hostess handed the guests a glass of wine to welcome them.)\n3. Seine Erinnerungen an diesen Sommer reichen weit zurück.\n(His memories of that summer reach far back.)"
+    }
+  ]
+}

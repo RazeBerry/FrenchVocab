@@ -45,6 +45,20 @@ class EntryNotFoundError(Exception):
     pass
 
 
+def display_headword(word: str, word_type: str) -> str:
+    """Capitalize only the first character of a stored headword.
+
+    ``str.capitalize`` lowercases everything after the first letter, which
+    turned "jemanden nicht im Stich lassen" into "Jemanden nicht im stich
+    lassen": German nouns inside an expression cannot survive it, and a French
+    proper noun or acronym inside one cannot either. A sentence is stored as
+    typed.
+    """
+    if word_type.lower() == "sentence" or not word:
+        return word
+    return word[0].upper() + word[1:]
+
+
 class VocabRepository:
     """Manages vocabulary entries stored in LaTeX files."""
 
@@ -361,7 +375,7 @@ class VocabRepository:
 
         self._entries_loaded = True
         word_lower = word.lower()
-        display_word = word if word_type.lower() == 'sentence' else word.capitalize()
+        display_word = display_headword(word, word_type)
         self.word_entries[word_lower] = {
             "word": display_word,
             "type": word_type,
@@ -921,7 +935,7 @@ class VocabRepository:
             entry_cmd = f"\\{entry_cmd}"
 
         # Capitalize and escape word and type
-        capitalized_word = escape_latex(word if word_type.lower() == 'sentence' else word.capitalize())
+        capitalized_word = escape_latex(display_headword(word, word_type))
         escaped_type = escape_latex(word_type)
 
         # Escape definitions and examples

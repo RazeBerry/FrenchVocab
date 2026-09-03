@@ -1061,3 +1061,25 @@ def test_journal_written_before_merge_metadata_existed_still_replays(
     assert replayed["sync_pending"] is False
     content = (tmp_path / "FrenchVocab.tex").read_text(encoding="utf-8")
     assert content.count(r"\entry{Chrysanthème}") == 1
+
+
+def test_headwords_keep_the_capitals_inside_an_expression(tmp_path, monkeypatch):
+    """The stored headword capitalizes its first character and nothing else.
+
+    ``str.capitalize`` lowercased every later letter, which stored "jemanden
+    nicht im Stich lassen" as "Jemanden nicht im stich lassen"; a German noun
+    inside an expression cannot survive that, and the glossary then shows it.
+    """
+    service = build_service(tmp_path, monkeypatch, language="de")
+    seed_entries(
+        service,
+        [("jemanden nicht im Stich lassen", "expression", "Not to leave someone in the lurch.")],
+    )
+    app = create_app(service)
+
+    index = get_api(app, "/api/library/index").json()
+
+    assert "Jemanden nicht im Stich lassen" in [item["word"] for item in index["items"]]
+    written = (tmp_path / "GermanVocab.tex").read_text(encoding="utf-8")
+    assert "Jemanden nicht im Stich lassen" in written
+    assert "im stich" not in written

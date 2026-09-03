@@ -34,6 +34,12 @@ An optional private web interface (`vocabbuilder-mobile`, extras `[mobile]`) ser
 - `vocab_builder/mobile/` contains the optional FastAPI web interface, headless mobile use-case adapters, durable request state, and its no-build static front end.
 - `FrenchVocab.py` is a deprecated shim that delegates to `vocab_builder.cli.main`.
 - `scripts/` contains utility and demo scripts, including `scripts/bulk_add.py` for operator-reviewed structured JSON vocabulary batches.
+- `scripts/prompt_panel/` is the yardstick for the vocabulary generation
+  prompts: `panel.json` names twenty words with the sense count and first
+  sense a careful reader expects and the reason for each, `run_panel.py`
+  sends them through the same template, provider call and parser the app
+  uses and scores the result, and `results/` keeps every run, rejected
+  candidates included. `candidate_prompts.py` holds the prompt under trial.
 - `scripts/deploy/` holds VM provisioning and backup scripts; `scripts/macos/vocab` launches the local Rich client backed by the VM API.
 - `deploy/` holds the systemd unit and timer files for the mobile server and its daily backup.
 - `tests/` is a pytest suite (`test_*.py`) for architecture boundaries, onboarding, translators, language config, exporters, and UI behavior.
@@ -124,6 +130,11 @@ pytest -k "anki"
 ### Core Application (`vocab_builder/core/`)
 - `vocab.py` contains `VocabBuilder`, the main controller.
 - `vocab_repository.py` handles LaTeX parsing, persistence, entry indexing, and counts.
+- A stored headword capitalizes its first character and nothing else
+  (`display_headword`). `str.capitalize` lowercased every later letter and
+  stored "jemanden nicht im Stich lassen" as "Jemanden nicht im stich lassen";
+  German nouns inside an expression, and proper nouns inside a French one,
+  cannot survive that. Sentences are stored as typed.
 - `word_entry_workflow.py` orchestrates end-to-end word capture and save behavior, including explicit saved/routed/skipped outcomes so failed routing or merge paths never masquerade as successful saves.
 - `translator.py` and `auto_translator.py` handle directional and intelligent translation flows.
 - `text_utils.py` centralizes text normalization and input-type detection.
@@ -176,6 +187,19 @@ pytest -k "anki"
 - `__init__.py` lazily registers/loads language configs and resolves aliases with `get_language_config(code)`.
 - `english.py`, `french.py`, and `german.py` define prompts, validators, learning-mode behavior, and Anki metadata.
 - English is monolingual: it omits translation workflows and uses plain-English example paraphrases as active-recall cues.
+- A vocabulary prompt is edited against the panel in `scripts/prompt_panel/`,
+  never by taste: run the shipped prompt and the candidate, compare the saved
+  results, and keep the rejected candidate's file. On 2026-09-03 the shipped
+  prompts passed 9 of 20 words and produced 46 senses; the failures were
+  slot-filling (three senses for "Kühlschrank"), invented senses ("a cold
+  person"), and a non-word accepted as a headword. The measured candidate
+  passed 18 with 33 senses by making one sense the default, requiring an
+  unforced example for any further sense, banning hedged definitions, and
+  asking for the English equivalent before any paraphrase. Two residuals are
+  recorded there: the model keeps a literal noun sense ahead of the idiom the
+  word lives in ("collimateur"), and a non-word it believes in ("forthaaren")
+  survives a stronger spelling rule. A prompt cannot supply attestation the
+  model lacks; only a dictionary check could.
 - French word and expression generation stays within one lexical identity and
   part of speech, preserves lexicalized inflected forms, and emits one to three
   useful definition-or-usage-note entries with exactly one ordered example per
