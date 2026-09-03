@@ -124,8 +124,9 @@
             <div class="type-chips" id="type-chips"></div>
             <div class="segmented sort-segment" id="library-sort" role="group" aria-label="Order"></div>
           </div>
-          <div class="library-actions"><button class="quiet-button" id="random-button" type="button">Random flashcard</button><button class="quiet-button" id="stats-button" type="button">Collection stats</button></div>
+          <div class="library-actions"><button class="quiet-button" id="random-button" type="button" aria-controls="random-panel" aria-expanded="false">Random flashcard</button><button class="quiet-button" id="stats-button" type="button" aria-controls="stats-panel" aria-expanded="false">Collection stats</button></div>
           <div class="stats-panel" id="stats-panel" hidden></div>
+          <div class="stats-panel random-card" id="random-panel" hidden></div>
           <div class="index-layout">
             <div class="index" id="entry-list"></div>
             <nav class="rail" id="letter-rail" aria-label="Jump to a letter" hidden></nav>

@@ -520,6 +520,30 @@ def test_the_glossary_hands_a_word_to_capture_instead_of_owning_the_rule(
     assert 'showView("capture")' in app_js
 
 
+def test_stats_and_random_flashcard_own_separate_disclosures(index_html, library_view):
+    """A random card must not overwrite the statistics it shares a row with.
+    Each action owns one panel, while one coordinator closes the other panel and
+    keeps the controls' accessible expanded state truthful."""
+    assert 'id="random-button" type="button" aria-controls="random-panel"' in index_html
+    assert 'id="stats-button" type="button" aria-controls="stats-panel"' in index_html
+    assert 'id="stats-panel" hidden' in index_html
+    assert 'id="random-panel" hidden' in index_html
+
+    load_stats = library_view.split("  async loadStats() {", 1)[1].split("\n  }", 1)[0]
+    show_random = library_view.split("  async showRandom() {", 1)[1].split("\n  }", 1)[0]
+    assert 'el("stats-panel")' in load_stats
+    assert 'el("random-panel")' not in load_stats
+    assert 'el("random-panel")' in show_random
+    assert 'el("stats-panel")' not in show_random
+    assert 'this.setAuxiliaryPanel("random-panel")' in show_random
+
+    coordinator = library_view.split("  setAuxiliaryPanel(", 1)[1].split("\n  }", 1)[0]
+    assert '["random-button", "random-panel"]' in coordinator
+    assert '["stats-button", "stats-panel"]' in coordinator
+    assert 'setAttribute("aria-expanded", String(expanded))' in coordinator
+    assert "panel.classList" not in library_view
+
+
 def test_the_header_count_is_a_way_into_the_glossary(index_html, styles):
     """It is the one place the whole collection is named on every screen."""
     match = re.search(r'<button class="count"[^>]*>', index_html)

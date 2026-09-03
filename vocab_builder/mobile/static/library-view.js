@@ -54,7 +54,7 @@ export class LibraryView {
     this.results = [];
     this.entries.clear();
     el("search-input").value = "";
-    el("stats-panel").hidden = true;
+    this.setAuxiliaryPanel();
     this.showMessage("");
     this.render();
   }
@@ -418,14 +418,27 @@ export class LibraryView {
   async showRandom() {
     try {
       const entry = await this.api.request("/api/library/random", {}, { scope: "library-random" });
-      const panel = el("stats-panel");
-      panel.hidden = false;
-      panel.classList.add("random-card");
+      const panel = el("random-panel");
       renderEntryCard(panel, entry);
+      this.setAuxiliaryPanel("random-panel");
       panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
     } catch (error) {
       if (!ignoreCancelled(error)) this.showMessage(error.message);
     }
+  }
+
+  /* Each action owns its content; this only coordinates which disclosure is
+     open. That keeps a random card from ever replacing the cached statistics
+     and keeps the buttons' accessible state aligned with the visible panel. */
+  setAuxiliaryPanel(openPanel = "") {
+    [
+      ["random-button", "random-panel"],
+      ["stats-button", "stats-panel"],
+    ].forEach(([buttonId, panelId]) => {
+      const expanded = panelId === openPanel;
+      el(panelId).hidden = !expanded;
+      el(buttonId).setAttribute("aria-expanded", String(expanded));
+    });
   }
 
   showMessage(text, options) { setMessage(el("library-message"), text, options); }
@@ -441,8 +454,7 @@ export class LibraryView {
     });
     el("stats-button").addEventListener("click", () => {
       const panel = el("stats-panel");
-      panel.classList.remove("random-card");
-      panel.hidden = !panel.hidden;
+      this.setAuxiliaryPanel(panel.hidden ? "stats-panel" : "");
     });
     el("random-button").addEventListener("click", () => this.showRandom());
     el("entry-list").addEventListener("focusin", (event) => {
