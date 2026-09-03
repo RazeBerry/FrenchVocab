@@ -415,15 +415,15 @@ def test_the_glossary_asks_for_the_index_once_and_the_entry_on_open(
     say, so browse is one slim request and "Load more" is gone. The record a row
     omits is fetched when the row opens — building 573 detail panels for the one
     that gets opened is the cost that made the slim index worth having."""
-    assert "/api/library/index?sort=${this.sort}" in library_view
+    assert '"/api/library/index"' in library_view
     assert "/api/library/search?${params}" in library_view
     assert "/api/library/entry?word=" in library_view
     assert 'scope: "library-entry"' in library_view
     assert "Opening…" in library_view
     assert 'id="library-more"' not in index_html and "Load more" not in index_html
     assert "options.loadDetail" in entry_list
-    # The row shows what the slim index carries, or the definitions a history
-    # record and a search hit bring with them.
+    # The row shows what the slim finder response carries, or the definitions a
+    # richer history record brings with it.
     assert "entry.gloss ?? entry.definitions?.[0]" in entry_list
     reset = library_view.split("  reset() {", 1)[1].split("\n  }", 1)[0]
     assert "this.entries.clear()" in reset
@@ -483,6 +483,25 @@ def test_acquisition_order_prints_no_dividers(library_view):
     "Added" prints no dividers rather than inventing them."""
     render = library_view.split("  render() {", 1)[1].split("\n  }", 1)[0]
     assert 'grouped: !searching && this.sort === "alpha"' in render
+
+
+def test_sort_toggles_reuse_the_loaded_index(library_view):
+    """A-Z and Added are two views of the same finder rows, not two VM reads.
+
+    The server supplies the persisted acquisition rank once; a stable local
+    sort keeps unknown entries alphabetical and each toggle performs one
+    detached render without waiting for the transatlantic link.
+    """
+    load = library_view.split("  async loadIndex() {", 1)[1].split("\n  }", 1)[0]
+    assert '"/api/library/index"' in load
+    assert "sort=${this.sort}" not in load
+    assert "this.addedIndex = [...this.index].sort" in load
+    assert "(right.added ?? -1) - (left.added ?? -1)" in load
+    sort = library_view.split("  renderSort() {", 1)[1].split(
+        "\n  renderTypeChips", 1
+    )[0]
+    assert "this.render()" in sort
+    assert "this.loadIndex()" not in sort
 
 
 def test_the_letter_rail_is_offered_only_where_it_is_true(

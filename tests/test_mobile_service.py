@@ -861,13 +861,19 @@ def test_library_index_ships_slim_rows_sorted_by_the_collection_key(
         "Zèbre",
     ]
     assert payload["items"][1:] == [
-        {"word": "Dot", "word_type": "noun", "gloss": "Dowry brought by a bride."},
+        {
+            "word": "Dot",
+            "word_type": "noun",
+            "gloss": "Dowry brought by a bride.",
+            "added": None,
+        },
         {
             "word": "Étourdissant",
             "word_type": "adjective",
             "gloss": "Stunning, dazzling.",
+            "added": None,
         },
-        {"word": "Zèbre", "word_type": "noun", "gloss": "A zebra."},
+        {"word": "Zèbre", "word_type": "noun", "gloss": "A zebra.", "added": None},
     ]
 
 
@@ -899,7 +905,9 @@ def test_library_search_scans_rich_content_but_ships_only_finder_rows(
 
     assert response.status_code == 200
     assert response.json() == {
-        "items": [{"word": "Dot", "word_type": "noun", "gloss": "A dowry."}],
+        "items": [
+            {"word": "Dot", "word_type": "noun", "gloss": "A dowry.", "added": None}
+        ],
         "total": 1,
     }
     detail = get_api(app, "/api/library/entry?word=Dot").json()
@@ -945,6 +953,26 @@ def test_library_index_added_sort_follows_the_anki_acquisition_order(
         "agaçante",
         "Étourdissant",
     ]
+    assert {item["word"]: item["added"] for item in payload["items"]} == {
+        "Zèbre": 2,
+        "Dot": 1,
+        "agaçante": 0,
+        "Étourdissant": None,
+    }
+
+    alphabetical = get_api(app, "/api/library/index").json()
+    assert [item["word"] for item in alphabetical["items"]] == [
+        "agaçante",
+        "Dot",
+        "Étourdissant",
+        "Zèbre",
+    ]
+    assert {item["word"]: item["added"] for item in alphabetical["items"]} == {
+        "Zèbre": 2,
+        "Dot": 1,
+        "agaçante": 0,
+        "Étourdissant": None,
+    }
 
 
 def test_library_index_rejects_an_unknown_sort(tmp_path, monkeypatch):

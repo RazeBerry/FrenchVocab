@@ -27,6 +27,7 @@ export class LibraryView {
     this.query = "";
     this.wordType = "";
     this.index = [];
+    this.addedIndex = [];
     this.letters = {};
     this.total = 0;
     this.results = [];
@@ -49,6 +50,7 @@ export class LibraryView {
     this.query = "";
     this.wordType = "";
     this.index = [];
+    this.addedIndex = [];
     this.letters = {};
     this.total = 0;
     this.results = [];
@@ -82,11 +84,17 @@ export class LibraryView {
   async loadIndex() {
     try {
       const payload = await this.api.request(
-        `/api/library/index?sort=${this.sort}`,
+        "/api/library/index",
         {},
         { scope: "library-index" },
       );
       this.index = payload.items;
+      // Acquisition rank is a server-owned fact shipped with the finder row.
+      // The source is alphabetical, so stable sorting naturally leaves unknown
+      // entries alphabetical after all ranked entries.
+      this.addedIndex = [...this.index].sort(
+        (left, right) => (right.added ?? -1) - (left.added ?? -1),
+      );
       this.letters = payload.letters;
       this.total = payload.total;
       this.showMessage("");
@@ -132,7 +140,8 @@ export class LibraryView {
 
   render() {
     const searching = Boolean(this.query);
-    const rows = this.visibleRows(searching ? this.results : this.index);
+    const ordered = this.sort === "added" ? this.addedIndex : this.index;
+    const rows = this.visibleRows(searching ? this.results : ordered);
     this.rows = renderEntries(el("entry-list"), rows, {
       // Letter dividers over search results or acquisition order would
       // contradict the order the rows are in.
@@ -168,7 +177,7 @@ export class LibraryView {
         container.querySelectorAll("button").forEach((item) => {
           item.setAttribute("aria-pressed", String(item === button));
         });
-        this.loadIndex();
+        this.render();
       });
       container.appendChild(button);
     });

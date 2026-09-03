@@ -68,7 +68,7 @@ class MobileLibrary:
         if not needle:
             return {"items": [], "total": 0}
 
-        matches: list[dict[str, str]] = []
+        matches: list[dict[str, Any]] = []
         with self._state_lock:
             for entry in self.builder.word_entries.values():
                 if not _entry_contains(entry, needle):
@@ -96,21 +96,26 @@ class MobileLibrary:
                 key: _index_row(entry)
                 for key, entry in self.builder.word_entries.items()
             }
-            positions = (
-                self.builder.get_anki_manager().acquisition_positions(rows.keys())
-                if sort == "added"
-                else {}
-            )
+            positions = self.builder.get_anki_manager().acquisition_positions(rows.keys())
+
+        # Ship the ownership fact once so A-Z and Added can switch locally.
+        # Unknown entries use null and retain alphabetical order after the
+        # ranked entries in the browser's stable sort.
+        for key, row in rows.items():
+            row["added"] = positions.get(key)
 
         sort_keys = {
             key: self.builder.normalize_word(row["word"]) for key, row in rows.items()
         }
         alphabetical = sorted(rows, key=sort_keys.__getitem__)
-        items = [
-            rows[key]
-            for key in sorted(positions, key=positions.__getitem__, reverse=True)
-        ]
-        items += [rows[key] for key in alphabetical if key not in positions]
+        if sort == "alpha":
+            items = [rows[key] for key in alphabetical]
+        else:
+            items = [
+                rows[key]
+                for key in sorted(positions, key=positions.__getitem__, reverse=True)
+            ]
+            items += [rows[key] for key in alphabetical if key not in positions]
 
         letters = Counter(_letter_bucket(value) for value in sort_keys.values())
         return {
@@ -179,13 +184,16 @@ def _type_text(value: Any) -> str:
     return str(value or "")
 
 
-def _index_row(entry: dict[str, Any]) -> dict[str, str]:
+def _index_row(entry: dict[str, Any]) -> dict[str, Any]:
     """Reduce one repository record to what an index row can show."""
     definitions = entry.get("definitions_list", [])
     return {
         "word": str(entry.get("word", "")),
         "word_type": _type_text(entry.get("type", "")),
         "gloss": str(definitions[0]) if definitions else "",
+        # Search has no need to load acquisition state, but a stable row shape
+        # avoids making the renderer polymorphic when results replace the index.
+        "added": None,
     }
 
 
