@@ -15,7 +15,6 @@ from pydantic import BaseModel, Field, SecretStr
 from starlette.middleware.gzip import GZipMiddleware
 
 from .catalog import MobileVocabCatalog
-from .library import IndexSort
 from .service import (
     AIUnavailableError,
     EntryNotFoundError,
@@ -228,10 +227,9 @@ def create_app(
 
     @app.get("/api/library/index", dependencies=private)
     def library_index(
-        sort: IndexSort = Query(default="alpha"),
         service: MobileVocabService = Depends(resolve_service),
     ) -> dict[str, Any]:
-        return service.library.index(sort=sort)
+        return service.library.index()
 
     @app.get("/api/library/search", dependencies=private)
     def library_search(

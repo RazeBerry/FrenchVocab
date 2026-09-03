@@ -1,4 +1,4 @@
-import { detailInner, renderEntries, renderEntryCard } from "./entry-list.js";
+import { detailInner, refit, renderEntries, renderEntryCard } from "./entry-list.js";
 import {
   el,
   ignoreCancelled,
@@ -158,12 +158,14 @@ export class LibraryView {
     this.renderFoot(rows.length, searching);
   }
 
-  /* The server's own filter, applied to rows already in hand: a chip must not
-     cost another round trip, drop the letter census, or truncate at a page. */
+  /* A chip is a category from the stats census, so it keeps exactly the rows
+     that census counted: "verb 162" shows 162 rows, not every type that
+     contains the word. Applied to rows already in hand, because a round trip
+     would drop the letter census and truncate at a page. */
   visibleRows(rows) {
     const filter = this.wordType.trim().toLowerCase();
     if (!filter) return rows;
-    return rows.filter((row) => (row.word_type || "").toLowerCase().includes(filter));
+    return rows.filter((row) => (row.word_type || "").trim().toLowerCase() === filter);
   }
 
   renderSort() {
@@ -291,12 +293,13 @@ export class LibraryView {
   paintDetail(detail, entry) {
     const inner = detailInner(entry);
     inner.appendChild(this.entryActions(entry));
-    detail.replaceChildren(inner);
-    if (!detail.classList.contains("is-open")) return;
-    // Mid-tween the height is pinned in pixels, so retarget it: the panel keeps
-    // animating to the real content and the tween's own transitionend still
-    // lands and releases it.
-    if (detail.style.height !== "auto") detail.style.height = `${detail.scrollHeight}px`;
+    // A closed panel just takes the content; an open one grows to fit it,
+    // whether the record landed mid-tween or after the panel had settled.
+    if (!detail.classList.contains("is-open")) {
+      detail.replaceChildren(inner);
+      return;
+    }
+    refit(detail, () => detail.replaceChildren(inner));
   }
 
   /* The one action a glossary can offer without owning a vocabulary rule: it

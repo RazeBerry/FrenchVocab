@@ -32,8 +32,8 @@ export function renderEntries(container, entries, options = {}) {
   } else if (options.grouped) {
     /* Counted from the rows actually rendered rather than from the server's
        census, so the heading stays true when a type chip narrows the list.
-       Over the whole collection the two agree: the letter below is the same
-       key the server sorted and counted by. */
+       Over the whole collection the two agree: each row names the letter the
+       server filed it under, from the same key it sorted and counted by. */
     letterGroups(entries).forEach((group) => {
       fragment.appendChild(divider("index-letter", group.letter, group.entries.length));
       group.entries.forEach(append);
@@ -57,6 +57,7 @@ function appendRow(target, container, entry, options) {
   // because a concurrent save can put another word above it.
   if (options.justSaved && sameWord(entry.word, options.justSaved)) {
     row.classList.add("is-just-saved");
+    if (options.landing) row.classList.add("is-landing");
   }
   row.appendChild(element("span", "index-word", entry.word));
   const abbreviation = abbreviateType(entry.word_type);
@@ -137,7 +138,7 @@ function letterGroups(entries) {
   const groups = [];
   let letter = null;
   entries.forEach((entry) => {
-    const next = indexLetter(entry.word);
+    const next = entry.letter;
     if (next !== letter) {
       letter = next;
       groups.push({ letter, entries: [] });
@@ -238,7 +239,16 @@ function toggleRow(container, row, detail) {
   const open = container.querySelector('.index-row[aria-expanded="true"]');
   if (open) {
     open.setAttribute("aria-expanded", "false");
-    collapse(open.nextElementSibling);
+    const panel = open.nextElementSibling;
+    // A panel closing above the tapped row would carry that row up with it
+    // for the length of the tween. Chrome anchors the scroll position through
+    // that; Safari does not. Close it in one step and hand its height back to
+    // the scroll position in the same frame, so the row under the finger
+    // stays where it was. A panel below can close at its own pace.
+    const above = !alreadyOpen
+      && Boolean(open.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING);
+    if (above) collapseInPlace(panel);
+    else collapse(panel);
   }
   if (alreadyOpen) return;
   row.setAttribute("aria-expanded", "true");
@@ -251,6 +261,61 @@ function collapse(detail) {
   detail.classList.remove("is-open");
   detail.style.height = "0px";
   detail.inert = true;
+}
+
+function collapseInPlace(detail) {
+  const height = detail.getBoundingClientRect().height;
+  detail.style.transition = "none";
+  detail.classList.remove("is-open");
+  detail.style.height = "0px";
+  detail.inert = true;
+  void detail.offsetHeight;
+  detail.style.transition = "";
+  window.scrollBy({ top: -height, behavior: "auto" });
+}
+
+/* The record arrived while the panel was already open. Mid-tween the pinned
+   height is simply retargeted, and the open tween's own transitionend still
+   releases it. Once settled at auto, height cannot animate from auto, so pin
+   what is on screen, swap the content, and tween to the new measurement. */
+export function refit(detail, paint) {
+  const settled = detail.style.height === "auto";
+  const from = settled ? detail.getBoundingClientRect().height : 0;
+  if (settled) detail.style.height = `${from}px`;
+  paint();
+  if (!settled) {
+    detail.style.height = `${detail.scrollHeight}px`;
+    return;
+  }
+  void detail.offsetHeight;
+  const to = detail.scrollHeight;
+  if (Math.abs(to - from) < 1) {
+    detail.style.height = "auto";
+    return;
+  }
+  detail.style.height = `${to}px`;
+  releaseWhenSettled(detail);
+}
+
+/* Released on the event and on a timer: a zero-duration tween under reduced
+   motion, or a close that lands mid-flight, can swallow transitionend and
+   would otherwise leave the panel pinned at a stale height. */
+function releaseWhenSettled(detail) {
+  const release = () => {
+    detail.removeEventListener("transitionend", onEnd);
+    window.clearTimeout(timer);
+    if (detail.classList.contains("is-open")) detail.style.height = "auto";
+  };
+  const onEnd = (event) => {
+    if (event.propertyName === "height") release();
+  };
+  detail.addEventListener("transitionend", onEnd);
+  const timer = window.setTimeout(release, tweenMilliseconds(detail) + 50);
+}
+
+function tweenMilliseconds(node) {
+  const value = getComputedStyle(node).transitionDuration.split(",")[0].trim();
+  return value.endsWith("ms") ? parseFloat(value) : parseFloat(value) * 1000;
 }
 
 function expand(row, detail) {
@@ -286,23 +351,6 @@ function reveal(row, detail) {
     top: delta,
     behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
   });
-}
-
-/* The same expansions `normalize_word_key` applies in vocab_builder/models.py
-   before stripping accents. The divider has to agree with the order the server
-   sorted the rows into: a bare NFD pass files "Œuvre" under "#", which
-   would print that divider in the middle of the O block, and the letter rail
-   would offer an O the list never reaches. */
-const LIGATURES = [
-  ["ß", "ss"], ["ä", "ae"], ["ö", "oe"],
-  ["ü", "ue"], ["æ", "ae"], ["œ", "oe"],
-];
-
-function indexLetter(word) {
-  let value = (word || "").trim().toLowerCase();
-  LIGATURES.forEach(([from, to]) => { value = value.split(from).join(to); });
-  const base = value.normalize("NFD").replace(/\p{Mn}/gu, "").charAt(0).toUpperCase();
-  return /[A-Z]/.test(base) ? base : "#";
 }
 
 /* "Unknown" is the parser's placeholder for a missing part of speech, not a

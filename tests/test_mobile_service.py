@@ -851,7 +851,7 @@ def test_library_index_ships_slim_rows_sorted_by_the_collection_key(
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["sort"] == "alpha"
+    assert set(payload) == {"items", "letters", "total"}
     assert payload["total"] == 4  # the three seeded words and the sample entry
     assert payload["letters"] == {"A": 1, "D": 1, "E": 1, "Z": 1}
     assert [item["word"] for item in payload["items"]] == [
@@ -865,15 +865,23 @@ def test_library_index_ships_slim_rows_sorted_by_the_collection_key(
             "word": "Dot",
             "word_type": "noun",
             "gloss": "Dowry brought by a bride.",
+            "letter": "D",
             "added": None,
         },
         {
             "word": "Étourdissant",
             "word_type": "adjective",
             "gloss": "Stunning, dazzling.",
+            "letter": "E",
             "added": None,
         },
-        {"word": "Zèbre", "word_type": "noun", "gloss": "A zebra.", "added": None},
+        {
+            "word": "Zèbre",
+            "word_type": "noun",
+            "gloss": "A zebra.",
+            "letter": "Z",
+            "added": None,
+        },
     ]
 
 
@@ -906,10 +914,22 @@ def test_library_search_scans_rich_content_but_ships_only_finder_rows(
     assert response.status_code == 200
     assert response.json() == {
         "items": [
-            {"word": "Dot", "word_type": "noun", "gloss": "A dowry.", "added": None}
+            {
+                "word": "Dot",
+                "word_type": "noun",
+                "gloss": "A dowry.",
+                "letter": "D",
+                "added": None,
+            }
         ],
         "total": 1,
     }
+    # A match in a later sense shows that sense, so the reader sees what they
+    # searched for and the browser can mark the fragment.
+    later_sense = get_api(app, "/api/library/search?q=legal").json()
+    assert [item["gloss"] for item in later_sense["items"]] == [
+        "A historical legal sense."
+    ]
     detail = get_api(app, "/api/library/entry?word=Dot").json()
     assert detail["definitions"] == ["A dowry.", "A historical legal sense."]
     assert detail["examples"] == [
@@ -917,16 +937,17 @@ def test_library_search_scans_rich_content_but_ships_only_finder_rows(
     ]
 
 
-def test_library_index_added_sort_follows_the_anki_acquisition_order(
+def test_library_index_ranks_rows_by_the_anki_acquisition_order(
     tmp_path,
     monkeypatch,
 ):
     """The glossary and the deck must agree on what "newest" means.
 
-    Acquisition order is the order the Anki manager already persists, so the
-    index reuses it rather than re-deriving one from history. An entry that
-    order has never seen cannot claim a position in it and follows the ordered
-    words alphabetically.
+    Acquisition order is the order the Anki manager already persists, so each
+    row carries its rank from there rather than from an order re-derived from
+    history. The rows themselves stay alphabetical: the browser reorders them
+    locally, so the server offers no second order to keep warm. An entry the
+    order has never seen has no rank and keeps its alphabetical place.
     """
     service = build_service(tmp_path, monkeypatch)
     tokens = iter(("preview-token-one", "preview-token-two"))
@@ -937,30 +958,15 @@ def test_library_index_added_sort_follows_the_anki_acquisition_order(
     seed_entries(service, [("Étourdissant", "adjective", "Stunning.")])
     app = create_app(service)
 
-    response = get_api(app, "/api/library/index?sort=added")
+    response = get_api(app, "/api/library/index")
 
     assert response.status_code == 200
-    payload = response.json()
-    assert payload["sort"] == "added"
+    alphabetical = response.json()
     assert service.builder.get_anki_manager().entry_order == (
         "agaçante",
         "dot",
         "zèbre",
     )
-    assert [item["word"] for item in payload["items"]] == [
-        "Zèbre",
-        "Dot",
-        "agaçante",
-        "Étourdissant",
-    ]
-    assert {item["word"]: item["added"] for item in payload["items"]} == {
-        "Zèbre": 2,
-        "Dot": 1,
-        "agaçante": 0,
-        "Étourdissant": None,
-    }
-
-    alphabetical = get_api(app, "/api/library/index").json()
     assert [item["word"] for item in alphabetical["items"]] == [
         "agaçante",
         "Dot",
@@ -973,17 +979,6 @@ def test_library_index_added_sort_follows_the_anki_acquisition_order(
         "agaçante": 0,
         "Étourdissant": None,
     }
-
-
-def test_library_index_rejects_an_unknown_sort(tmp_path, monkeypatch):
-    """An unrecognised order is a rejected request, never a quiet default."""
-    service = build_service(tmp_path, monkeypatch)
-    app = create_app(service)
-
-    response = get_api(app, "/api/library/index?sort=oldest")
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "invalid_request"
 
 
 def test_library_entry_route_answers_with_one_full_entry_or_404(tmp_path, monkeypatch):

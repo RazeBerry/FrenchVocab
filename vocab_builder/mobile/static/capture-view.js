@@ -26,6 +26,9 @@ export class CaptureView {
     this.expanded = false;
     this.pendingDuplicateText = "";
     this.justSaved = "";
+    // The slide-in is granted to one render, the one that follows the receipt.
+    this.landing = false;
+    this.heldDraft = "";
     this.slip = el("slip");
     this.input = el("entry-input");
     this.primary = el("primary-button");
@@ -60,6 +63,7 @@ export class CaptureView {
     this.preview = null;
     this.pendingDuplicateText = "";
     this.justSaved = "";
+    this.landing = false;
     this.input.value = "";
     this.showCapture();
     renderEntries(el("recent-list"), []);
@@ -79,7 +83,9 @@ export class CaptureView {
       renderEntries(el("recent-list"), shown, {
         groupBy: "day",
         justSaved: this.justSaved,
+        landing: this.landing,
       });
+      this.landing = false;
       el("recent-empty").hidden = shown.length > 0;
     } catch (error) {
       if (!ignoreCancelled(error)) this.showMessage(error.message);
@@ -94,6 +100,7 @@ export class CaptureView {
     this.displayedEntry = null;
     this.expanded = false;
     this.pendingDuplicateText = "";
+    this.heldDraft = "";
     this.slip.classList.add("is-capturing");
     this.slip.classList.remove("is-expanded");
     this.ribbon.hidden = true;
@@ -158,6 +165,11 @@ export class CaptureView {
      about: the text as typed when a duplicate raised this, and otherwise the
      stored headword. */
   showCollected(existingEntry, lookupText = existingEntry.word) {
+    // A duplicate is raised by the text in the field, so blanking the field
+    // afterwards discards nothing. The glossary hands a word over while the
+    // field may still hold an unrelated draft; that draft comes back when
+    // this visit ends, whether by keeping the entry or by saving more senses.
+    this.heldDraft = lookupText === this.input.value.trim() ? "" : this.input.value;
     this.mode = "collected";
     this.pendingDuplicateText = lookupText;
     this.preview = null;
@@ -296,8 +308,8 @@ export class CaptureView {
   }
 
   dismissToBlank({ preserveMessage = false } = {}) {
-    this.input.value = "";
-    writeStorage(this.draftKey(), "");
+    this.input.value = this.heldDraft;
+    writeStorage(this.draftKey(), this.heldDraft);
     this.showCapture({ preserveMessage });
   }
 
@@ -342,6 +354,7 @@ export class CaptureView {
       // Remembered by word, not by position: the list is re-fetched after the
       // save and another session can have written above this row.
       this.justSaved = saved.word || "";
+      this.landing = Boolean(this.justSaved);
       const addedDefinitions = saved.added_definitions || 0;
       const addedExamples = saved.added_examples || 0;
       const mergedAddition = addedDefinitions

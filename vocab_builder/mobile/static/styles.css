@@ -12,12 +12,11 @@
 
   --bg: #efeae3;
   --bg-top: #f4f0ea;
-  --card: #ffffff;
-  --card-blank: #faf8f5;
+  --card: #faf8f5;
   --ink: #1c1a17;
   --ink-soft: #4a4740;
   /* The grey ramp is tuned against the surface each step actually sits on:
-     --dim 4.75:1 on --bg, --placeholder 4.53:1 on --card-blank, and --ghost
+     --dim 4.75:1 on --bg, --placeholder 4.53:1 on --card, and --ghost
      3.40:1 there — large-text only, which is all it now carries. */
   --dim: #6b665f;
   --ghost: #8d867c;
@@ -88,7 +87,6 @@
   --bg: #151310;
   --bg-top: #1b1815;
   --card: #201d19;
-  --card-blank: #1b1815;
   --ink: #ece7de;
   --ink-soft: #cbc5b9;
   --dim: #9c958a;
@@ -338,7 +336,7 @@ button { -webkit-tap-highlight-color: transparent; }
 
 /* the blank slip you type onto */
 .slip.is-capturing {
-  background: var(--card-blank);
+  background: var(--card);
   border-top-color: color-mix(in srgb, var(--hue) 34%, transparent);
   box-shadow: none;
   outline: 1.5px dashed var(--line-strong);
@@ -691,13 +689,15 @@ textarea.hw::placeholder { color: var(--ghost); }
 
 /* The word this visit kept, wearing the open row's own hue rule and wash so
    it introduces no new colour. Declared before the open row so opening it
-   still takes the card ground. Cleared on the next look-up. */
+   still takes the card ground. Cleared on the next look-up. The slide is a
+   separate class the view grants once, on the render that follows the
+   receipt; a refresh that rebuilds the list must not replay it. */
 .index-row.is-just-saved {
   border-left-color: var(--hue);
   background: var(--hue-wash);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .index-row.is-just-saved { animation: row-land var(--dur-slow) var(--ease) both; }
+  .index-row.is-landing { animation: row-land var(--dur-slow) var(--ease) both; }
   @keyframes row-land {
     from { transform: translateX(-6px); }
     to { transform: none; }
@@ -1067,7 +1067,7 @@ footer {
   border-radius: var(--r-sm);
   outline: 0;
   color: var(--ink);
-  background: var(--card-blank);
+  background: var(--card);
   line-height: 1.5;
 }
 .paper-input.single { min-height: var(--tap-lg); resize: none; }
@@ -1080,7 +1080,7 @@ footer {
   overflow-x: auto;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--card) 62%, transparent);
+  background: var(--card);
 }
 .segmented button {
   flex: 1 0 auto;
@@ -1094,10 +1094,12 @@ footer {
   font-weight: 650;
   cursor: pointer;
 }
+/* Selected says so the way the chips say it, with the collection hue. A raised
+   white tab was a second answer to the same question, on a track that resolved
+   to a grey the palette never declared. */
 .segmented button[aria-pressed="true"] {
-  color: var(--ink);
-  background: var(--card);
-  box-shadow: 0 1px 4px color-mix(in srgb, var(--ink) 12%, transparent);
+  color: var(--on-hue);
+  background: var(--hue);
 }
 .segmented.is-scrollable,
 .type-chips.is-scrollable {

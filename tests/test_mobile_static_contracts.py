@@ -337,11 +337,18 @@ def test_just_saved_row_borrows_the_open_row_treatment(styles, capture_view):
     assert "var(--hue)" in rule and "var(--hue-wash)" in rule
     assert not re.search(r"#[0-9a-fA-F]{3,8}|(?:rgb|hsl)a?\(", rule)
     motion = _media(styles, "(prefers-reduced-motion: no-preference)")
-    assert ".index-row.is-just-saved" in motion and "animation:" in motion
+    # The slide belongs to a class the view grants once, so a refresh that
+    # rebuilds the list while the word is still remembered does not replay it.
+    assert ".index-row.is-landing" in motion and "animation:" in motion
+    assert ".index-row.is-just-saved" not in motion
     assert "var(--dur" in motion and "var(--ease)" in motion
     assert "animation" not in rule
     assert "this.justSaved = saved.word" in capture_view
+    assert "this.landing = Boolean(this.justSaved)" in capture_view
     assert "justSaved: this.justSaved" in capture_view
+    refresh = capture_view.split("  async refresh() {", 1)[1].split("\n  }", 1)[0]
+    assert "landing: this.landing" in refresh
+    assert "this.landing = false" in refresh
     # Cleared by the next look-up, and by the reset a language change runs.
     look_up = capture_view.split("async lookUp(", 1)[1].split("async save(", 1)[0]
     reset = capture_view.split("  reset() {", 1)[1].split("\n  }", 1)[0]
@@ -392,18 +399,17 @@ def app_js() -> str:
     return (STATIC / "app.js").read_text(encoding="utf-8")
 
 
-def test_letter_dividers_use_the_key_the_server_sorted_by(entry_list):
+def test_letter_dividers_read_the_letter_the_server_filed_the_row_under(entry_list):
     """The divider has to agree with the order the rows arrive in. A bare NFD
     pass files "Œuvre" under "#" while the server's key expands the ligature and
     sorts it among the O's, so that divider printed in the middle of the O block
-    and the rail offered an O the list never reached. The browser mirrors the
-    expansions `normalize_word_key` applies, and this fails if that table moves
-    without the mirror."""
-    from vocab_builder.models import _SPECIAL_REPLACEMENTS
-
-    for original, replacement in _SPECIAL_REPLACEMENTS:
-        assert f'["{original}", "{replacement}"]' in entry_list, original
-    assert "normalize_word_key" in entry_list
+    and the rail offered an O the list never reached. The browser once mirrored
+    the server's ligature table to avoid that; now each row carries its letter
+    from the same key the server sorted by, and the browser derives none."""
+    groups = entry_list.split("function letterGroups(", 1)[1].split("\n}", 1)[0]
+    assert "entry.letter" in groups
+    assert 'normalize("NFD")' not in entry_list
+    assert "LIGATURES" not in entry_list
 
 
 def test_the_glossary_asks_for_the_index_once_and_the_entry_on_open(
@@ -696,3 +702,79 @@ def _rule(styles: str, selector: str) -> str:
     )
     assert match, f"no rule found for {selector}"
     return match.group("body")
+
+
+def test_type_chips_keep_exactly_the_rows_their_count_promised(library_view):
+    """A chip is a category from the stats census, which counts exact types.
+
+    Filtering by "contains" let "verb 162" show pronominal and separable verbs
+    as well, so the count on the chip and the rows under it disagreed.
+    """
+    rows = library_view.split("  visibleRows(rows) {", 1)[1].split("\n  }", 1)[0]
+    assert '.trim().toLowerCase() === filter' in rows
+    assert ".includes(filter)" not in rows
+
+
+def test_a_glossary_visit_gives_the_capture_draft_back(capture_view):
+    """Arriving in the collected state from the glossary must not cost a draft.
+
+    Keeping what you have used to blank the field and its stored draft, which
+    is right when the field raised the duplicate and wrong when the glossary
+    handed the word over while an unrelated draft sat in the field.
+    """
+    collected = capture_view.split("  showCollected(", 1)[1].split("\n  }", 1)[0]
+    assert 'this.heldDraft = lookupText === this.input.value.trim() ? "" : this.input.value' in collected
+    dismiss = capture_view.split("  dismissToBlank(", 1)[1].split("\n  }", 1)[0]
+    assert "this.input.value = this.heldDraft" in dismiss
+    assert "writeStorage(this.draftKey(), this.heldDraft)" in dismiss
+    blank = capture_view.split("  showCapture(", 1)[1].split("\n  }", 1)[0]
+    assert 'this.heldDraft = ""' in blank
+
+
+def test_every_sheet_is_the_same_paper(styles):
+    """A white card on a rice-paper ground did not brighten the paper, it left
+    it: about 7 L* lighter and 4 C* less saturated in one step, so the open
+    glossary panel read as a different material. `--card` is now the warm
+    step the palette already owned as `--card-blank`, and that second token is
+    gone rather than kept as a near-duplicate."""
+    assert "--card-blank" not in styles
+    light = styles.split(":root {", 1)[1].split("}", 1)[0]
+    assert "--card: #faf8f5;" in light
+
+
+def test_selected_segment_speaks_the_chips_language(styles):
+    """Chips select with the hue; the segment used to select with a raised white
+    tab on a translucent track that resolved to an undeclared grey. One row,
+    one answer."""
+    pressed = _rule(styles, '.segmented button[aria-pressed="true"]')
+    assert "var(--hue)" in pressed and "var(--on-hue)" in pressed
+    assert "box-shadow" not in pressed
+    track = _rule(styles, ".segmented")
+    assert "background: var(--card);" in track
+    assert "color-mix" not in track
+
+
+def test_a_panel_closing_above_the_tapped_row_does_not_move_it(entry_list):
+    """Safari has no scroll anchoring, so a panel tweening shut above the row
+    just tapped carried that row up for 300ms. The panel above closes in one
+    step and its height goes back to the scroll position in the same frame."""
+    toggle = entry_list.split("function toggleRow(", 1)[1].split("\n}", 1)[0]
+    assert "Node.DOCUMENT_POSITION_FOLLOWING" in toggle
+    assert "collapseInPlace(panel)" in toggle
+    in_place = entry_list.split("function collapseInPlace(", 1)[1].split("\n}", 1)[0]
+    assert 'detail.style.transition = "none"' in in_place
+    assert "window.scrollBy({ top: -height" in in_place
+
+
+def test_a_late_record_grows_the_settled_panel(entry_list, library_view):
+    """A record landing after the open tween had released to auto replaced the
+    "Opening…" line with no transition and jumped the page by the panel's
+    height. The settled panel is pinned, repainted, and tweened to fit."""
+    paint = library_view.split("  paintDetail(", 1)[1].split("\n  }", 1)[0]
+    assert "refit(detail, () => detail.replaceChildren(inner))" in paint
+    refit = entry_list.split("export function refit(", 1)[1].split("\n}", 1)[0]
+    assert 'detail.style.height === "auto"' in refit
+    assert "detail.style.height = `${from}px`" in refit
+    assert "releaseWhenSettled(detail)" in refit
+    release = entry_list.split("function releaseWhenSettled(", 1)[1].split("\n}", 1)[0]
+    assert "transitionend" in release and "setTimeout" in release
