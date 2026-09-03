@@ -192,19 +192,30 @@ pytest -k "anki"
   results, and keep the rejected candidate's file. On 2026-09-03 the shipped
   prompts passed 9 of 20 words and produced 46 senses; the failures were
   slot-filling (three senses for "Kühlschrank"), invented senses ("a cold
-  person"), and a non-word accepted as a headword. The measured candidate
-  passed 18 with 33 senses by making one sense the default, requiring an
-  unforced example for any further sense, banning hedged definitions, and
-  asking for the English equivalent before any paraphrase. Two residuals are
+  person"), and a non-word accepted as a headword. The candidate that shipped
+  the same day passed 18 with 33 senses by making one sense the default,
+  requiring an unforced example for any further sense, banning hedged
+  definitions, and asking for the English equivalent before any paraphrase;
+  `results/shipped-2026-09-03.json` is its run as shipped. Two residuals are
   recorded there: the model keeps a literal noun sense ahead of the idiom the
   word lives in ("collimateur"), and a non-word it believes in ("forthaaren")
   survives a stronger spelling rule. A prompt cannot supply attestation the
-  model lacks; only a dictionary check could.
-- French word and expression generation stays within one lexical identity and
-  part of speech, preserves lexicalized inflected forms, and emits one to three
-  useful definition-or-usage-note entries with exactly one ordered example per
-  entry. Fewer genuine senses are better than padded or speculative ones; only
-  sentence analysis retains its explicit three-part prompt structure.
+  model lacks; only a dictionary check could. The German prompt's old
+  three-slot form and forced Present/Perfekt/Futur examples are the reason
+  every stored German entry has three senses and 83% of its verb entries end
+  in a future sentence; those entries predate the contract.
+- French and German word and expression generation share one measured
+  contract: one lexical identity and part of speech, one sense by default,
+  a further sense only when a reader of contemporary press, literary prose
+  and everyday conversation meets it regularly and an unforced example can be
+  written for it, senses ordered by how often that reader meets them, no
+  hedged definitions ("can also", "sometimes", "metaphorically" are banned),
+  at most one usage note on its own labelled line, the English equivalent
+  before any paraphrase, exactly one example per entry, and no forced tense.
+  A form no serious dictionary lists is not defined. Only sentence analysis
+  retains its explicit three-part structure. Both templates are literals in
+  `ai_prompts.py` generated from `scripts/prompt_panel/candidate_prompts.py`
+  after the panel measured them.
 - French and German directional translation prompts share the same fidelity
   floor while retaining language-specific idiom guidance: preserve agency,
   logical relations, quantifiers, modality, historical distance, structural

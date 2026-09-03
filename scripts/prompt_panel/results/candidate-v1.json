@@ -6,7 +6,7 @@
     "passed": 13,
     "count_ok": 17,
     "notes_ok": 20,
-    "first_ok": 17,
+    "first_ok": 18,
     "first_clean": 19,
     "required_ok": 19,
     "nothing_invented": 18,
@@ -690,7 +690,7 @@
       "score": {
         "count_ok": true,
         "notes_ok": true,
-        "first_ok": false,
+        "first_ok": true,
         "first_clean": true,
         "required_ok": false,
         "nothing_invented": true,

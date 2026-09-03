@@ -147,10 +147,28 @@ def test_french_prompt_uses_flexible_aligned_lexical_contract():
     normalized_prompt = " ".join(prompt.split())
 
     assert "one lexical identity" in normalized_prompt
-    assert "lexicalized plural" in normalized_prompt
-    assert "provide one to three entries" in normalized_prompt
+    assert "lexicalized inflected form" in normalized_prompt
+    assert "one sense by default" in normalized_prompt
     assert "exactly one example for each Definitions entry" in normalized_prompt
     assert "same headword and part of speech" in normalized_prompt
-    assert "never force an unnatural future-tense sentence" in normalized_prompt
+    assert "never force a future tense sentence" in normalized_prompt
     assert "Allocate your three definition slots" not in normalized_prompt
     assert "use Present for 1" not in normalized_prompt
+
+
+def test_german_prompt_shares_the_measured_lexical_contract():
+    """The German prompt was a generation behind: it still filled three slots,
+    forced Present/Perfekt/Futur examples, and invited wordplay speculation.
+    The panel in scripts/prompt_panel measured the ported contract before it
+    shipped; these lines are what the panel proved."""
+    prompt = get_language_config("de").prompt_template
+    normalized_prompt = " ".join(prompt.split())
+
+    assert "one lexical identity" in normalized_prompt
+    assert "one sense by default" in normalized_prompt
+    assert "exactly one example for each Definitions entry" in normalized_prompt
+    assert "never force a future tense sentence" in normalized_prompt
+    assert "Never define a form that no serious dictionary lists" in normalized_prompt
+    assert "Allocate your three definition slots" not in normalized_prompt
+    assert "use Present for 1" not in normalized_prompt
+    assert "double entendre" not in normalized_prompt

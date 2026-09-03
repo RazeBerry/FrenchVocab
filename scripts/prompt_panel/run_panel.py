@@ -94,12 +94,17 @@ def score(spec: dict[str, Any], parsed: Any, corrected: str, hedges: list[str]) 
         "parsed_ok": bool(definitions) and not parsed.parsing_warnings,
     }
     hedged = [d for d in lowered if any(h in d for h in hedges)]
-    sets = [content_words(d) for d in definitions]
+    # Restatement is judged between senses, since a usage note legitimately
+    # repeats the headword's field, and only when both sides carry enough
+    # content words for a ratio to mean anything: "Customs officer." against a
+    # note mentioning "cordon douanier" shares one word of two and is not a
+    # restatement.
+    sets = [content_words(d) for d in senses]
     overlaps = sum(
         1
         for i, a in enumerate(sets)
         for b in sets[i + 1:]
-        if a and b and len(a & b) / min(len(a), len(b)) >= 0.5
+        if len(a) >= 3 and len(b) >= 3 and len(a & b) / min(len(a), len(b)) >= 0.5
     )
     return {
         **checks,
