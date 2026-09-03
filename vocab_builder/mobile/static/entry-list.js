@@ -1,27 +1,172 @@
+/* Day groups are built here, from the `timestamp` every history record already
+   carries, so the ledger costs the server nothing. Labels are Today, Yesterday,
+   then weekday and date; each heading carries its own count. */
+const CALENDAR_DAY = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  day: "numeric",
+  month: "short",
+});
+
 export function renderEntries(container, entries, options = {}) {
   container.replaceChildren();
+  /* Alphabetical dividers would contradict a history-ordered list, so the two
+     groupings are separate options and only one can run. */
+  if (options.groupBy === "day") {
+    dayGroups(entries).forEach((group) => {
+      container.appendChild(divider("index-day", group.label, group.entries.length));
+      group.entries.forEach((entry) => appendRow(container, entry, options));
+    });
+    return;
+  }
+  if (options.grouped) {
+    /* Counted from the rows actually rendered rather than from the server's
+       census, so the heading stays true when a type chip narrows the list.
+       Over the whole collection the two agree: the letter below is the same
+       key the server sorted and counted by. */
+    letterGroups(entries).forEach((group) => {
+      container.appendChild(divider("index-letter", group.letter, group.entries.length));
+      group.entries.forEach((entry) => appendRow(container, entry, options));
+    });
+    return;
+  }
+  entries.forEach((entry) => appendRow(container, entry, options));
+}
+
+function appendRow(container, entry, options) {
+  const row = document.createElement("button");
+  row.type = "button";
+  row.className = "index-row";
+  row.setAttribute("aria-expanded", "false");
+  // The receipt names the word the server wrote, which the vocabulary file may
+  // have capitalized; the row is found by that word rather than by position,
+  // because a concurrent save can put another word above it.
+  if (options.justSaved && sameWord(entry.word, options.justSaved)) {
+    row.classList.add("is-just-saved");
+  }
+  row.appendChild(element("span", "index-word", entry.word));
+  const abbreviation = abbreviateType(entry.word_type);
+  if (abbreviation) row.appendChild(element("span", "index-type", abbreviation));
+  // The slim index row carries `gloss`; a history record and a search hit carry
+  // the definitions themselves. Both are the same row.
+  row.appendChild(glossNode(entry.gloss ?? entry.definitions?.[0] ?? "", options.highlight));
+  const mark = mergeMark(entry);
+  if (mark) row.appendChild(mark);
+  // A finder row has no detail to show yet: 573 of them would be 573 panels
+  // built for the one that gets opened. The owner fills it on open instead.
+  const detail = options.loadDetail ? emptyDetail() : buildDetail(entry);
+  row.addEventListener("click", () => {
+    if (options.loadDetail && row.getAttribute("aria-expanded") !== "true") {
+      // Before the tween, so a cached entry is measured at its real height.
+      options.loadDetail(entry, detail);
+    }
+    toggleRow(container, row, detail);
+  });
+  container.append(row, detail);
+}
+
+/* The searched fragment is a real <mark>, not a CSS decoration: a screen
+   reader announces the element and nothing else can say which word matched. */
+function glossNode(text, needle) {
+  const node = element("span", "index-gloss");
+  const seek = (needle || "").toLocaleLowerCase();
+  if (!seek) {
+    node.textContent = text;
+    return node;
+  }
+  const haystack = text.toLocaleLowerCase();
+  let at = 0;
+  for (let found = haystack.indexOf(seek); found !== -1; found = haystack.indexOf(seek, at)) {
+    node.appendChild(document.createTextNode(text.slice(at, found)));
+    node.appendChild(element("mark", "", text.slice(found, found + seek.length)));
+    at = found + seek.length;
+  }
+  node.appendChild(document.createTextNode(text.slice(at)));
+  return node;
+}
+
+/* A merge that added two senses used to look exactly like a new word. The
+   counts are the ones the save itself recorded — recomputing them here would
+   let the ledger disagree with what landed on disk. */
+function mergeMark(entry) {
+  if (entry.action !== "merge") return null;
+  const clauses = [
+    addedClause(entry.added?.definitions, "sense"),
+    addedClause(entry.added?.examples, "example"),
+  ].filter(Boolean);
+  if (clauses.length === 0) return null;
+  const mark = element("span", "index-mark", "merged · ");
+  mark.appendChild(element("strong", "", clauses.join(", ")));
+  return mark;
+}
+
+function addedClause(count, singular) {
+  const value = Number(count) || 0;
+  if (value <= 0) return "";
+  return `+${value} ${singular}${value === 1 ? "" : "s"}`;
+}
+
+/* One divider object. `.index-divider` carries the sticky chip; the kind adds
+   only its layout, and the count is a real element either way. */
+function divider(kind, label, count) {
+  const heading = element("p", `index-divider ${kind}`, label);
+  // The letter rail jumps to this heading, so the heading names itself rather
+  // than the rail re-deriving where each bucket starts.
+  if (kind === "index-letter") heading.dataset.letter = label;
+  heading.appendChild(element("span", "index-count", String(count)));
+  return heading;
+}
+
+function letterGroups(entries) {
+  const groups = [];
   let letter = null;
   entries.forEach((entry) => {
-    if (options.grouped) {
-      const next = indexLetter(entry.word);
-      if (next !== letter) {
-        letter = next;
-        const divider = element("p", "index-letter", letter);
-        container.appendChild(divider);
-      }
+    const next = indexLetter(entry.word);
+    if (next !== letter) {
+      letter = next;
+      groups.push({ letter, entries: [] });
     }
-    const row = document.createElement("button");
-    row.type = "button";
-    row.className = "index-row";
-    row.setAttribute("aria-expanded", "false");
-    row.appendChild(element("span", "index-word", entry.word));
-    const abbreviation = abbreviateType(entry.word_type);
-    if (abbreviation) row.appendChild(element("span", "index-type", abbreviation));
-    row.appendChild(element("span", "index-gloss", entry.definitions?.[0] || ""));
-    const detail = buildDetail(entry);
-    row.addEventListener("click", () => toggleRow(container, row, detail));
-    container.append(row, detail);
+    groups[groups.length - 1].entries.push(entry);
   });
+  return groups;
+}
+
+function dayGroups(entries) {
+  const groups = [];
+  let key = null;
+  entries.forEach((entry) => {
+    const next = dayKey(entry.timestamp);
+    if (next !== key) {
+      key = next;
+      groups.push({ label: dayLabel(new Date(entry.timestamp)), entries: [] });
+    }
+    groups[groups.length - 1].entries.push(entry);
+  });
+  return groups;
+}
+
+/* The day a record belongs to, in the reader's own timezone: history stores
+   UTC, and a word kept at 23:30 local is still that evening's word. */
+export function dayKey(timestamp) {
+  const date = new Date(timestamp);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function dayLabel(date) {
+  const today = new Date();
+  const key = dayKey(date);
+  if (key === dayKey(today)) return "Today";
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (key === dayKey(yesterday)) return "Yesterday";
+  // Assembled from parts so the order stays weekday, day, month whatever the
+  // reader's locale would otherwise impose.
+  const parts = CALENDAR_DAY.formatToParts(date);
+  const part = (type) => parts.find((entry) => entry.type === type)?.value || "";
+  return `${part("weekday")} ${part("day")} ${part("month")}`;
+}
+
+function sameWord(left, right) {
+  return (left || "").trim().toLocaleLowerCase() === (right || "").trim().toLocaleLowerCase();
 }
 
 export function renderEntryCard(container, entry) {
@@ -38,6 +183,20 @@ export function renderEntryCard(container, entry) {
 function buildDetail(entry, staticDetail = false) {
   const detail = element("div", "index-detail");
   if (!staticDetail) detail.inert = true;
+  detail.appendChild(detailInner(entry));
+  return detail;
+}
+
+function emptyDetail() {
+  const detail = element("div", "index-detail");
+  detail.inert = true;
+  detail.appendChild(element("div", "index-detail-inner"));
+  return detail;
+}
+
+/* The panel body, so a view that loads its entries lazily can build the same
+   content from the record it fetched instead of restating the layout. */
+export function detailInner(entry) {
   const inner = element("div", "index-detail-inner");
   const type = knownType(entry.word_type);
   if (type) inner.appendChild(element("p", "full-type", type));
@@ -54,8 +213,7 @@ function buildDetail(entry, staticDetail = false) {
     if (example.target) wrapper.appendChild(element("p", "target", example.target));
     inner.appendChild(wrapper);
   });
-  detail.appendChild(inner);
-  return detail;
+  return inner;
 }
 
 function toggleRow(container, row, detail) {
@@ -102,7 +260,7 @@ function reveal(row, detail) {
   const floor = window.innerHeight - (chrome ? chrome.getBoundingClientRect().height : 0);
   const overflow = detail.getBoundingClientRect().bottom - floor;
   if (overflow <= 0) return;
-  const sticky = detail.parentElement?.querySelector(".index-letter");
+  const sticky = detail.parentElement?.querySelector(".index-divider");
   const ceiling = sticky ? sticky.getBoundingClientRect().height : 0;
   const headroom = row.getBoundingClientRect().top - ceiling;
   const delta = Math.min(overflow, Math.max(0, headroom));
@@ -113,9 +271,20 @@ function reveal(row, detail) {
   });
 }
 
+/* The same expansions `normalize_word_key` applies in vocab_builder/models.py
+   before stripping accents. The divider has to agree with the order the server
+   sorted the rows into: a bare NFD pass files "Œuvre" under "#", which
+   would print that divider in the middle of the O block, and the letter rail
+   would offer an O the list never reaches. */
+const LIGATURES = [
+  ["ß", "ss"], ["ä", "ae"], ["ö", "oe"],
+  ["ü", "ue"], ["æ", "ae"], ["œ", "oe"],
+];
+
 function indexLetter(word) {
-  const first = (word || "").trim().charAt(0);
-  const base = first.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
+  let value = (word || "").trim().toLowerCase();
+  LIGATURES.forEach(([from, to]) => { value = value.split(from).join(to); });
+  const base = value.normalize("NFD").replace(/\p{Mn}/gu, "").charAt(0).toUpperCase();
   return /[A-Z]/.test(base) ? base : "#";
 }
 

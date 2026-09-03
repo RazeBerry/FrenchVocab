@@ -60,6 +60,11 @@ class PreviewNotFoundError(MobileServiceError):
     code = "preview_not_found"
 
 
+class EntryNotFoundError(MobileServiceError):
+    status_code = 404
+    code = "entry_not_found"
+
+
 class SaveFailedError(MobileServiceError):
     status_code = 500
     code = "save_failed"
@@ -357,6 +362,7 @@ class MobileVocabService:
                 action = preview.duplicate_action
                 added_definitions = len(preview.definitions)
                 added_examples = len(preview.examples)
+                history_metadata: dict[str, Any] = {}
                 if action == "variant":
                     word = self._unique_variant(word)
                 elif action == "merge" and preview.existing_word:
@@ -372,6 +378,18 @@ class MobileVocabService:
                     word = str(existing_entry["word"])
                     added_definitions = len(new_definitions)
                     added_examples = len(new_examples)
+                    # The history record has to state what this merge added, and
+                    # only the diff recomputed here against reloaded disk state
+                    # can say. After the write the added senses are simply part
+                    # of the entry, so a replayed history step could no longer
+                    # derive them and would report a merge that added nothing.
+                    history_metadata = {
+                        "added_definitions": list(new_definitions),
+                        "added_examples": [
+                            {"source": source, "target": target}
+                            for source, target in new_examples
+                        ],
+                    }
                     if added_definitions == 0 and added_examples == 0:
                         receipt = {
                             "word": word,
@@ -400,6 +418,7 @@ class MobileVocabService:
                     "anki_done": action == "merge",
                     "added_definitions": added_definitions,
                     "added_examples": added_examples,
+                    "history_metadata": history_metadata,
                     "created_at": datetime.now(timezone.utc).isoformat(),
                 }
                 self._transactions[token] = transaction
@@ -485,6 +504,10 @@ class MobileVocabService:
                 saved_word=word,
                 operation_id=operation_id,
                 action=("merge" if transaction.get("action") == "merge" else "new"),
+                # Missing precondition: a journal record written before this
+                # field existed. Its merge counts are display-only, so replay
+                # completes without them rather than failing on every restart.
+                history_metadata=transaction.get("history_metadata") or {},
             )
         if not transaction.get("anki_done"):
             try:
@@ -657,6 +680,7 @@ class MobileVocabService:
         saved_word: str,
         operation_id: str,
         action: str,
+        history_metadata: dict[str, Any],
     ) -> bool:
         logger = self.builder.history_logger
         if not logger or not logger.enabled:
@@ -666,6 +690,7 @@ class MobileVocabService:
         metadata: dict[str, Any] = {
             "surface": "mobile",
             "operation_id": operation_id,
+            **history_metadata,
         }
         if saved_word != preview.original_input:
             metadata.update(
@@ -888,11 +913,22 @@ class MobileVocabService:
 
     @staticmethod
     def _history_record_for_json(record: dict[str, Any]) -> dict[str, Any]:
-        return {
+        action = record.get("action", "new")
+        row = {
             "word": record.get("word", ""),
             "word_type": record.get("word_type", ""),
             "definitions": list(record.get("definitions", [])),
             "examples": list(record.get("examples", [])),
             "timestamp": record.get("timestamp", ""),
-            "action": record.get("action", "new"),
+            "action": action,
         }
+        if action == "merge":
+            # A merge is only legible next to a new word if it says how much it
+            # added, and the counts belong to the write that recorded them.
+            # The text itself is already in the reconciled entry.
+            metadata = record.get("metadata") or {}
+            row["added"] = {
+                "definitions": len(metadata.get("added_definitions") or []),
+                "examples": len(metadata.get("added_examples") or []),
+            }
+        return row

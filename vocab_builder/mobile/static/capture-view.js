@@ -1,5 +1,11 @@
-import { renderEntries } from "./entry-list.js";
+import { dayKey, renderEntries } from "./entry-list.js";
 import { el, ignoreCancelled, readStorage, setMessage, writeStorage } from "./ui.js";
+
+/* The strip is a day's work, not a fixed eight rows. Ask for the endpoint's
+   cap and show all of today, so a heavy session cannot silently drop this
+   morning's words, then enough earlier records to keep the strip useful. */
+const RECENT_LIMIT = 30;
+const RECENT_ROWS = 8;
 
 const HEADWORD_STEPS = [
   { max: 14, className: "hw--s1" },
@@ -19,6 +25,7 @@ export class CaptureView {
     this.languageName = "";
     this.expanded = false;
     this.pendingDuplicateText = "";
+    this.justSaved = "";
     this.slip = el("slip");
     this.input = el("entry-input");
     this.primary = el("primary-button");
@@ -38,6 +45,9 @@ export class CaptureView {
     this.language = status.language;
     this.languageName = status.language_name;
     el("entry-label").textContent = `${status.language_name} word or phrase`;
+    const total = Number(status.entry_count || 0);
+    el("library-link").textContent =
+      `All ${total.toLocaleString()} ${total === 1 ? "word" : "words"}`;
     if (changed) {
       this.input.value = readStorage(this.draftKey());
       this.showCapture();
@@ -49,6 +59,7 @@ export class CaptureView {
   reset() {
     this.preview = null;
     this.pendingDuplicateText = "";
+    this.justSaved = "";
     this.input.value = "";
     this.showCapture();
     renderEntries(el("recent-list"), []);
@@ -59,9 +70,17 @@ export class CaptureView {
 
   async refresh() {
     try {
-      const entries = await this.api.request("/api/recent?limit=8", {}, { scope: "recent" });
-      renderEntries(el("recent-list"), entries);
-      el("recent-empty").hidden = entries.length > 0;
+      const entries = await this.api.request(
+        `/api/recent?limit=${RECENT_LIMIT}`,
+        {},
+        { scope: "recent" },
+      );
+      const shown = ledgerWindow(entries);
+      renderEntries(el("recent-list"), shown, {
+        groupBy: "day",
+        justSaved: this.justSaved,
+      });
+      el("recent-empty").hidden = shown.length > 0;
     } catch (error) {
       if (!ignoreCancelled(error)) this.showMessage(error.message);
     }
@@ -134,8 +153,13 @@ export class CaptureView {
     );
   }
 
-  showCollected(existingEntry) {
+  /* The state a duplicate lands in, and the one the glossary opens for a word
+     you already hold. `lookupText` is what a further look-up would be asked
+     about: the text as typed when a duplicate raised this, and otherwise the
+     stored headword. */
+  showCollected(existingEntry, lookupText = existingEntry.word) {
     this.mode = "collected";
+    this.pendingDuplicateText = lookupText;
     this.preview = null;
     this.expanded = false;
     this.renderEntry(existingEntry, existingEntry.word);
@@ -283,6 +307,9 @@ export class CaptureView {
       return;
     }
     const text = this.pendingDuplicateText || this.input.value;
+    // The highlight marks the word this visit put there; asking for another
+    // one ends that visit.
+    this.justSaved = "";
     this.setBusy(true, "Looking it up…");
     this.showMessage("");
     try {
@@ -293,8 +320,7 @@ export class CaptureView {
       this.showPreview(preview);
     } catch (error) {
       if (error.code === "duplicate_entry" && error.details?.existing_entry) {
-        this.pendingDuplicateText = this.input.value.trim();
-        this.showCollected(error.details.existing_entry);
+        this.showCollected(error.details.existing_entry, this.input.value.trim());
       }
       else if (!ignoreCancelled(error)) this.showMessage(error.message);
     } finally {
@@ -313,6 +339,9 @@ export class CaptureView {
         body: JSON.stringify({ token: preview.token, use_original: useOriginal }),
       }, { scope: "capture-save" });
       this.dismissToBlank({ preserveMessage: true });
+      // Remembered by word, not by position: the list is re-fetched after the
+      // save and another session can have written above this row.
+      this.justSaved = saved.word || "";
       const addedDefinitions = saved.added_definitions || 0;
       const addedExamples = saved.added_examples || 0;
       const mergedAddition = addedDefinitions
@@ -473,6 +502,14 @@ export class CaptureView {
       && (this.preview.new_definitions?.length || 0) === 0
       && (this.preview.new_examples?.length || 0) === 0;
   }
+}
+
+/* Today in full, then earlier records up to the usual eight rows. The list
+   arrives newest first, so the window is a prefix of it. */
+function ledgerWindow(entries) {
+  const today = dayKey(new Date().toISOString());
+  const fromToday = entries.filter((entry) => dayKey(entry.timestamp) === today).length;
+  return entries.slice(0, Math.max(fromToday, RECENT_ROWS));
 }
 
 function scaleHeadword(node, text) {

@@ -195,7 +195,6 @@ button { -webkit-tap-highlight-color: transparent; }
   letter-spacing: 0.13em;
   text-transform: uppercase;
 }
-.is-error { color: var(--danger) !important; }
 
 /* ---------------- top bar: colour carries the language ---------------- */
 .bar {
@@ -234,11 +233,18 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .count {
   margin: 0 0 0 auto;
+  padding: 0 6px;
+  min-height: var(--tap);
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
   color: var(--dim);
   font-size: var(--t-sm);
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
 }
 .count strong { color: var(--ink); font-weight: 650; }
+.count:active { background: var(--hue-wash); }
 
 /* Theme toggle: a half-filled circle that flips, echoing the language dots
    rather than introducing a second icon vocabulary. */
@@ -631,11 +637,15 @@ textarea.hw::placeholder { color: var(--ghost); }
    the scroll position never moves. */
 .index { margin-top: 8px; }
 
-.index-letter {
+/* One divider treatment: the alphabetical chip over the collection and the
+   day heading over the ledger are the same object, so the rule is shared and
+   only the content differs. */
+.index-divider {
   position: sticky;
   top: 0;
   z-index: 2;
   padding: 5px 2px;
+  margin: 14px 0 2px;
   /* --bg is the gradient's *lower* stop, but a chip pinned at top: 0 sits
      against its upper one. Paint the same viewport-fixed gradient instead. */
   background: var(--page);
@@ -647,9 +657,21 @@ textarea.hw::placeholder { color: var(--ghost); }
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
+.index-day { display: flex; gap: 8px; align-items: baseline; }
+.index-letter { display: flex; justify-content: space-between; align-items: baseline; }
+.index-count {
+  color: var(--dim);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
 
 .index-row {
   display: flex;
+  /* Only the merge mark ever wraps: the three items above it cannot exceed the
+     row, and the mark asks for a line of its own. */
+  flex-wrap: wrap;
   gap: 9px;
   align-items: baseline;
   width: 100%;
@@ -663,6 +685,25 @@ textarea.hw::placeholder { color: var(--ghost); }
   text-align: left;
   cursor: pointer;
 }
+/* Where the arrow keys are, wearing the open row's own hue rule so the
+   keyboard introduces no second vocabulary of marks. Focus draws its own ring. */
+.index-row.is-cursor { border-left-color: var(--hue); }
+
+/* The word this visit kept, wearing the open row's own hue rule and wash so
+   it introduces no new colour. Declared before the open row so opening it
+   still takes the card ground. Cleared on the next look-up. */
+.index-row.is-just-saved {
+  border-left-color: var(--hue);
+  background: var(--hue-wash);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .index-row.is-just-saved { animation: row-land var(--dur-slow) var(--ease) both; }
+  @keyframes row-land {
+    from { transform: translateX(-6px); }
+    to { transform: none; }
+  }
+}
+
 .index-row[aria-expanded="true"] {
   border-left-color: var(--hue);
   border-bottom-color: transparent;
@@ -699,9 +740,62 @@ textarea.hw::placeholder { color: var(--ghost); }
   text-overflow: ellipsis;
   transition: opacity var(--dur-fast) ease;
 }
+/* The searched fragment is content, so it is a real <mark> in the row rather
+   than a decoration CSS paints over it. */
+.index-gloss mark {
+  padding: 0 1px;
+  color: var(--ink);
+  background: var(--hue-wash);
+}
+
+/* A merge that added two senses used to look exactly like a new word. The
+   counts come from the save that wrote the record. */
+.index-mark {
+  flex: 1 0 100%;
+  margin-top: 2px;
+  color: var(--dim);
+  font-size: var(--t-2xs);
+  text-align: right;
+}
+.index-mark strong { color: var(--pending); font-weight: 650; }
+
 /* Fade rather than un-display: the row keeps its width, so opening a word
    never nudges the layout sideways. */
 .index-row[aria-expanded="true"] .index-gloss { opacity: 0; }
+
+/* One line per word is right on a 390px phone. At the desktop frame it is not:
+   a right-aligned nowrap gloss makes the eye jump a different distance on every
+   row, and clipping loses the ending of a quarter of French glosses and half of
+   German ones. Wide, the row becomes a table — headword column (15ch covers the
+   French p90 headword of 16 characters, with the ellipsis rule already in
+   place), badge, then a left-aligned gloss clamped to two lines, which holds
+   about 170 characters and so clears p90 in both collections. */
+@media (min-width: 560px) {
+  .index-row {
+    display: grid;
+    /* The badge track is fixed and the badge is right-aligned inside it, so
+       every gloss starts at one left edge. An `auto` track sized itself to the
+       row's own badge and pushed a "v. pron." row's gloss about 30px past its
+       neighbours. 3.5rem clears the longest abbreviation ("V. PRON." measures
+       49.6px at --t-3xs with its letter-spacing). */
+    grid-template-columns: minmax(0, 15ch) 3.5rem minmax(0, 1fr);
+    gap: 0 9px;
+  }
+  .index-word { max-width: none; }
+  .index-type { text-align: right; }
+  .index-gloss {
+    display: -webkit-box;
+    /* Placed, not auto-flowed: an entry with no part of speech renders no
+       badge, and the gloss would otherwise slide into the badge's column. */
+    grid-column: 3;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    text-align: left;
+  }
+  .index-mark { grid-column: 2 / 4; text-align: left; }
+}
 
 /* height:auto cannot be transitioned, so app.js measures the panel and drives an
    explicit pixel height, then releases it to auto once the animation lands.
@@ -754,6 +848,86 @@ textarea.hw::placeholder { color: var(--ghost); }
   font-variant-numeric: tabular-nums;
 }
 .empty-state { margin: 16px 0 2px; color: var(--dim); font-size: var(--t-sm); text-align: center; }
+.index-loading { margin: 4px 0; color: var(--dim); font-size: var(--t-sm); }
+
+/* ---------------- the glossary ----------------
+   The collection is scanned, not read: search, chips and a letter rail sit
+   above one index, and the row opens the entry in place. */
+.index-controls { display: flex; gap: 9px; align-items: start; }
+.index-controls .type-chips { flex: 1 1 auto; min-width: 0; }
+.sort-segment { flex: none; }
+
+.index-layout { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+
+/* The rail is offered only over the whole collection in alphabetical order,
+   which is the only state where its census and its jumps are both true. The
+   rail as a whole is the drag target: 27 letters at the 44px floor would be
+   1,188px of screen, so the letters inside it are marks, not controls. */
+.rail {
+  position: sticky;
+  top: max(8px, calc(50dvh - 232px));
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-left: 7px;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.rail-letter {
+  width: 22px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  color: var(--ink-soft);
+  background: transparent;
+  font-size: var(--t-3xs);
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+}
+/* A letter with no words is not a destination. Said in colour and weight, not
+   opacity: the letter is its own label, and fading it fades that label. */
+.rail-letter[aria-disabled="true"] {
+  color: var(--dim);
+  font-weight: 400;
+  cursor: default;
+}
+.rail-letter.is-current { color: var(--on-hue); background: var(--hue); }
+
+/* Shown only while a finger is on the rail, in the face the collection uses
+   for words. Placed against the rail by the view, which knows where it is. */
+.rail-bubble {
+  position: fixed;
+  z-index: 9;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  color: var(--on-hue);
+  background: var(--hue);
+  font-family: var(--display);
+  font-size: var(--t-3xl);
+  line-height: 1;
+  box-shadow: var(--card-shadow);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+/* One action at the foot of the open panel. Practice and Anki selection wait
+   for the views they would hand off to. */
+.entry-actions { display: flex; margin-top: 13px; }
+.entry-actions .ghost-button {
+  min-height: var(--tap);
+  padding: 0 14px;
+  border-radius: var(--r-xs);
+  font-size: var(--t-xs);
+  font-weight: 650;
+  cursor: pointer;
+}
 
 /* ---------------- install tip and footer ---------------- */
 .install-tip {
@@ -1010,7 +1184,6 @@ footer {
 .entry-card-word { margin: 4px 0 8px; font-family: var(--display); font-size: var(--t-3xl); font-weight: 400; }
 .index-detail.is-static { border-left: 0; }
 .index-detail.is-static .index-detail-inner { padding-inline: 0; }
-.load-more { width: 100%; margin-top: 12px; }
 
 .mode-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
 .mode-button {
@@ -1105,7 +1278,7 @@ footer {
   left: 0;
   z-index: 8;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   max-width: 620px;
   min-height: calc(62px + env(safe-area-inset-bottom));
   padding: 5px max(8px, env(safe-area-inset-right)) env(safe-area-inset-bottom) max(8px, env(safe-area-inset-left));
@@ -1116,7 +1289,9 @@ footer {
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
 }
-:root[data-translation="false"] .tabbar { grid-template-columns: 1fr; }
+/* English is monolingual, so the translator is removed and the glossary keeps
+   the collection one tap away. */
+:root[data-translation="false"] .tabbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .tab {
   display: grid;
   place-items: center;

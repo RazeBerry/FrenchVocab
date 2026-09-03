@@ -19,6 +19,7 @@ from vocab_builder.core.llm_coordinator import LLMCoordinator
 from vocab_builder.core.vocab import VocabBuilder
 from vocab_builder.mobile.app import create_app
 from vocab_builder.mobile.catalog import MobileVocabCatalog
+from vocab_builder.models import WordEntry
 from vocab_builder.mobile.service import (
     AIUnavailableError,
     DuplicateEntryError,
@@ -787,3 +788,215 @@ def test_service_worker_precaches_the_unversioned_shell_assets():
         "tools-view.js",
     ):
         assert f'"/static/{module}"' in worker
+
+
+def get_api(app, path: str):
+    """Issue one private GET against the ASGI app."""
+
+    async def exercise_app():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.get(path)
+
+    import asyncio
+
+    return asyncio.run(exercise_app())
+
+
+def seed_entries(service, entries: list[tuple[str, str, str]]) -> None:
+    """Write entries straight to the collection, bypassing acquisition order."""
+    report = service.builder.add_vocab_entries(
+        [
+            WordEntry(word=word, type=word_type, definitions=[gloss], examples=[])
+            for word, word_type, gloss in entries
+        ],
+        on_duplicate="error",
+    )
+    assert report.count("added") == len(entries)
+
+
+def ai_response_for(word: str, definition: str) -> str:
+    return f"""Correctly Spelt Word: {word}
+Word Type: noun
+Definitions:
+a. {definition}
+Examples:
+1. Voici {word} dans une phrase.
+   [Here is {word} in a sentence.]
+"""
+
+
+def test_library_index_ships_slim_rows_sorted_by_the_collection_key(
+    tmp_path,
+    monkeypatch,
+):
+    """A letter rail needs the whole index, and the letters it can jump to.
+
+    The rail's counts have to agree with the order the rows arrive in, so an
+    accented headword files under its base letter instead of trailing the
+    Latin block the way a raw code-point sort would leave it.
+    """
+    service = build_service(tmp_path, monkeypatch)
+    seed_entries(
+        service,
+        [
+            ("Zèbre", "noun", "A zebra."),
+            ("Étourdissant", "adjective", "Stunning, dazzling."),
+            ("Dot", "noun", "Dowry brought by a bride."),
+        ],
+    )
+    app = create_app(service)
+
+    response = get_api(app, "/api/library/index")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sort"] == "alpha"
+    assert payload["total"] == 4  # the three seeded words and the sample entry
+    assert payload["letters"] == {"A": 1, "D": 1, "E": 1, "Z": 1}
+    assert [item["word"] for item in payload["items"]] == [
+        "agaçante",
+        "Dot",
+        "Étourdissant",
+        "Zèbre",
+    ]
+    assert payload["items"][1:] == [
+        {"word": "Dot", "word_type": "noun", "gloss": "Dowry brought by a bride."},
+        {
+            "word": "Étourdissant",
+            "word_type": "adjective",
+            "gloss": "Stunning, dazzling.",
+        },
+        {"word": "Zèbre", "word_type": "noun", "gloss": "A zebra."},
+    ]
+
+
+def test_library_index_added_sort_follows_the_anki_acquisition_order(
+    tmp_path,
+    monkeypatch,
+):
+    """The glossary and the deck must agree on what "newest" means.
+
+    Acquisition order is the order the Anki manager already persists, so the
+    index reuses it rather than re-deriving one from history. An entry that
+    order has never seen cannot claim a position in it and follows the ordered
+    words alphabetically.
+    """
+    service = build_service(tmp_path, monkeypatch)
+    tokens = iter(("preview-token-one", "preview-token-two"))
+    service._token_factory = lambda: next(tokens)
+    for word, definition in (("dot", "Dowry."), ("zèbre", "A zebra.")):
+        service.builder.client.response = ai_response_for(word, definition)
+        service.save(service.preview(word).token)
+    seed_entries(service, [("Étourdissant", "adjective", "Stunning.")])
+    app = create_app(service)
+
+    response = get_api(app, "/api/library/index?sort=added")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sort"] == "added"
+    assert service.builder.get_anki_manager().entry_order == (
+        "agaçante",
+        "dot",
+        "zèbre",
+    )
+    assert [item["word"] for item in payload["items"]] == [
+        "Zèbre",
+        "Dot",
+        "agaçante",
+        "Étourdissant",
+    ]
+
+
+def test_library_index_rejects_an_unknown_sort(tmp_path, monkeypatch):
+    """An unrecognised order is a rejected request, never a quiet default."""
+    service = build_service(tmp_path, monkeypatch)
+    app = create_app(service)
+
+    response = get_api(app, "/api/library/index?sort=oldest")
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_request"
+
+
+def test_library_entry_route_answers_with_one_full_entry_or_404(tmp_path, monkeypatch):
+    """The row is a finder; opening it loads the record the slim index omits."""
+    service = build_service(tmp_path, monkeypatch)
+    service.save(service.preview("chrysantheme").token)
+    app = create_app(service)
+
+    found = get_api(app, "/api/library/entry?word=CHRYSANTHEME")
+    missing = get_api(app, "/api/library/entry?word=introuvable")
+
+    assert found.status_code == 200
+    assert found.json()["word"] == "Chrysanthème"
+    assert len(found.json()["definitions"]) == 2
+    assert found.json()["examples"][0]["source"].startswith("Elle a posé")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "entry_not_found"
+
+
+def test_recent_merge_records_count_what_the_merge_added(tmp_path, monkeypatch):
+    """A merge that added two senses must not read like a new word.
+
+    The counts come from the diff computed against reloaded disk state at save
+    time, because after the write those senses are simply part of the entry.
+    """
+    service = build_service(tmp_path, monkeypatch)
+    tokens = iter(("preview-token-one", "preview-token-two"))
+    service._token_factory = lambda: next(tokens)
+    service.save(service.preview("chrysantheme").token)
+    service.builder.client.response = MERGE_AI_RESPONSE
+    merged = service.save(
+        service.preview("chrysanthème", duplicate_action="merge").token
+    )
+    app = create_app(service)
+
+    response = get_api(app, "/api/recent")
+
+    assert merged["action"] == "merged"
+    assert response.status_code == 200
+    merge_row, new_row = response.json()
+    assert merge_row["action"] == "merge"
+    assert merge_row["added"] == {"definitions": 1, "examples": 1}
+    assert new_row["action"] == "new"
+    assert "added" not in new_row
+
+
+def test_journal_written_before_merge_metadata_existed_still_replays(
+    tmp_path,
+    monkeypatch,
+):
+    """The request journal outlives a deploy, so replay must read older records.
+
+    A transaction journaled by the previous release has its primary write on
+    disk and its history step still pending, but no `history_metadata`. The
+    repair loop swallows exceptions, so demanding that field would not crash:
+    it would leave the entry permanently pending and never append its history.
+    """
+    service = build_service(tmp_path, monkeypatch)
+    logger = service.builder.history_logger
+    real_log = logger.log_vocab_entry
+    monkeypatch.setattr(logger, "log_vocab_entry", lambda **_kwargs: False)
+    preview = service.preview("chrysantheme")
+    receipt = service.save(preview.token)
+    monkeypatch.setattr(logger, "log_vocab_entry", real_log)
+
+    state_path = service._state_store.path
+    journal = json.loads(state_path.read_text(encoding="utf-8"))
+    for transaction in journal["transactions"].values():
+        del transaction["history_metadata"]
+    state_path.write_text(json.dumps(journal), encoding="utf-8")
+
+    restarted = build_service(tmp_path, monkeypatch)
+
+    assert receipt["sync_pending"] is True
+    assert "history_metadata" not in journal["transactions"][preview.token]
+    assert restarted.status()["sync_pending"] == 0
+    assert logger.has_operation(preview.token, flow="vocab")
+    replayed = restarted.save(preview.token)
+    assert replayed["word"] == "chrysanthème"
+    assert replayed["sync_pending"] is False
+    content = (tmp_path / "FrenchVocab.tex").read_text(encoding="utf-8")
+    assert content.count(r"\entry{Chrysanthème}") == 1

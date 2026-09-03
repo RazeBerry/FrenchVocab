@@ -5,10 +5,13 @@ from __future__ import annotations
 from collections import Counter
 import random
 import threading
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from vocab_builder.core.text_utils import sanitize_user_text
 from vocab_builder.core.vocab_application import VocabCapturePort
+
+
+IndexSort = Literal["alpha", "added"]
 
 
 class MobileLibrary:
@@ -62,6 +65,45 @@ class MobileLibrary:
             "page_size": safe_size,
             "total": total,
             "has_more": start + safe_size < total,
+        }
+
+    def index(self, *, sort: IndexSort = "alpha") -> dict[str, Any]:
+        """Return every entry as a finder row, with the collection's letter census.
+
+        A letter rail has to know where each letter begins, which the paged
+        endpoint cannot say, so this ships one slim row per entry instead of
+        the full record the detail view loads. ``added`` reuses the acquisition
+        order the Anki manager already persists, so the glossary and the deck
+        agree on what "newest" means; entries that order does not know follow
+        alphabetically.
+        """
+        with self._state_lock:
+            rows = {
+                key: _index_row(entry)
+                for key, entry in self.builder.word_entries.items()
+            }
+            positions = (
+                self.builder.get_anki_manager().acquisition_positions(rows.keys())
+                if sort == "added"
+                else {}
+            )
+
+        sort_keys = {
+            key: self.builder.normalize_word(row["word"]) for key, row in rows.items()
+        }
+        alphabetical = sorted(rows, key=sort_keys.__getitem__)
+        items = [
+            rows[key]
+            for key in sorted(positions, key=positions.__getitem__, reverse=True)
+        ]
+        items += [rows[key] for key in alphabetical if key not in positions]
+
+        letters = Counter(_letter_bucket(value) for value in sort_keys.values())
+        return {
+            "items": items,
+            "letters": dict(sorted(letters.items())),
+            "total": len(items),
+            "sort": sort,
         }
 
     def entry(self, word: str) -> Optional[dict[str, Any]]:
@@ -123,4 +165,26 @@ def _type_text(value: Any) -> str:
     return str(value or "")
 
 
-__all__ = ["MobileLibrary", "entry_for_json"]
+def _index_row(entry: dict[str, Any]) -> dict[str, str]:
+    """Reduce one repository record to what an index row can show."""
+    definitions = list(entry.get("definitions_list", []))
+    return {
+        "word": str(entry.get("word", "")),
+        "word_type": _type_text(entry.get("type", "")),
+        "gloss": str(definitions[0]) if definitions else "",
+    }
+
+
+def _letter_bucket(normalized_word: str) -> str:
+    """File a word under the initial of the key the collection is sorted by.
+
+    Taking the letter from the same normalized key that orders the index is
+    what keeps a bucket contiguous: the key already folds accents and expands
+    the ligatures that would otherwise scatter a word away from its heading
+    ("OEuvre" sorts among the O's, so it is counted there).
+    """
+    initial = normalized_word[:1]
+    return initial.upper() if initial.isascii() and initial.isalpha() else "#"
+
+
+__all__ = ["IndexSort", "MobileLibrary", "entry_for_json"]

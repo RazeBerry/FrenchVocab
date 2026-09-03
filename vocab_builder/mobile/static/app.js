@@ -191,7 +191,12 @@ async function refresh() {
 
 async function bootstrap() {
   applyTheme(currentTheme());
-  views.library = new LibraryView(api);
+  // The glossary hands an entry over; capture owns what happens to a word you
+  // already hold, so no vocabulary rule crosses into the glossary.
+  views.library = new LibraryView(api, async (entry) => {
+    views.capture.showCollected(entry);
+    await showView("capture");
+  });
   views.translate = new TranslationView(api, dataChanged);
   views.capture = new CaptureView(api, dataChanged, async (text) => {
     await showView("translate");

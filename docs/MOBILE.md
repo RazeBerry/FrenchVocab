@@ -19,9 +19,9 @@ Mac browser / Rich CLI ─┘
   explicit merge/variant choices, sentence routing, atomic save, history, and
   Anki ordering as the CLI. Translate, Library, Practice, and Tools expose the
   remaining non-interactive workflows. For the current production presentation,
-  the bottom navigation shows only Add and Translate; the other implemented
-  views are hidden until their phone UI is ready. English is monolingual and
-  therefore presents Add alone.
+  the bottom navigation shows Add, Translate, and the glossary-backed Library;
+  Practice and Tools remain hidden until their phone UI is ready. English is
+  monolingual and therefore presents Add and Library.
 - On Mac, use the same website or run `vocab` for the Rich terminal interface.
   Menus and text editing run locally while complete operations use the same
   private HTTPS API as the phone. The VM remains authoritative; neither surface

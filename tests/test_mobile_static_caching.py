@@ -96,7 +96,7 @@ def test_static_assets_still_answer_conditional_requests(tmp_path, monkeypatch):
     assert asyncio.run(conditional()).status_code == 304
 
 
-def test_production_navigation_exposes_only_capture_and_translation(tmp_path, monkeypatch):
+def test_production_navigation_exposes_capture_translation_and_library(tmp_path, monkeypatch):
     index = _get(_app(tmp_path, monkeypatch), "/").text
     matches = re.findall(
         r'<button class="tab[^\"]*"([^>]*)data-tab="([^\"]+)"([^>]*)>',
@@ -106,7 +106,8 @@ def test_production_navigation_exposes_only_capture_and_translation(tmp_path, mo
 
     assert "hidden" not in tabs["capture"]
     assert "hidden" not in tabs["translate"]
-    assert "hidden" in tabs["library"]
+    assert "hidden" not in tabs["library"]
     assert "hidden" in tabs["practice"]
     assert "hidden" in tabs["tools"]
-    assert re.search(r'data-go="library"[^>]*hidden', index)
+    # The ledger also keeps its contextual route into the same collection.
+    assert not re.search(r'data-go="library"[^>]*hidden', index)

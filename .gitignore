@@ -59,5 +59,8 @@ docs/*
 # Linter and tool caches
 .ruff_cache/
 
+# Repository-local scratch artifacts
+/tmp/
+
 # Claude Code local settings
 .claude/

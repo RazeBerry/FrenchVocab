@@ -14,8 +14,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, SecretStr
 
 from .catalog import MobileVocabCatalog
+from .library import IndexSort
 from .service import (
     AIUnavailableError,
+    EntryNotFoundError,
     MobileServiceError,
     MobileVocabService,
     PrivateAccessError,
@@ -218,6 +220,23 @@ def create_app(
             page=page,
             page_size=page_size,
         )
+
+    @app.get("/api/library/index", dependencies=private)
+    def library_index(
+        sort: IndexSort = Query(default="alpha"),
+        service: MobileVocabService = Depends(resolve_service),
+    ) -> dict[str, Any]:
+        return service.library.index(sort=sort)
+
+    @app.get("/api/library/entry", dependencies=private)
+    def library_entry(
+        word: str = Query(min_length=1, max_length=200),
+        service: MobileVocabService = Depends(resolve_service),
+    ) -> dict[str, Any]:
+        entry = service.library.entry(word)
+        if entry is None:
+            raise EntryNotFoundError("That word is not in this collection.")
+        return entry
 
     @app.get("/api/library/stats", dependencies=private)
     def library_stats(

@@ -19,7 +19,19 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Callable, TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    Callable,
+    TYPE_CHECKING,
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 from vocab_builder.anki_exporter import (
     AnkiExporter,
@@ -663,6 +675,22 @@ class AnkiExportManager:
             separators=(",", ":"),
         )
         return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+    def acquisition_positions(self, words: Iterable[str]) -> Dict[str, int]:
+        """Locate each given word in the persisted acquisition order, oldest first.
+
+        The manager owns both the order and the key it is stored under, so a
+        reader that wants to present entries in acquisition order asks where
+        they sit instead of re-deriving either rule from history. Words the
+        order does not know are simply absent from the result.
+        """
+        ranks = {key: position for position, key in enumerate(self._entry_order)}
+        positions: Dict[str, int] = {}
+        for word in words:
+            position = ranks.get(self._entry_order_key(word))
+            if position is not None:
+                positions[word] = position
+        return positions
 
     def register_entry_order(self, word: str) -> bool:
         """Persist a newly saved word after existing order without re-sorting it."""

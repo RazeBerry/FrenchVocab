@@ -33,7 +33,9 @@
     <div class="app">
       <header class="bar">
         <div class="langs" id="languages" role="group" aria-label="Collection"></div>
-        <p class="count"><strong id="entry-count">&mdash;</strong> <span id="entry-noun">words</span></p>
+        <!-- The one place the whole collection is named on every screen, so it
+             is also the way into it. -->
+        <button class="count" id="count-link" data-go="library" type="button"><strong id="entry-count">&mdash;</strong> <span id="entry-noun">words</span></button>
         <button class="theme" id="theme-toggle" type="button">
           <span class="sr-only" id="theme-label">Switch to dark theme</span>
         </button>
@@ -90,7 +92,7 @@
           <button class="tertiary" id="variant-button" type="button" hidden>Keep a separate variant instead</button>
           <p class="message" id="form-message" role="alert"></p>
           <section class="recent-strip">
-            <div class="section-heading"><h2>Recently kept</h2><button data-go="library" type="button" hidden>Open library</button></div>
+            <div class="section-heading"><h2>Recently kept</h2><button id="library-link" data-go="library" type="button">All words</button></div>
             <div class="index compact" id="recent-list"></div>
             <p class="empty-state" id="recent-empty">Your recent additions will appear here.</p>
           </section>
@@ -116,15 +118,24 @@
         </section>
 
         <section class="view" id="view-library" data-view="library" hidden>
-          <div class="page-heading"><p class="eyebrow">Library</p><h1>Your whole collection</h1><p id="library-summary">Search every word, type, meaning, and example.</p></div>
+          <div class="page-heading"><p class="eyebrow">Glossary</p><h1>Your whole collection</h1><p id="library-summary">Search every word, type, meaning, and example.</p></div>
           <label class="search library-search"><span aria-hidden="true">&#8981;</span><span class="sr-only">Search collection</span><input id="search-input" type="search" placeholder="Search everything" autocomplete="off"></label>
-          <div class="type-chips" id="type-chips"></div>
+          <div class="index-controls">
+            <div class="type-chips" id="type-chips"></div>
+            <div class="segmented sort-segment" id="library-sort" role="group" aria-label="Order"></div>
+          </div>
           <div class="library-actions"><button class="quiet-button" id="random-button" type="button">Random flashcard</button><button class="quiet-button" id="stats-button" type="button">Collection stats</button></div>
           <div class="stats-panel" id="stats-panel" hidden></div>
-          <div class="index" id="entry-list" aria-live="polite"></div>
+          <div class="index-layout">
+            <div class="index" id="entry-list"></div>
+            <nav class="rail" id="letter-rail" aria-label="Jump to a letter" hidden></nav>
+          </div>
           <p class="empty-state" id="empty-state">No entries match that search.</p>
-          <button class="quiet-button load-more" id="library-more" type="button" hidden>Load more</button>
-          <p class="index-foot" id="index-foot" hidden></p>
+          <!-- The summary of what just changed, rather than the 573 rows above
+               it: a live region on the list itself would announce all of them. -->
+          <p class="index-foot" id="index-foot" aria-live="polite" hidden></p>
+          <p class="message" id="library-message" role="alert"></p>
+          <div class="rail-bubble" id="rail-bubble" aria-hidden="true" hidden></div>
         </section>
 
         <section class="view" id="view-practice" data-view="practice" hidden>
@@ -198,8 +209,8 @@
       </footer>
       <nav class="tabbar" aria-label="Main navigation">
         <button class="tab is-active" data-tab="capture" type="button"><span aria-hidden="true">＋</span><small>Add</small></button>
+        <button class="tab" data-tab="library" type="button"><span aria-hidden="true">≡</span><small>Glossary</small></button>
         <button class="tab" data-tab="translate" type="button"><span aria-hidden="true">↔</span><small>Translate</small></button>
-        <button class="tab" data-tab="library" type="button" hidden><span aria-hidden="true">≡</span><small>Library</small></button>
         <button class="tab" data-tab="practice" type="button" hidden><span aria-hidden="true">◇</span><small>Practice</small></button>
         <button class="tab" data-tab="tools" type="button" hidden><span aria-hidden="true">···</span><small>Tools</small></button>
       </nav>
