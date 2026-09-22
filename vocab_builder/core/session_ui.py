@@ -120,36 +120,6 @@ def build_welcome_message(app: Any, provider_name: str) -> Tuple[str, str]:
     return message, panel_title
 
 
-def refresh_anki_snapshot_on_exit(app: Any) -> Optional[str]:
-    """Refresh the complete Anki package without blocking a clean exit."""
-    from vocab_builder.core.anki_manager import AnkiSnapshotStatus, exit_snapshot_enabled
-
-    if not exit_snapshot_enabled():
-        return None
-
-    try:
-        result = app._ensure_anki_manager().export_snapshot_if_changed(
-            export_context="clean_exit",
-            quiet=True,
-        )
-    except Exception as exc:
-        app.ui.warning(
-            "Could not refresh the Anki snapshot on exit; "
-            f"your vocabulary remains safely stored in LaTeX ({exc})."
-        )
-        return None
-
-    if result.status == AnkiSnapshotStatus.FAILED:
-        app.ui.warning(
-            "Could not refresh the Anki snapshot on exit; "
-            "your vocabulary remains safely stored in LaTeX."
-        )
-        return None
-    if result.status == AnkiSnapshotStatus.EXPORTED and result.path is not None:
-        return str(result.path)
-    return None
-
-
 def show_main_menu(app: Any) -> str:
     supports_translation = app.language_config.supports_translation
     eng_fr_count = 0

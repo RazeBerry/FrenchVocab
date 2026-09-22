@@ -27,7 +27,6 @@ from .text_utils import detect_input_type as classify_input_type, sanitize_user_
 from .menu_loop import main_menu_loop
 from .session_ui import (
     build_welcome_message,
-    refresh_anki_snapshot_on_exit,
     resolve_welcome_provider_name,
     show_main_menu,
     show_post_translation_menu,
@@ -1042,8 +1041,6 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
             if self.verbose:
                 self.ui.debug(f"Exit alphabetization skipped: {exc}")
 
-        snapshot_path = refresh_anki_snapshot_on_exit(self)
-
         language_name = self.language_config.display_name
         app_title = self._ui_text("app.title", f"{language_name} Vocabulary LaTeX Builder")
         token_summary = self._format_token_summary()
@@ -1053,11 +1050,6 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
         )
         if token_summary:
             message += f"\n\n[#E67E50]Session tokens[/#E67E50]: {token_summary}"
-        if snapshot_path:
-            message += (
-                "\n\n[bold green]Anki snapshot refreshed:[/bold green] "
-                f"{snapshot_path}"
-            )
         self.ui.panel(
             message,
             title="Goodbye!",

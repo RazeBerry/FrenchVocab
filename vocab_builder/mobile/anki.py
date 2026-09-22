@@ -35,7 +35,6 @@ class MobileAnki:
                 "pending_words": sorted(pending),
                 "stale_words": sorted(stale),
                 "last_export": manager.last_export_metadata,
-                "snapshot": manager.snapshot_export_metadata,
             }
 
     def export(

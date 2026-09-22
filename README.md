@@ -11,7 +11,7 @@ An AI-assisted command line companion for growing bilingual or monolingual vocab
 - **Bidirectional translators** -- jump between English->Target and Target->English flows with sentence-aware routing.
 - **Deterministic exports** -- LaTeX remains brace-balanced; Anki decks use language-specific metadata with stable note IDs.
 - **Learning-first Anki order** -- LaTeX stays alphabetized for reading, while Anki keeps persistent acquisition order; older untracked entries receive a stable non-alphabetical fallback order.
-- **Safe clean-exit snapshots** -- when card content, order, or templates change, exiting refreshes a complete `.apkg` atomically, preserves any previously exported composition-mistake subdeck, and does not consume the incremental "new words" queue; unchanged sessions do no export work, and snapshots can be disabled with `VOCABBUILDER_EXIT_SNAPSHOT=0`.
+- **Explicit Anki exports** -- every `.apkg` is built on request from the CLI, the Mac client (which downloads it), or the phone, with incremental, full-rebuild, selected-word, and reconcile modes; nothing is exported unattended.
 
 ---
 

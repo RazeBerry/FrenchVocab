@@ -16,8 +16,6 @@ import shutil
 import sys
 import tempfile
 import time
-from dataclasses import dataclass
-from enum import Enum
 from pathlib import Path
 from typing import (
     Callable,
@@ -48,32 +46,6 @@ if TYPE_CHECKING:
     from vocab_builder.languages.base import LanguageConfig
     from vocab_builder.ui_helper import UIHelper
     from vocab_builder.core.vocab_repository import VocabRepository
-
-
-class AnkiSnapshotStatus(str, Enum):
-    """Outcome of a non-interactive snapshot check."""
-
-    EXPORTED = "exported"
-    UNCHANGED = "unchanged"
-    NO_ENTRIES = "no_entries"
-    FAILED = "failed"
-
-
-@dataclass(frozen=True)
-class AnkiSnapshotResult:
-    """Result returned by the clean-exit snapshot workflow."""
-
-    status: AnkiSnapshotStatus
-    path: Optional[Path] = None
-    packaged_count: int = 0
-
-
-def exit_snapshot_enabled(default: bool = True) -> bool:
-    """Return whether clean-exit Anki snapshots are enabled."""
-    value = get_env("VOCABBUILDER_EXIT_SNAPSHOT")
-    if value is None:
-        return default
-    return str(value).strip().lower() in ("1", "true", "yes", "y", "on")
 
 
 class AnkiExportManager:
@@ -122,8 +94,6 @@ class AnkiExportManager:
         )
         self._entry_history_reader = entry_history_reader
         self._entry_order: List[str] = []
-        self._snapshot_hash: Optional[str] = None
-        self._snapshot_export_metadata: Optional[Dict[str, Any]] = None
 
         # Load exported words state
         (
@@ -170,18 +140,6 @@ class AnkiExportManager:
         return tuple(self._entry_order)
 
     @property
-    def snapshot_hash(self) -> Optional[str]:
-        """Hash of the most recent complete vocabulary package."""
-        return self._snapshot_hash
-
-    @property
-    def snapshot_export_metadata(self) -> Optional[Dict[str, Any]]:
-        """Destination metadata for the most recent complete package."""
-        if self._snapshot_export_metadata is None:
-            return None
-        return dict(self._snapshot_export_metadata)
-
-    @property
     def exported_words_file(self) -> Path:
         """Path to the exported words tracking file."""
         return self._exported_words_file
@@ -193,8 +151,6 @@ class AnkiExportManager:
     def _load_exported_words(self) -> Tuple[Set[str], Optional[str], Optional[Dict[str, Any]]]:
         """Load exported words from the tracking file."""
         self._entry_order = []
-        self._snapshot_hash = None
-        self._snapshot_export_metadata = None
         path = self._exported_words_file
         if path.exists():
             try:
@@ -254,12 +210,6 @@ class AnkiExportManager:
             "words": set(words),
             "deck_version": deck_version,
             "entry_order": list(self._entry_order),
-            "snapshot_hash": self._snapshot_hash,
-            "snapshot_export": (
-                dict(self._snapshot_export_metadata)
-                if self._snapshot_export_metadata is not None
-                else None
-            ),
             "last_export": dict(last_export) if last_export is not None else None,
         }
         self._apply_export_state(local_state)
@@ -282,12 +232,6 @@ class AnkiExportManager:
             "words": set(self._exported_words),
             "deck_version": self._exported_deck_version,
             "entry_order": list(self._entry_order),
-            "snapshot_hash": self._snapshot_hash,
-            "snapshot_export": (
-                dict(self._snapshot_export_metadata)
-                if self._snapshot_export_metadata is not None
-                else None
-            ),
             "last_export": (
                 dict(self._last_export_metadata)
                 if self._last_export_metadata is not None
@@ -299,9 +243,6 @@ class AnkiExportManager:
         self._exported_words = set(state["words"])
         self._exported_deck_version = state.get("deck_version")
         self._entry_order = list(state.get("entry_order") or [])
-        self._snapshot_hash = state.get("snapshot_hash")
-        snapshot_export = state.get("snapshot_export")
-        self._snapshot_export_metadata = dict(snapshot_export) if snapshot_export else None
         last_export = state.get("last_export")
         self._last_export_metadata = dict(last_export) if last_export else None
 
@@ -335,7 +276,7 @@ class AnkiExportManager:
             "words": merged_words,
             "entry_order": merged_order,
         }
-        for key in ("deck_version", "snapshot_hash", "snapshot_export", "last_export"):
+        for key in ("deck_version", "last_export"):
             merged[key] = local.get(key) if local.get(key) != base.get(key) else current.get(key)
         return merged
 
@@ -345,10 +286,6 @@ class AnkiExportManager:
             "deck_version": self._exported_deck_version,
             "entry_order": list(self._entry_order),
         }
-        if self._snapshot_hash:
-            payload["snapshot_hash"] = self._snapshot_hash
-        if self._snapshot_export_metadata:
-            payload["snapshot_export"] = self._snapshot_export_metadata
         if self._last_export_metadata:
             payload["last_export"] = self._last_export_metadata
         return payload
@@ -602,81 +539,6 @@ class AnkiExportManager:
             # fallback order from the alphabetized LaTeX document.
             self._entry_order = legacy_keys + history_order
 
-    def _compute_mistake_entries_digest(self) -> str:
-        mistake_entries = []
-        for entry in self._collect_mistake_entries_for_export():
-            mistake_entries.append(
-                {
-                    "attempt_id": entry.attempt_id,
-                    "correction_index": entry.correction_index,
-                    "flawed_text": entry.flawed_text,
-                    "corrected_text": entry.corrected_text,
-                    "why_lines": list(entry.why_lines),
-                    "english_intent": entry.english_intent,
-                }
-            )
-        mistake_entries.sort(
-            key=lambda entry: (
-                entry["attempt_id"],
-                entry["correction_index"],
-                entry["flawed_text"],
-                entry["corrected_text"],
-                tuple(entry["why_lines"]),
-                entry["english_intent"],
-            )
-        )
-        serialized = json.dumps(
-            mistake_entries,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-
-    def _compute_snapshot_hash(
-        self,
-        word_entries: Dict[str, Any],
-        *,
-        include_mistake_deck: bool = False,
-    ) -> str:
-        """Hash all inputs that affect a complete vocabulary package."""
-        self._sync_entry_order(word_entries)
-        anki_config = self._language_config.anki
-        entries = []
-        for key, entry in sorted(
-            word_entries.items(),
-            key=lambda item: self._entry_order_key(item[0]),
-        ):
-            entries.append(
-                {
-                    "key": self._entry_order_key(key),
-                    "word": str(entry.get("word") or ""),
-                    "type": self._coerce_word_type(entry),
-                    "definitions": self._coerce_definitions(entry),
-                    "examples": [list(example) for example in self._coerce_examples(entry)],
-                }
-            )
-
-        payload = {
-            "language": self._language_config.code,
-            "deck_namespace": anki_config.deck_namespace,
-            "model_seed": anki_config.model_seed,
-            "field_names": list(anki_config.field_names),
-            "guid_headword_aliases": sorted(anki_config.guid_headword_aliases.items()),
-            "template_version": self._resolve_template_version(),
-            "entry_order": list(self._entry_order),
-            "entries": entries,
-        }
-        if include_mistake_deck:
-            payload["mistake_entries_digest"] = self._compute_mistake_entries_digest()
-        serialized = json.dumps(
-            payload,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-
     def acquisition_positions(self, words: Iterable[str]) -> Dict[str, int]:
         """Locate each given word in the persisted acquisition order, oldest first.
 
@@ -825,7 +687,6 @@ class AnkiExportManager:
         include_all: bool,
         auto_retry_on_empty: bool,
         include_mistake_deck: bool,
-        track_exported_words: bool,
         quiet: bool,
     ) -> bool:
         """Return True if the caller should stop (already handled)."""
@@ -853,7 +714,6 @@ class AnkiExportManager:
             output_path=destination_path,
             export_context=export_context,
             include_mistake_deck=include_mistake_deck,
-            track_exported_words=track_exported_words,
             quiet=quiet,
         )
         return True
@@ -961,10 +821,6 @@ class AnkiExportManager:
         destination_source: str,
         template_version: str,
         export_context: str,
-        include_mistake_deck: bool,
-        track_exported_words: bool,
-        snapshot_hash: Optional[str] = None,
-        invalidate_snapshot: bool = False,
     ) -> Tuple[Set[str], Set[str]]:
         newly_added_words_normalized: Set[str] = set()
         newly_added_display: Set[str] = set()
@@ -975,46 +831,22 @@ class AnkiExportManager:
                 newly_added_words_normalized.add(normalized_word)
                 newly_added_display.add(display_word)
 
-        if track_exported_words:
-            self._exported_words = all_exported_words
-            self._exported_deck_version = template_version
-        if snapshot_hash is not None:
-            self._snapshot_hash = snapshot_hash
-            self._snapshot_export_metadata = {
-                "deck_name": deck_title,
-                "path": str(destination_path),
-                "path_source": destination_source,
-                "timestamp": time.time(),
-                "total_words": len(entries_for_export),
-                "include_mistake_deck": include_mistake_deck,
-            }
-        elif invalidate_snapshot:
-            self._snapshot_hash = None
-        if track_exported_words:
-            self._last_export_metadata = {
-                "deck_name": deck_title,
-                "path": str(destination_path),
-                "path_source": destination_source,
-                "export_context": export_context,
-                "timestamp": time.time(),
-                "total_words": len(all_exported_words),
-                "new_words": len(newly_added_words_normalized),
-            }
+        self._exported_words = all_exported_words
+        self._exported_deck_version = template_version
+        self._last_export_metadata = {
+            "deck_name": deck_title,
+            "path": str(destination_path),
+            "path_source": destination_source,
+            "export_context": export_context,
+            "timestamp": time.time(),
+            "total_words": len(all_exported_words),
+            "new_words": len(newly_added_words_normalized),
+        }
         if not self.save_exported_words():
             self._ui.warning(
                 "The Anki deck was written, but the exported-words tracker could not be updated."
             )
         return newly_added_words_normalized, newly_added_display
-
-    def _matches_snapshot_destination(self, destination_path: Path) -> bool:
-        metadata = self._snapshot_export_metadata
-        if not isinstance(metadata, dict) or not metadata.get("path"):
-            return False
-        try:
-            snapshot_path = Path(os.path.expanduser(str(metadata["path"]))).resolve()
-            return snapshot_path == destination_path.resolve()
-        except (OSError, RuntimeError, TypeError, ValueError):
-            return False
 
     def _parse_exported_words_dict(
         self,
@@ -1036,31 +868,6 @@ class AnkiExportManager:
             self._entry_order = []
         else:
             self._entry_order = list(dict.fromkeys(self._entry_order_key(word) for word in entry_order))
-
-        snapshot_hash = data.get("snapshot_hash")
-        if isinstance(snapshot_hash, str) and snapshot_hash.strip():
-            self._snapshot_hash = snapshot_hash.strip()
-        elif snapshot_hash is not None:
-            self._ui.warning(
-                "Ignoring invalid Anki snapshot metadata; a complete package will be rebuilt."
-            )
-
-        snapshot_export_raw = data.get("snapshot_export")
-        if isinstance(snapshot_export_raw, dict):
-            snapshot_export = self._normalize_loaded_export_metadata(
-                snapshot_export_raw
-            )
-            include_mistake_deck = snapshot_export.get("include_mistake_deck", False)
-            snapshot_export["include_mistake_deck"] = (
-                include_mistake_deck
-                if isinstance(include_mistake_deck, bool)
-                else False
-            )
-            self._snapshot_export_metadata = snapshot_export
-        elif snapshot_export_raw is not None:
-            self._ui.warning(
-                "Ignoring invalid Anki snapshot destination metadata."
-            )
 
         version = data.get("deck_version")
         if version is not None and not isinstance(version, str):
@@ -1215,7 +1022,6 @@ class AnkiExportManager:
         output_path: Optional[Path] = None,
         export_context: str = "incremental",
         include_mistake_deck: bool = False,
-        track_exported_words: bool = True,
         quiet: bool = False,
     ) -> None:
         """Serialize deck generation and tracker mutation across CLI sessions."""
@@ -1229,7 +1035,6 @@ class AnkiExportManager:
                 output_path=output_path,
                 export_context=export_context,
                 include_mistake_deck=include_mistake_deck,
-                track_exported_words=track_exported_words,
                 quiet=quiet,
             )
 
@@ -1243,7 +1048,6 @@ class AnkiExportManager:
         output_path: Optional[Path] = None,
         export_context: str = "incremental",
         include_mistake_deck: bool = False,
-        track_exported_words: bool = True,
         quiet: bool = False,
     ) -> None:
         """Export vocabulary entries to an Anki deck.
@@ -1256,7 +1060,6 @@ class AnkiExportManager:
             output_path: Explicit output location for the deck
             export_context: Context description for metadata
             include_mistake_deck: Include composition mistakes as a sibling deck
-            track_exported_words: Update user-facing incremental export state
             quiet: Suppress routine progress and summary output
         """
         self._vocab_repo.ensure_entries_loaded()
@@ -1316,7 +1119,6 @@ class AnkiExportManager:
             include_all=include_all,
             auto_retry_on_empty=auto_retry_on_empty,
             include_mistake_deck=include_mistake_deck,
-            track_exported_words=track_exported_words,
             quiet=quiet,
         ):
             return
@@ -1351,22 +1153,6 @@ class AnkiExportManager:
             return
 
         packaged_count = len(entries_for_export)
-        is_complete_snapshot = (
-            selected_words is None
-            and packaged_count == len(word_entries)
-        )
-        snapshot_hash = (
-            self._compute_snapshot_hash(
-                word_entries,
-                include_mistake_deck=include_mistake_deck,
-            )
-            if is_complete_snapshot
-            else None
-        )
-        invalidate_snapshot = (
-            not is_complete_snapshot
-            and self._matches_snapshot_destination(destination_path)
-        )
         newly_added_words_normalized, newly_added_display = self._finalize_export_state(
             entries_for_export=entries_for_export,
             all_exported_words=all_exported_words,
@@ -1375,10 +1161,6 @@ class AnkiExportManager:
             destination_source=destination_source,
             template_version=template_version,
             export_context=export_context,
-            include_mistake_deck=include_mistake_deck,
-            track_exported_words=track_exported_words,
-            snapshot_hash=snapshot_hash,
-            invalidate_snapshot=invalidate_snapshot,
         )
 
         feedback = self._build_export_feedback(
@@ -1397,126 +1179,6 @@ class AnkiExportManager:
         )
         if not quiet:
             self._ui.panel(feedback, title="Export Summary", border_style="green")
-
-    def _automatic_snapshot_destination(self) -> Tuple[str, Optional[Path]]:
-        """Reuse the last destination without opening an exit-time prompt."""
-        default_deck = self._language_config.anki.default_deck_name
-        metadata = self._snapshot_export_metadata
-        if metadata is None:
-            last_export = self._last_export_metadata
-            if (
-                isinstance(last_export, dict)
-                and last_export.get("export_context") != "selected"
-            ):
-                metadata = last_export
-        if not isinstance(metadata, dict):
-            return default_deck, None
-
-        normalized = self._normalize_loaded_export_metadata(metadata)
-        deck_name = str(normalized.get("deck_name") or default_deck).strip() or default_deck
-        if self._export_directory_is_operator_configured:
-            # A deployment-level export root is a hard boundary for unattended
-            # snapshots. In particular, never reuse a macOS absolute path from
-            # tracker metadata after moving the collection to a Linux VM.
-            return deck_name, None
-        if normalized.get("path_source") != "explicit":
-            return deck_name, None
-
-        raw_path = normalized.get("path")
-        if not raw_path:
-            return deck_name, None
-        try:
-            return deck_name, Path(os.path.expanduser(str(raw_path)))
-        except (TypeError, ValueError):
-            return deck_name, None
-
-    def export_snapshot_if_changed(
-        self,
-        *,
-        export_context: str = "clean_exit",
-        quiet: bool = True,
-    ) -> AnkiSnapshotResult:
-        with file_lock(self._exported_words_file):
-            self._merge_current_export_state()
-            return self._export_snapshot_if_changed_locked(
-                export_context=export_context,
-                quiet=quiet,
-            )
-
-    def _snapshot_artifact_is_reusable(self) -> bool:
-        """Return whether snapshot metadata points to the current usable package."""
-        metadata = self._snapshot_export_metadata
-        if not isinstance(metadata, dict):
-            return False
-
-        normalized = self._normalize_loaded_export_metadata(metadata)
-        raw_path = normalized.get("path")
-        if not raw_path:
-            return False
-        try:
-            snapshot_path = Path(os.path.expanduser(str(raw_path))).resolve()
-        except (OSError, TypeError, ValueError):
-            return False
-
-        if (
-            self._export_directory_is_operator_configured
-            and not snapshot_path.is_relative_to(self._default_export_directory)
-        ):
-            return False
-        return snapshot_path.is_file()
-
-    def _export_snapshot_if_changed_locked(
-        self,
-        *,
-        export_context: str = "clean_exit",
-        quiet: bool = True,
-    ) -> AnkiSnapshotResult:
-        """Write a complete package when card inputs changed since the last snapshot."""
-        self._vocab_repo.ensure_entries_loaded()
-        word_entries = self._vocab_repo.word_entries
-        if not word_entries:
-            return AnkiSnapshotResult(AnkiSnapshotStatus.NO_ENTRIES)
-
-        snapshot_metadata = self._snapshot_export_metadata
-        include_mistake_deck = False
-        if isinstance(snapshot_metadata, dict):
-            configured_value = snapshot_metadata.get("include_mistake_deck", False)
-            if isinstance(configured_value, bool):
-                include_mistake_deck = configured_value
-
-        current_hash = self._compute_snapshot_hash(
-            word_entries,
-            include_mistake_deck=include_mistake_deck,
-        )
-        if current_hash == self._snapshot_hash and self._snapshot_artifact_is_reusable():
-            return AnkiSnapshotResult(AnkiSnapshotStatus.UNCHANGED)
-
-        deck_name, output_path = self._automatic_snapshot_destination()
-        self.export_to_anki(
-            deck_name,
-            include_exported_words=True,
-            auto_retry_on_empty=False,
-            output_path=output_path,
-            export_context=export_context,
-            include_mistake_deck=include_mistake_deck,
-            track_exported_words=False,
-            quiet=quiet,
-        )
-
-        if self._snapshot_hash != current_hash:
-            return AnkiSnapshotResult(AnkiSnapshotStatus.FAILED)
-
-        metadata = self._snapshot_export_metadata or {}
-        raw_path = metadata.get("path")
-        try:
-            exported_path = Path(str(raw_path)) if raw_path else None
-        except (TypeError, ValueError):
-            exported_path = None
-        return AnkiSnapshotResult(
-            AnkiSnapshotStatus.EXPORTED,
-            path=exported_path,
-            packaged_count=len(word_entries),
-        )
 
     # -------------------------------------------------------------------------
     # Menu & Workflow

@@ -11,10 +11,7 @@ import pytest
 
 import vocab_builder.anki_exporter as anki_exporter_module
 from vocab_builder.anki_exporter import AnkiExporter, AnkiExportEntry
-from vocab_builder.core.anki_manager import (
-    AnkiExportManager,
-    AnkiSnapshotStatus,
-)
+from vocab_builder.core.anki_manager import AnkiExportManager
 from vocab_builder.languages import get_language_config
 
 
@@ -440,118 +437,7 @@ def test_history_recovers_acquisition_order_before_first_export(tmp_path):
     assert [item[0] for item in entries] == ["zulu", "alpha"]
 
 
-def test_clean_exit_snapshot_repairs_incremental_package_and_then_noops(
-    tmp_path,
-    monkeypatch,
-):
-    class _Package:
-        payloads = []
-
-        def __init__(self, deck_or_decks):
-            self.deck_or_decks = deck_or_decks
-            self.payloads.append(deck_or_decks)
-
-        def write_to_file(self, path):
-            Path(path).write_bytes(b"stub apkg")
-
-    monkeypatch.setattr(genanki, "Package", _Package)
-    repo = _StubRepo()
-    repo.word_entries = {"alpha": _vocab_entry("alpha")}
-    state_path = tmp_path / "exported_words.json"
-    manager = AnkiExportManager(
-        ui=_StubUI(),
-        language_config=get_language_config("fr"),
-        vocab_repo=repo,  # type: ignore[arg-type]
-        exported_words_file=state_path,
-        project_root=tmp_path,
-    )
-
-    first = manager.export_snapshot_if_changed()
-
-    assert first.status == AnkiSnapshotStatus.EXPORTED
-    assert first.packaged_count == 1
-    assert first.path == (tmp_path / "anki_exports" / "French Vocabulary.apkg").resolve()
-    assert [note.fields[0] for note in _Package.payloads[-1].notes] == ["Alpha"]
-    first_snapshot_hash = manager.snapshot_hash
-    assert first_snapshot_hash
-
-    reloaded = AnkiExportManager(
-        ui=_StubUI(),
-        language_config=get_language_config("fr"),
-        vocab_repo=repo,  # type: ignore[arg-type]
-        exported_words_file=state_path,
-        project_root=tmp_path,
-    )
-    assert reloaded.export_snapshot_if_changed().status == AnkiSnapshotStatus.UNCHANGED
-    assert len(_Package.payloads) == 1
-
-    # A mirror snapshot does not consume the incremental queue, so explicitly
-    # export the first word before testing repair of a later incremental deck.
-    reloaded.export_to_anki("French Vocabulary", quiet=True)
-    assert [note.fields[0] for note in _Package.payloads[-1].notes] == ["Alpha"]
-
-    repo.word_entries["beta"] = _vocab_entry("beta")
-    reloaded.register_entry_order("beta")
-    reloaded.export_to_anki("French Vocabulary", quiet=True)
-
-    assert [note.fields[0] for note in _Package.payloads[-1].notes] == ["Beta"]
-    assert reloaded.snapshot_hash is None
-
-    repaired = reloaded.export_snapshot_if_changed()
-
-    assert repaired.status == AnkiSnapshotStatus.EXPORTED
-    assert repaired.packaged_count == 2
-    assert [note.fields[0] for note in _Package.payloads[-1].notes] == ["Alpha", "Beta"]
-    assert reloaded.snapshot_hash != first_snapshot_hash
-    assert reloaded.export_snapshot_if_changed().status == AnkiSnapshotStatus.UNCHANGED
-    assert len(_Package.payloads) == 4
-
-    repo.word_entries["alpha"]["definitions_list"] = ["Updated definition"]
-    updated = reloaded.export_snapshot_if_changed()
-
-    assert updated.status == AnkiSnapshotStatus.EXPORTED
-    assert "Updated definition" in _Package.payloads[-1].notes[0].fields[2]
-    assert len(_Package.payloads) == 5
-
-
-def test_clean_exit_snapshot_rebuilds_when_package_was_deleted(tmp_path, monkeypatch):
-    class _Package:
-        writes = 0
-
-        def __init__(self, _deck_or_decks):
-            pass
-
-        def write_to_file(self, path):
-            self.__class__.writes += 1
-            Path(path).write_bytes(b"stub apkg")
-
-    monkeypatch.setattr(genanki, "Package", _Package)
-    repo = _StubRepo()
-    repo.word_entries = {"alpha": _vocab_entry("alpha")}
-    manager = AnkiExportManager(
-        ui=_StubUI(),
-        language_config=get_language_config("fr"),
-        vocab_repo=repo,  # type: ignore[arg-type]
-        exported_words_file=tmp_path / "exported_words.json",
-        project_root=tmp_path,
-    )
-
-    initial = manager.export_snapshot_if_changed()
-    assert initial.path is not None
-    initial.path.unlink()
-
-    rebuilt = manager.export_snapshot_if_changed()
-
-    assert rebuilt.status == AnkiSnapshotStatus.EXPORTED
-    assert rebuilt.path == initial.path
-    assert rebuilt.path.is_file()
-    assert _Package.writes == 2
-
-
-def test_snapshot_preserves_mistake_deck_and_tracks_mistake_history_changes(
-    tmp_path,
-    monkeypatch,
-):
+def test_export_includes_mistake_deck_when_requested(tmp_path, monkeypatch):
     class _Package:
         payloads = []
 
@@ -569,12 +455,11 @@ def test_snapshot_preserves_mistake_deck_and_tracks_mistake_history_changes(
     )
     repo = _StubRepo()
     repo.word_entries = {"alpha": _vocab_entry("alpha")}
-    state_path = tmp_path / "exported_words.json"
     manager = AnkiExportManager(
         ui=_StubUI(),
         language_config=get_language_config("fr"),
         vocab_repo=repo,  # type: ignore[arg-type]
-        exported_words_file=state_path,
+        exported_words_file=tmp_path / "exported_words.json",
         project_root=tmp_path,
         composition_history_paths=[history_path],
     )
@@ -588,47 +473,23 @@ def test_snapshot_preserves_mistake_deck_and_tracks_mistake_history_changes(
 
     assert isinstance(_Package.payloads[-1], list)
     assert len(_Package.payloads[-1]) == 2
-    payload = json.loads(state_path.read_text(encoding="utf-8"))
-    assert payload["snapshot_export"]["include_mistake_deck"] is True
-
-    reloaded = AnkiExportManager(
-        ui=_StubUI(),
-        language_config=get_language_config("fr"),
-        vocab_repo=repo,  # type: ignore[arg-type]
-        exported_words_file=state_path,
-        project_root=tmp_path,
-        composition_history_paths=[history_path],
-    )
-    assert reloaded.snapshot_export_metadata["include_mistake_deck"] is True
-
-    repo.word_entries["beta"] = _vocab_entry("beta")
-    reloaded.register_entry_order("beta")
-    vocabulary_refresh = reloaded.export_snapshot_if_changed()
-
-    assert vocabulary_refresh.status == AnkiSnapshotStatus.EXPORTED
-    assert isinstance(_Package.payloads[-1], list)
-    assert len(_Package.payloads[-1]) == 2
-    assert reloaded.export_snapshot_if_changed().status == AnkiSnapshotStatus.UNCHANGED
-
-    with history_path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(_mistake_record("attempt-2", "Nous est.")) + "\n")
-    mistake_refresh = reloaded.export_snapshot_if_changed()
-
-    assert mistake_refresh.status == AnkiSnapshotStatus.EXPORTED
-    assert isinstance(_Package.payloads[-1], list)
-    assert len(_Package.payloads[-1]) == 2
+    assert manager.exported_words == {"alpha"}
 
 
-def test_invalid_snapshot_mistake_flag_is_silently_coerced_to_false(tmp_path):
+def test_retired_snapshot_fields_load_silently_and_are_dropped_on_save(tmp_path):
+    """Trackers written before 2026-09-22 still carry the clean-exit snapshot fields."""
     state_path = tmp_path / "exported_words.json"
     state_path.write_text(
         json.dumps(
             {
-                "words": [],
+                "words": ["alpha"],
+                "deck_version": "v1",
+                "entry_order": ["alpha"],
+                "snapshot_hash": "0" * 64,
                 "snapshot_export": {
                     "deck_name": "French Vocabulary",
                     "path": str(tmp_path / "French Vocabulary.apkg"),
-                    "include_mistake_deck": "yes",
+                    "include_mistake_deck": True,
                 },
             }
         ),
@@ -638,243 +499,13 @@ def test_invalid_snapshot_mistake_flag_is_silently_coerced_to_false(tmp_path):
 
     manager = _manager(state_path, ui)
 
-    assert manager.snapshot_export_metadata["include_mistake_deck"] is False
     assert ui.warnings == []
-
-
-def test_clean_exit_snapshot_does_not_consume_incremental_export_queue(
-    tmp_path,
-    monkeypatch,
-):
-    class _Package:
-        payloads = []
-
-        def __init__(self, deck_or_decks):
-            self.payloads.append(deck_or_decks)
-
-        def write_to_file(self, path):
-            Path(path).write_bytes(b"stub apkg")
-
-    monkeypatch.setattr(genanki, "Package", _Package)
-    repo = _StubRepo()
-    repo.word_entries = {}
-    manager = AnkiExportManager(
-        ui=_StubUI(),
-        language_config=get_language_config("fr"),
-        vocab_repo=repo,  # type: ignore[arg-type]
-        exported_words_file=tmp_path / "exported_words.json",
-        project_root=tmp_path,
-    )
-    previous_version = manager._resolve_template_version()
-    previous_metadata = {"marker": "user export metadata"}
-    manager.exported_deck_version = previous_version
-    manager.last_export_metadata = previous_metadata
-    repo.word_entries["alpha"] = _vocab_entry("alpha")
-    manager.register_entry_order("alpha")
-
-    snapshot = manager.export_snapshot_if_changed()
-
-    assert snapshot.status == AnkiSnapshotStatus.EXPORTED
-    assert manager.exported_words == set()
-    assert manager.exported_deck_version == previous_version
-    assert manager.last_export_metadata == previous_metadata
-
-    manager.export_to_anki("French Vocabulary", quiet=True)
-
-    assert [note.fields[0] for note in _Package.payloads[-1].notes] == ["Alpha"]
+    assert ui.errors == []
     assert manager.exported_words == {"alpha"}
-
-
-def test_clean_exit_snapshot_failure_does_not_mark_content_current(tmp_path, monkeypatch):
-    repo = _StubRepo()
-    repo.word_entries = {"alpha": _vocab_entry("alpha")}
-    manager = AnkiExportManager(
-        ui=_StubUI(),
-        language_config=get_language_config("fr"),
-        vocab_repo=repo,  # type: ignore[arg-type]
-        exported_words_file=tmp_path / "exported_words.json",
-        project_root=tmp_path,
-    )
-    monkeypatch.setattr(manager, "_write_package_atomic", lambda *_args, **_kwargs: None)
-
-    result = manager.export_snapshot_if_changed()
-
-    assert result.status == AnkiSnapshotStatus.FAILED
-    assert manager.snapshot_hash is None
-    assert not manager.exported_words_file.exists()
-
-
-def test_clean_exit_snapshot_does_not_overwrite_one_off_selected_destination(
-    tmp_path,
-    monkeypatch,
-):
-    class _Package:
-        written_paths = []
-
-        def __init__(self, _deck_or_decks):
-            pass
-
-        def write_to_file(self, path):
-            resolved = Path(path)
-            resolved.write_bytes(b"stub apkg")
-            self.written_paths.append(resolved)
-
-    monkeypatch.setattr(genanki, "Package", _Package)
-    repo = _StubRepo()
-    repo.word_entries = {"alpha": _vocab_entry("alpha")}
-    manager = AnkiExportManager(
-        ui=_StubUI(),
-        language_config=get_language_config("fr"),
-        vocab_repo=repo,  # type: ignore[arg-type]
-        exported_words_file=tmp_path / "exported_words.json",
-        project_root=tmp_path,
-    )
-    default_snapshot = manager.export_snapshot_if_changed()
-    selected_path = tmp_path / "one-off" / "Exam Words.apkg"
-    manager.export_to_anki(
-        "Exam Words",
-        include_exported_words=True,
-        selected_words={"alpha"},
-        output_path=selected_path,
-        export_context="selected",
-        quiet=True,
-    )
-    selected_export_metadata = dict(manager.last_export_metadata)
-    repo.word_entries["beta"] = _vocab_entry("beta")
-    manager.register_entry_order("beta")
-
-    refreshed = manager.export_snapshot_if_changed()
-
-    assert default_snapshot.path is not None
-    assert refreshed.path == default_snapshot.path
-    assert refreshed.path != selected_path
-    assert manager.snapshot_export_metadata is not None
-    assert Path(manager.snapshot_export_metadata["path"]) == default_snapshot.path
-    assert manager.last_export_metadata == selected_export_metadata
-
-
-def test_automatic_snapshot_destination_does_not_mutate_metadata(tmp_path):
-    manager = _manager(tmp_path / "exported_words.json")
-    original = {
-        "deck_name": "French Vocabulary",
-        "path": str(tmp_path / "old-cwd" / "French Vocabulary.apkg"),
-    }
-    manager._snapshot_export_metadata = dict(original)
-
-    deck_name, output_path = manager._automatic_snapshot_destination()
-
-    assert deck_name == "French Vocabulary"
-    assert output_path is None
-    assert manager.snapshot_export_metadata == original
-
-
-def test_operator_export_directory_rejects_foreign_snapshot_metadata(
-    tmp_path,
-    monkeypatch,
-):
-    configured = tmp_path / "server-exports"
-    monkeypatch.setenv("VOCABBUILDER_ANKI_EXPORT_DIR", str(configured))
-    manager = _manager(tmp_path / "exported_words.json")
-    manager._snapshot_export_metadata = {
-        "deck_name": "French Vocabulary",
-        "path": "/Users/example/old-project/anki_exports/French Vocabulary.apkg",
-        "path_source": "explicit",
-    }
-
-    deck_name, output_path = manager._automatic_snapshot_destination()
-
-    assert deck_name == "French Vocabulary"
-    assert output_path is None
-    assert manager._normalize_output_path(deck_name) == (
-        configured / "French Vocabulary.apkg"
-    ).resolve()
-
-
-def test_operator_export_directory_rebuilds_matching_foreign_snapshot(
-    tmp_path,
-    monkeypatch,
-):
-    class _Package:
-        def __init__(self, _deck_or_decks):
-            pass
-
-        def write_to_file(self, path):
-            Path(path).write_bytes(b"stub apkg")
-
-    monkeypatch.setattr(genanki, "Package", _Package)
-    configured = tmp_path / "server-exports"
-    monkeypatch.setenv("VOCABBUILDER_ANKI_EXPORT_DIR", str(configured))
-    repo = _StubRepo()
-    repo.word_entries = {"alpha": _vocab_entry("alpha")}
-    manager = AnkiExportManager(
-        ui=_StubUI(),
-        language_config=get_language_config("fr"),
-        vocab_repo=repo,  # type: ignore[arg-type]
-        exported_words_file=tmp_path / "state" / "exported_words.json",
-        project_root=tmp_path,
-    )
-    foreign_path = tmp_path / "old-machine" / "French Vocabulary.apkg"
-    foreign_path.parent.mkdir()
-    foreign_path.write_bytes(b"foreign package")
-    manager._snapshot_hash = manager._compute_snapshot_hash(
-        repo.word_entries,
-        include_mistake_deck=False,
-    )
-    manager._snapshot_export_metadata = {
-        "deck_name": "French Vocabulary",
-        "path": str(foreign_path),
-        "path_source": "explicit",
-    }
-
-    rebuilt = manager.export_snapshot_if_changed()
-
-    expected = (configured / "French Vocabulary.apkg").resolve()
-    assert rebuilt.status == AnkiSnapshotStatus.EXPORTED
-    assert rebuilt.path == expected
-    assert expected.is_file()
-    assert Path(manager.snapshot_export_metadata["path"]) == expected
-
-
-def test_selected_export_to_snapshot_path_is_repaired_on_exit(tmp_path, monkeypatch):
-    class _Package:
-        payloads = []
-
-        def __init__(self, deck_or_decks):
-            self.payloads.append(deck_or_decks)
-
-        def write_to_file(self, path):
-            Path(path).write_bytes(b"stub apkg")
-
-    monkeypatch.setattr(genanki, "Package", _Package)
-    repo = _StubRepo()
-    repo.word_entries = {
-        "alpha": _vocab_entry("alpha"),
-        "beta": _vocab_entry("beta"),
-    }
-    manager = AnkiExportManager(
-        ui=_StubUI(),
-        language_config=get_language_config("fr"),
-        vocab_repo=repo,  # type: ignore[arg-type]
-        exported_words_file=tmp_path / "exported_words.json",
-        project_root=tmp_path,
-    )
-    initial = manager.export_snapshot_if_changed()
-    assert initial.path is not None
-
-    manager.export_to_anki(
-        "French Vocabulary",
-        include_exported_words=True,
-        selected_words={"alpha"},
-        output_path=initial.path,
-        export_context="selected",
-        quiet=True,
-    )
-
-    assert [note.fields[0] for note in _Package.payloads[-1].notes] == ["Alpha"]
-    assert manager.snapshot_hash is None
-
-    repaired = manager.export_snapshot_if_changed()
-
-    assert repaired.status == AnkiSnapshotStatus.EXPORTED
-    assert repaired.path == initial.path
-    assert [note.fields[0] for note in _Package.payloads[-1].notes] == ["Alpha", "Beta"]
+    assert manager.exported_deck_version == "v1"
+    assert manager.save_exported_words()
+    payload = json.loads(state_path.read_text(encoding="utf-8"))
+    assert "snapshot_hash" not in payload
+    assert "snapshot_export" not in payload
+    assert payload["words"] == ["alpha"]
+    assert payload["entry_order"] == ["alpha"]

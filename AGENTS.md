@@ -140,11 +140,20 @@ pytest -k "anki"
 - `text_utils.py` centralizes text normalization and input-type detection.
 - `session_ui.py` builds menu/welcome/status screen content.
 - `anki_manager.py` coordinates export state and Anki generation, including persistent acquisition order so decks do not inherit LaTeX alphabetization.
+- Every Anki package is an explicit export: the VM CLI's Anki tools, the Mac
+  client's Anki menu (which downloads the package to the Mac), or the phone's
+  Tools view. The clean-exit snapshot that rebuilt a complete `.apkg` on the
+  VM was removed on 2026-09-22. Nothing on the Mac ever fetched that file,
+  the remote client's exit path never called it, and the phone has no exit,
+  so it was a mode that wrote a package no reader consumed. Do not reintroduce
+  an unattended export without a consumer on the Mac side. A tracker written
+  before that date still carries `snapshot_hash` and `snapshot_export`; the
+  loader ignores them and the next save drops them.
 - Anki note GUIDs normally derive from the normalized headword. A corrected
   historical headword must retain its former GUID through
   `AnkiConfig.guid_headword_aliases`, keyed by the corrected normalized form,
   so rebuilding a deck updates the existing note instead of creating a
-  duplicate. The alias mapping is part of the complete-snapshot hash.
+  duplicate.
 - `llm_coordinator.py` manages provider initialization lifecycle, degraded mode, and usage metrics, and uses generation-guarded background init so stale workers cannot overwrite newer provider changes.
 - `history_logger.py` writes append-only JSONL history.
 - `file_safety.py` provides atomic file operations and backup/restore support.
@@ -648,8 +657,7 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 - `VOCABBUILDER_DEBUG_EXPORT=1`: Print export debug details during Anki generation.
 - `VOCABBUILDER_AUTO_TRANSLATOR`: Enable/disable intelligent translator option.
 - `VOCABBUILDER_COMPOSITION`: Enable/disable composition practice (default on).
-- `VOCABBUILDER_EXIT_SNAPSHOT`: Enable/disable the automatic complete Anki snapshot on clean exit (default on).
-- `VOCABBUILDER_ANKI_EXPORT_DIR`: Operator-controlled root for default and unattended Anki exports. When set, clean-exit snapshots never reuse an explicit absolute destination from migrated tracker metadata; the VM sets this to `/var/lib/vocabbuilder/exports`.
+- `VOCABBUILDER_ANKI_EXPORT_DIR`: Operator-controlled root for deck-name-only Anki exports. When set, an absolute destination outside it is rejected; the VM sets this to `/var/lib/vocabbuilder/exports`.
 - `VOCABBUILDER_COMPOSITION_WORDS`: Target words per use-these-words attempt (default `3`, int >= 1).
 - `VOCABBUILDER_COMPOSITION_SET_SIZE`: Attempts per daily composition set (default `3`, int >= 1).
 - `VOCABBUILDER_MAX_BACKUPS`: Maximum timestamped backup snapshots to retain per file (default `10`; `0` disables pruning).
