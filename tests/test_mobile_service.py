@@ -1083,3 +1083,80 @@ def test_headwords_keep_the_capitals_inside_an_expression(tmp_path, monkeypatch)
     written = (tmp_path / "GermanVocab.tex").read_text(encoding="utf-8")
     assert "Jemanden nicht im Stich lassen" in written
     assert "im stich" not in written
+
+
+def test_anki_export_builds_a_downloadable_deck_for_every_language(tmp_path, monkeypatch):
+    """Each collection exports through the same route and the package opens in Anki's schema."""
+    import asyncio
+    import sqlite3
+    import zipfile
+
+    import vocab_builder.anki_exporter as anki_exporter_module
+
+    # The suite installs a genanki stub whose package writer creates no file;
+    # this test is about the file, so it needs the real library.
+    stub_genanki = sys.modules.pop("genanki")
+    try:
+        real_genanki = importlib.import_module("genanki")
+    finally:
+        sys.modules["genanki"] = stub_genanki
+    monkeypatch.setitem(sys.modules, "genanki", real_genanki)
+    monkeypatch.setattr(anki_exporter_module, "genanki", real_genanki)
+
+    services = {
+        code: build_service(tmp_path / code, monkeypatch, language=code)
+        for code in ("en", "fr", "de")
+    }
+    seeds = {
+        "en": ("serendipity", "noun", "Finding something good without looking for it."),
+        "fr": ("chrysanthème", "noun", "A flower associated with autumn in France."),
+        "de": ("Kühlschrank", "noun", "A refrigerator."),
+    }
+    for code, service in services.items():
+        seed_entries(service, [seeds[code]])
+    app = create_app(MobileVocabCatalog(services, default_language="fr"))
+
+    async def exercise_app():
+        results = {}
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            for code in services:
+                before = await client.get(f"/api/anki?language={code}")
+                exported = await client.post(
+                    f"/api/anki/export?language={code}",
+                    json={"mode": "incremental", "selected_words": [], "include_mistakes": False},
+                )
+                download_url = exported.json().get("download_url", "")
+                download = await client.get(f"{download_url}?language={code}")
+                after = await client.get(f"/api/anki?language={code}")
+                results[code] = (before.json(), exported, download, after.json())
+        return results
+
+    results = asyncio.run(exercise_app())
+
+    for code, service in services.items():
+        before, exported, download, after = results[code]
+        # The French template ships a sample entry, so count what the collection holds.
+        expected_count = len(service.builder.word_entries)
+        assert before["pending_count"] == expected_count, code
+        assert exported.status_code == 200, (code, exported.text)
+        assert exported.json()["filename"].startswith(f"{code}-incremental-"), code
+        assert download.status_code == 200, (code, download.text)
+        package_path = tmp_path / f"{code}.apkg"
+        package_path.write_bytes(download.content)
+        with zipfile.ZipFile(package_path) as archive:
+            names = archive.namelist()
+            member = "collection.anki21" if "collection.anki21" in names else "collection.anki2"
+            db_path = tmp_path / f"{code}.sqlite"
+            db_path.write_bytes(archive.read(member))
+        connection = sqlite3.connect(db_path)
+        try:
+            notes = connection.execute("SELECT flds FROM notes").fetchall()
+            decks = connection.execute("SELECT decks FROM col").fetchone()[0]
+        finally:
+            connection.close()
+        assert len(notes) == expected_count, code
+        headwords = [row[0].split("\x1f")[0] for row in notes]
+        assert seeds[code][0][0].upper() + seeds[code][0][1:] in headwords, code
+        assert service.builder.language_config.anki.default_deck_name in decks, code
+        assert after["pending_count"] == 0, code
