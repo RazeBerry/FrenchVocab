@@ -436,6 +436,20 @@ class MobileVocabService:
                     self._transactions.pop(token, None)
                     self._persist_state()
                     raise
+                except Exception:
+                    # The phone is about to be told this save failed, so replay
+                    # must not quietly commit it on the next status request.
+                    # Keep the journal only when the write already reached disk,
+                    # and then report the save that happened.
+                    landed = (
+                        self._stored_entry_contains(transaction)
+                        if action == "merge"
+                        else self._stored_entry_matches(transaction)
+                    )
+                    if not landed:
+                        self._transactions.pop(token, None)
+                        self._persist_state()
+                        raise
                 receipt = {
                     "word": word,
                     "action": "merged" if action == "merge" else "added",

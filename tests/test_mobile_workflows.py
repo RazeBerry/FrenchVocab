@@ -58,6 +58,11 @@ def test_partial_capture_side_effects_are_repaired_without_second_primary_write(
     assert content.count(r"\entry{Chrysanthème}") == 1
 
 
+class _ProcessLoss(BaseException):
+    """Stands in for the process dying: no ``except Exception`` handler runs,
+    exactly as none would if the worker were killed mid-save."""
+
+
 def test_crash_after_primary_write_reconstructs_receipt_without_duplicate(
     tmp_path,
     monkeypatch,
@@ -68,15 +73,11 @@ def test_crash_after_primary_write_reconstructs_receipt_without_duplicate(
 
     def commit_then_crash(transaction):
         real_commit(transaction)
-        raise RuntimeError("simulated process loss after primary write")
+        raise _ProcessLoss("simulated process loss after primary write")
 
     monkeypatch.setattr(service, "_commit_transaction_primary", commit_then_crash)
-    try:
+    with pytest.raises(_ProcessLoss):
         service.save(preview.token)
-    except RuntimeError as exc:
-        assert "simulated process loss" in str(exc)
-    else:  # pragma: no cover - assertion guard
-        raise AssertionError("Fault injection should interrupt the first save")
 
     restarted = build_service(tmp_path, monkeypatch)
     receipt = restarted.save(preview.token)
@@ -101,10 +102,10 @@ def test_crash_after_merge_replays_idempotently(tmp_path, monkeypatch):
 
     def merge_then_crash(transaction):
         real_commit(transaction)
-        raise RuntimeError("simulated process loss after merge")
+        raise _ProcessLoss("simulated process loss after merge")
 
     monkeypatch.setattr(service, "_commit_transaction_primary", merge_then_crash)
-    with pytest.raises(RuntimeError, match="process loss after merge"):
+    with pytest.raises(_ProcessLoss):
         service.save(preview.token)
 
     restarted = build_service(tmp_path, monkeypatch)

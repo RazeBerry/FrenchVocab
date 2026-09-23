@@ -555,6 +555,45 @@ def test_duplicate_preview_fields_round_trip_through_state_store(
     assert restored.as_json() == preview.as_json()
 
 
+def test_save_reported_as_failed_is_not_committed_later(tmp_path, monkeypatch):
+    service = build_service(tmp_path, monkeypatch)
+    preview = service.preview("chrysantheme")
+    real_add = service.builder.add_vocab_entries
+
+    def disk_full(*_args, **_kwargs):
+        raise OSError("No space left on device")
+
+    monkeypatch.setattr(service.builder, "add_vocab_entries", disk_full)
+    with pytest.raises(OSError):
+        service.save(preview.token)
+    monkeypatch.setattr(service.builder, "add_vocab_entries", real_add)
+
+    assert preview.token not in service._transactions
+    service.status()
+    assert service.builder.check_duplicate("chrysanthème") is None
+    # The preview survives, so tapping Save again after the failure works once.
+    assert service.save(preview.token)["action"] == "added"
+    assert (tmp_path / "FrenchVocab.tex").read_text(encoding="utf-8").count("\\entry{Chrysanthème}") == 1
+
+
+def test_save_that_reached_disk_before_failing_reports_the_save(tmp_path, monkeypatch):
+    service = build_service(tmp_path, monkeypatch)
+    preview = service.preview("chrysantheme")
+    real_add = service.builder.add_vocab_entries
+
+    def write_then_fail(*args, **kwargs):
+        real_add(*args, **kwargs)
+        raise OSError("fsync of the parent directory failed")
+
+    monkeypatch.setattr(service.builder, "add_vocab_entries", write_then_fail)
+
+    receipt = service.save(preview.token)
+
+    assert receipt["action"] == "added"
+    assert receipt["sync_pending"] is False
+    assert service.builder.check_duplicate("chrysanthème") is not None
+
+
 def test_save_retry_returns_the_original_receipt_without_a_second_write(tmp_path, monkeypatch):
     service = build_service(tmp_path, monkeypatch)
     preview = service.preview("chrysantheme")
