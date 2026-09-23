@@ -58,7 +58,9 @@ export class ApiClient {
       return payload;
     } catch (error) {
       if (error instanceof StaleRequestError) throw error;
-      if (error.name === "AbortError") {
+      // fetch rejects with the abort reason itself, so a timeout arrives as the
+      // string "timeout" rather than an AbortError; ask the signal instead.
+      if (controller.signal.aborted) {
         const timedOut = controller.signal.reason === "timeout";
         const wrapped = new Error(timedOut ? "The server took too long to respond." : "Request superseded.");
         wrapped.code = timedOut ? "request_timeout" : "request_aborted";

@@ -690,6 +690,7 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 - Keep tests mirrored to modules (for example `vocab_builder/core/vocab.py` -> `tests/test_sentence_flow.py`).
 - Name new files `test_<feature>.py` and test functions `test_<behavior>`.
 - Use stubs/fixtures (`tests/_stubs.py`) to avoid real API calls.
+- Browser logic whose correctness depends on platform behavior runs under Node against the real module, not a grep of its source: `tests/test_mobile_api_client.py` drives `api.js` with Node's real `fetch` against a socket that never answers, because an aborted fetch rejects with the abort reason itself (the string `"timeout"`), not an `AbortError`. Node is required locally and is present on CI's `ubuntu-latest` runner.
 - Concurrency changes must cover both in-process threads and POSIX processes. Keep the isolated-`tempfile.tempdir` regression in `tests/test_concurrency_transactions.py`; it models systemd `PrivateTmp` without touching production data.
 - Mobile changes should exercise the ASGI surface in `tests/test_mobile_service.py`, including duplicate commits, save retries, language routing, Tailscale identity enforcement, and cross-language worker-thread behavior.
 - CI installs the project with its `[mobile]` extra before collecting the full suite because the mobile service tests import FastAPI directly. Keep the extra in the lint-and-test dependency install unless those tests move to a separately provisioned job.
