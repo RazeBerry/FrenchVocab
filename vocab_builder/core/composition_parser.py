@@ -151,6 +151,12 @@ def _correction_from_parts(parts: dict[str, str]) -> CompositionCorrection:
     )
 
 
+_VERDICT_LINE = re.compile(
+    r"(.+?)\s*[:=\-\u2013\u2014]\s*(correct|incorrect|not[\s_-]*used)\W*$",
+    re.IGNORECASE,
+)
+
+
 def _parse_word_verdicts(section: str, warnings: list[str]) -> dict[str, str]:
     if not section:
         warnings.append("Could not parse word verdicts from grader response")
@@ -163,7 +169,9 @@ def _parse_word_verdicts(section: str, warnings: list[str]) -> dict[str, str]:
         if not line:
             continue
         line = re.sub(r"^\s*(?:[-*]\s*|\d+\.\s*)", "", line).strip()
-        match = re.match(r"(.+?)\s*[:=-]\s*(.+)$", line)
+        # Anchor on the verdict at the end of the line: splitting at the first
+        # separator cut "peut-être: correct" at its hyphen and dropped it.
+        match = _VERDICT_LINE.match(line)
         if not match:
             invalid_count += 1
             continue

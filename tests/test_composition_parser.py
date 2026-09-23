@@ -126,3 +126,34 @@ Register: consistent
 
     assert parsed.english_gloss == "The corrected English intent."
     assert parsed.parsing_warnings == []
+
+
+def test_hyphenated_target_words_keep_their_verdicts():
+    response = """
+Corrected Text:
+Text.
+
+Corrections:
+none
+
+Word Verdicts:
+- peut-être: correct
+- arc-en-ciel - incorrect
+- c'est-à-dire: not-used
+- Kühlschrank = Correct.
+
+Unknown Word Candidates:
+none
+
+Register: consistent
+""".strip()
+
+    parsed = parse_composition_response(response)
+
+    assert parsed.word_verdicts == {
+        "peut-être": "correct",
+        "arc-en-ciel": "incorrect",
+        "c'est-à-dire": "not_used",
+        "Kühlschrank": "correct",
+    }
+    assert parsed.parsing_warnings == []
