@@ -149,9 +149,10 @@ class _ClaudeModels:
 
 
 class _ClaudeClient:
-    def __init__(self, api_key=None, timeout=None):
+    def __init__(self, api_key=None, timeout=None, max_retries=None):
         self.api_key = api_key
         self.timeout = timeout
+        self.max_retries = max_retries
         self.messages = _ClaudeMessages()
         self.models = _ClaudeModels()
 
@@ -162,8 +163,8 @@ def _install_anthropic_stub():
 
     anthropic_mod = types.ModuleType("anthropic")
 
-    def _create_client(api_key=None, timeout=None):
-        client = _ClaudeClient(api_key=api_key, timeout=timeout)
+    def _create_client(api_key=None, timeout=None, max_retries=None):
+        client = _ClaudeClient(api_key=api_key, timeout=timeout, max_retries=max_retries)
         clients.append(client)
         return client
 
@@ -416,6 +417,19 @@ def test_model_override_whitespace_falls_back_to_defaults(monkeypatch):
         _restore_anthropic_stub(anthropic_saved)
 
 
+def test_real_anthropic_client_makes_one_attempt_per_action():
+    import anthropic  # a core dependency, so the real SDK is always present
+    saved = sys.modules.get("anthropic")
+    sys.modules["anthropic"] = anthropic
+    try:
+        llm_client = _load_real_llm_client()
+        claude = llm_client.ClaudeClient(api_key="sk-ant-" + "x" * 40)
+    finally:
+        _restore_anthropic_stub(saved)
+
+    assert claude._client.max_retries == 0
+
+
 def test_resolved_models_are_used_for_provider_requests(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
     monkeypatch.setenv("VOCABBUILDER_GEMINI_MODEL", "gemini-request-model")
@@ -455,9 +469,11 @@ def test_resolved_models_are_used_for_provider_requests(monkeypatch):
         stream_kwargs = clients[0].messages.last_stream_kwargs
         assert stream_kwargs["model"] == "claude-request-model"
         assert stream_kwargs["max_tokens"] == 8192
-        assert stream_kwargs["temperature"] == 0.1
+        assert clients[0].max_retries == 0
+        # Current Claude models reject sampling parameters with a 400.
+        for unsupported_parameter in ("temperature", "top_p", "top_k"):
+            assert unsupported_parameter not in stream_kwargs
         assert "extra_headers" not in stream_kwargs
-        assert "top_p" not in stream_kwargs
         assert "thinking" not in stream_kwargs
     finally:
         _restore_google_stub(google_saved)

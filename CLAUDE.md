@@ -184,6 +184,12 @@ pytest -k "anki"
   is no model fallback, automatic function calling is disabled, and a 503 is
   surfaced immediately. Do not add application or SDK retry/fallback loops, a
   token-count follow-up request, or an SSE stream.
+- Claude follows the same one-request rule: the Anthropic client is built with
+  `max_retries=0`, because the SDK's default of two retries turned one hung
+  action into three provider timeouts behind a browser that stops waiting at
+  130 seconds. Claude requests send no sampling parameters (`temperature`,
+  `top_p`, `top_k`); current Claude models reject them with a 400, so pinning
+  one made `VOCABBUILDER_CLAUDE_MODEL` unable to name a current model.
 - Vocabulary generation, directional translation, and automatic direction
   detection all use Gemini's low thinking level. Raise it only when a measured
   quality gain justifies the latency and hidden-token cost on representative

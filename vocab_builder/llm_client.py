@@ -473,14 +473,14 @@ class ClaudeClient(LLMClient):
         key = api_key or os.getenv("ANTHROPIC_API_KEY")
         if not key:
             raise RuntimeError("ANTHROPIC_API_KEY is not set")
-        try:
-            self._client = anthropic.Anthropic(
-                api_key=key,
-                timeout=_provider_timeout_seconds(),
-            )
-        except (TypeError, ValueError):
-            # Preserve compatibility with SDK releases predating this option.
-            self._client = anthropic.Anthropic(api_key=key)
+        # One application action is one request, as for Gemini: the SDK's
+        # default of two retries turned one hung call into three 120 s waits
+        # behind a browser that had already given up at 130 s.
+        self._client = anthropic.Anthropic(
+            api_key=key,
+            timeout=_provider_timeout_seconds(),
+            max_retries=0,
+        )
         self._model_name = _resolve_model_name(
             "VOCABBUILDER_CLAUDE_MODEL",
             self.MODEL_NAME,
@@ -495,7 +495,6 @@ class ClaudeClient(LLMClient):
         with self._client.messages.stream(
             model=self._model_name,
             max_tokens=8192,
-            temperature=0.1,
             messages=[
                 {"role": "user", "content": [{"type": "text", "text": prompt}]}
             ],
