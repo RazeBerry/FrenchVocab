@@ -1392,5 +1392,4 @@ a:focus-visible {
 @media (min-width: 700px) {
   .app { width: min(100%, 720px); }
   .tabbar { max-width: 720px; border-right: 1px solid var(--line); border-left: 1px solid var(--line); border-radius: var(--r-md) var(--r-md) 0 0; }
-  .stage { min-height: 470px; }
 }

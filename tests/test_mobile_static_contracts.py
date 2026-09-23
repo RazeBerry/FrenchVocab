@@ -133,6 +133,8 @@ def test_capture_actions_stay_reachable_when_the_keyboard_opens(styles, shell_js
     assert "window.visualViewport" in shell_js
     assert '"--kb"' in shell_js and "is-keyboard" in shell_js
     assert "vh" not in _rule(styles, ".stage")
+    # At any width: a 470px floor left in the desktop block kept the gap there.
+    assert not re.search(r"\.stage\s*\{[^}]*min-height", styles)
     assert "none" in _rule(styles, ":root.is-keyboard .recent-strip")
 
 
