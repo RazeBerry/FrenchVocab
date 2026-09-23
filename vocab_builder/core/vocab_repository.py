@@ -305,6 +305,18 @@ class VocabRepository:
                 return candidate
             suffix += 1
 
+    @property
+    def collection_version(self) -> str:
+        """Name the file state the loaded entries came from.
+
+        It changes whenever any process rewrites the collection, so a reader
+        that already holds the entries can tell whether they went stale without
+        fetching them again.
+        """
+        self.ensure_entries_loaded()
+        signature = self._loaded_file_signature
+        return "-".join(str(part) for part in signature) if signature else ""
+
     def count_entries(self) -> int:
         """Return the authoritative parsed entry count."""
         if not self.latex_file.exists():

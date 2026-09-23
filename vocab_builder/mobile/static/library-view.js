@@ -35,6 +35,11 @@ export class LibraryView {
     /* Detail fetched on open, kept for the life of the collection: reopening a
        word must not pay for the same request twice. */
     this.entries = new Map();
+    /* Each collection's last index and census. Returning to a collection
+       shows its words at once; the fetch that follows replaces them, and
+       `loaded` still waits for that fresh answer. */
+    this.indexByLanguage = new Map();
+    this.statsByLanguage = new Map();
     this.rows = [];
     this.cursor = -1;
     this.timer = null;
@@ -65,6 +70,9 @@ export class LibraryView {
   async activate() {
     if (this.loaded) return;
     this.renderSort();
+    const language = document.documentElement.dataset.language;
+    if (this.indexByLanguage.has(language)) this.applyIndex(this.indexByLanguage.get(language));
+    if (this.statsByLanguage.has(language)) this.applyStats(this.statsByLanguage.get(language));
     const [indexArrived] = await Promise.all([this.loadIndex(), this.loadStats()]);
     // Loaded means the index arrived. Remembering a failed first load as done
     // left the glossary empty until a local save, even once back online.
@@ -85,30 +93,42 @@ export class LibraryView {
      letter begins, which a page cannot say, and the rows are slim enough that
      asking again per page would cost more than asking once. */
   async loadIndex() {
+    const language = document.documentElement.dataset.language;
     try {
       const payload = await this.api.request(
         "/api/library/index",
         {},
         { scope: "library-index" },
       );
-      this.index = payload.items;
-      // Acquisition rank is a server-owned fact shipped with the finder row.
-      // The source is alphabetical, so stable sorting naturally leaves unknown
-      // entries alphabetical after all ranked entries.
-      this.addedIndex = [...this.index].sort(
-        (left, right) => (right.added ?? -1) - (left.added ?? -1),
-      );
-      this.letters = payload.letters;
-      this.total = payload.total;
-      // The page heading is gone on a phone, so the field names the collection.
-      el("search-input").placeholder = `Search ${count(this.total, "word", "words")}`;
-      this.showMessage("");
-      this.render();
+      const painted = this.indexByLanguage.get(language);
+      this.indexByLanguage.set(language, payload);
+      // The fresh answer usually matches the rows memory already painted, and
+      // rendering 573 identical rows again was a second long task on every
+      // return to a collection.
+      if (!(painted && this.index === painted.items && sameIndex(painted, payload))) {
+        this.applyIndex(payload);
+      }
       return true;
     } catch (error) {
       if (!ignoreCancelled(error)) this.showMessage(error.message);
       return false;
     }
+  }
+
+  applyIndex(payload) {
+    this.index = payload.items;
+    // Acquisition rank is a server-owned fact shipped with the finder row.
+    // The source is alphabetical, so stable sorting naturally leaves unknown
+    // entries alphabetical after all ranked entries.
+    this.addedIndex = [...this.index].sort(
+      (left, right) => (right.added ?? -1) - (left.added ?? -1),
+    );
+    this.letters = payload.letters;
+    this.total = payload.total;
+    // The page heading is gone on a phone, so the field names the collection.
+    el("search-input").placeholder = `Search ${count(this.total, "word", "words")}`;
+    this.showMessage("");
+    this.render();
   }
 
   async runSearch() {
@@ -131,18 +151,23 @@ export class LibraryView {
   }
 
   async loadStats() {
+    const language = document.documentElement.dataset.language;
     try {
       const stats = await this.api.request("/api/library/stats", {}, { scope: "library-stats" });
-      this.renderTypeChips(stats.types || []);
-      const panel = el("stats-panel");
-      panel.replaceChildren(
-        metric(stats.total, "entries"),
-        metric(stats.with_examples, "with examples"),
-        metric(stats.with_multiple_senses, "multi-sense"),
-      );
+      this.statsByLanguage.set(language, stats);
+      this.applyStats(stats);
     } catch (error) {
       if (!ignoreCancelled(error)) this.showMessage(error.message);
     }
+  }
+
+  applyStats(stats) {
+    this.renderTypeChips(stats.types || []);
+    el("stats-panel").replaceChildren(
+      metric(stats.total, "entries"),
+      metric(stats.with_examples, "with examples"),
+      metric(stats.with_multiple_senses, "multi-sense"),
+    );
   }
 
   render() {
@@ -517,6 +542,18 @@ export class LibraryView {
       if (this.loaded) this.renderFoot(this.rows.length, Boolean(this.query));
     });
   }
+}
+
+/* Field-by-field over primitives: cheaper than one render, and exact. */
+function sameIndex(left, right) {
+  if (left.total !== right.total || left.items.length !== right.items.length) return false;
+  if (JSON.stringify(left.letters) !== JSON.stringify(right.letters)) return false;
+  return left.items.every((row, at) => {
+    const other = right.items[at];
+    return row.word === other.word && row.gloss === other.gloss
+      && row.word_type === other.word_type && row.added === other.added
+      && row.letter === other.letter;
+  });
 }
 
 function entryKey(word) {

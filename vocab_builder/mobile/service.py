@@ -230,6 +230,7 @@ class MobileVocabService:
                 ),
                 "supports_practice": bool(self.builder.enable_composition),
                 "entry_count": len(entries),
+                "collection_version": self.builder.collection_version,
                 "data_file": self.builder.latex_file.name,
                 "sync_pending": len(self._transactions),
             }

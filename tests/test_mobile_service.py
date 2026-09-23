@@ -594,6 +594,18 @@ def test_save_that_reached_disk_before_failing_reports_the_save(tmp_path, monkey
     assert service.builder.check_duplicate("chrysanthème") is not None
 
 
+def test_status_names_the_collection_version_the_phone_can_compare(tmp_path, monkeypatch):
+    service = build_service(tmp_path, monkeypatch)
+    service.save(service.preview("chrysantheme").token)
+    before = service.status()["collection_version"]
+
+    assert before and service.status()["collection_version"] == before
+    service.builder.client.response = AI_RESPONSE.replace("chrysanthème", "anémone")
+    service._token_factory = lambda: "second-preview-token"
+    service.save(service.preview("anemone").token)
+    assert service.status()["collection_version"] != before
+
+
 def test_save_retry_returns_the_original_receipt_without_a_second_write(tmp_path, monkeypatch):
     service = build_service(tmp_path, monkeypatch)
     preview = service.preview("chrysantheme")

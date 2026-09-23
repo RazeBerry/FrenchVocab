@@ -29,6 +29,11 @@ export class CaptureView {
     this.providerLabel = "";
     this.collectedEntry = null;
     this.waitTimer = null;
+    /* Each collection's last ledger, so a language switch shows that
+       collection's words at once instead of the empty strip for a round
+       trip. The fetch that follows replaces it. */
+    this.recentByLanguage = new Map();
+    this.recentShownFor = null;
     this.expanded = false;
     this.pendingDuplicateText = "";
     this.justSaved = "";
@@ -75,6 +80,7 @@ export class CaptureView {
     this.landing = false;
     this.input.value = "";
     this.showCapture();
+    this.recentShownFor = null;
     renderEntries(el("recent-list"), []);
     el("recent-empty").hidden = false;
   }
@@ -82,23 +88,43 @@ export class CaptureView {
   async activate() { await this.refresh(); }
 
   async refresh() {
+    const language = document.documentElement.dataset.language;
+    // Only a strip showing another collection is repainted from memory; after
+    // a save the strip on screen is already this one, and the fresh answer is
+    // the one that carries the landing slide.
+    const known = this.recentByLanguage.get(language);
+    if (known && this.recentShownFor !== language) this.renderRecent(known, language, false);
     try {
       const entries = await this.api.request(
         `/api/recent?limit=${RECENT_LIMIT}`,
         {},
         { scope: "recent" },
       );
-      const shown = ledgerWindow(entries);
-      renderEntries(el("recent-list"), shown, {
-        groupBy: "day",
-        justSaved: this.justSaved,
-        landing: this.landing,
-      });
+      this.recentByLanguage.set(language, entries);
+      this.renderRecent(entries, language, this.landing);
       this.landing = false;
-      el("recent-empty").hidden = shown.length > 0;
     } catch (error) {
       if (!ignoreCancelled(error)) this.showMessage(error.message);
     }
+  }
+
+  renderRecent(entries, language, landing) {
+    const shown = ledgerWindow(entries);
+    renderEntries(el("recent-list"), shown, {
+      groupBy: "day",
+      justSaved: this.justSaved,
+      landing,
+    });
+    this.recentShownFor = language;
+    el("recent-empty").hidden = shown.length > 0;
+  }
+
+  prefetchRecent(languages) {
+    this.api.prefetch(
+      `/api/recent?limit=${RECENT_LIMIT}`,
+      languages,
+      (language, entries) => this.recentByLanguage.set(language, entries),
+    );
   }
 
   showMessage(text, options) { setMessage(this.message, text, options); }

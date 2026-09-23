@@ -29,6 +29,25 @@ export function setBusy(button, busy, busyLabel = "Working") {
   button.textContent = busy ? busyLabel : (button.dataset.idleLabel || button.textContent);
 }
 
+/* A collection switch: its code names it on sight and its hue still carries
+   it; the language name is what a screen reader hears. */
+export function languageButton(language, name, pressed) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "lang";
+  button.dataset.lang = language;
+  button.setAttribute("aria-pressed", String(pressed));
+  const code = document.createElement("span");
+  code.className = "lang-code";
+  code.setAttribute("aria-hidden", "true");
+  code.textContent = language.toUpperCase();
+  const label = document.createElement("span");
+  label.className = "sr-only";
+  label.textContent = name;
+  button.append(code, label);
+  return button;
+}
+
 export function makeButton(label, value, active = false) {
   const button = document.createElement("button");
   button.type = "button";

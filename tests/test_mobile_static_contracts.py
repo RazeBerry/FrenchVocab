@@ -351,7 +351,10 @@ def test_just_saved_row_borrows_the_open_row_treatment(styles, capture_view):
     assert "this.landing = Boolean(this.justSaved)" in capture_view
     assert "justSaved: this.justSaved" in capture_view
     refresh = capture_view.split("  async refresh() {", 1)[1].split("\n  }", 1)[0]
-    assert "landing: this.landing" in refresh
+    # Only the fresh answer carries the slide; a strip repainted from memory
+    # on a language switch passes false.
+    assert "this.renderRecent(entries, language, this.landing)" in refresh
+    assert "this.renderRecent(known, language, false)" in refresh
     assert "this.landing = false" in refresh
     # Cleared by the next look-up, and by the reset a language change runs.
     look_up = capture_view.split("async lookUp(", 1)[1].split("async save(", 1)[0]
@@ -505,8 +508,9 @@ def test_sort_toggles_reuse_the_loaded_index(library_view):
     load = library_view.split("  async loadIndex() {", 1)[1].split("\n  }", 1)[0]
     assert '"/api/library/index"' in load
     assert "sort=${this.sort}" not in load
-    assert "this.addedIndex = [...this.index].sort" in load
-    assert "(right.added ?? -1) - (left.added ?? -1)" in load
+    apply = library_view.split("  applyIndex(payload) {", 1)[1].split("\n  }", 1)[0]
+    assert "this.addedIndex = [...this.index].sort" in apply
+    assert "(right.added ?? -1) - (left.added ?? -1)" in apply
     toggle = library_view.split('el("library-sort").addEventListener("click"', 1)[1].split(
         "\n    });", 1
     )[0]
@@ -612,7 +616,7 @@ def test_stats_and_random_flashcard_own_separate_disclosures(index_html, library
     assert 'id="stats-panel" hidden' in index_html
     assert 'id="random-panel" hidden' in index_html
 
-    load_stats = library_view.split("  async loadStats() {", 1)[1].split("\n  }", 1)[0]
+    load_stats = library_view.split("  applyStats(stats) {", 1)[1].split("\n  }", 1)[0]
     show_random = library_view.split("  async showRandom() {", 1)[1].split("\n  }", 1)[0]
     assert 'el("stats-panel")' in load_stats
     assert 'el("random-panel")' not in load_stats

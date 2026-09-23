@@ -17,6 +17,16 @@ export class ApiClient {
     this.requests.clear();
   }
 
+  /* Ask each collection once in the background, so its first switch paints
+     at once. A failure is ignored: the next real request reports it. */
+  prefetch(path, languages, onResult) {
+    languages.forEach((language) => {
+      this.request(path, {}, { language, scope: `prefetch-${language}:${path}` })
+        .then((payload) => onResult(language, payload))
+        .catch(() => {});
+    });
+  }
+
   /* The caller rejects as "request_aborted", which views already ignore. */
   abort(scope) {
     this.requests.get(scope)?.controller.abort();

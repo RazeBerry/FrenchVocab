@@ -42,9 +42,10 @@ function element(id = "") {
       (listeners[type] || []).forEach((handler) => handler({ target: this, preventDefault() {}, ...extra }));
     },
     click() { this.fire("click"); },
-    replaceChildren() {},
-    appendChild(child) { return child; },
-    append() {},
+    children: [],
+    replaceChildren(...children) { this.children = children; },
+    appendChild(child) { this.children.push(child); return child; },
+    append(...children) { this.children.push(...children); },
     focus() {},
     querySelector() { return null; },
     querySelectorAll() { return []; },
@@ -59,7 +60,7 @@ globalThis.document = {
   createTextNode: (text) => ({ textContent: text }),
   createDocumentFragment: () => element(),
   addEventListener() {},
-  querySelector: () => null,
+  querySelector: () => element(),
   querySelectorAll: () => [],
   documentElement: element("html"),
 };
@@ -70,5 +71,8 @@ globalThis.localStorage = {
 };
 Object.defineProperty(globalThis, "navigator", { value: { onLine: true, maxTouchPoints: 0 } });
 globalThis.window = globalThis;
+globalThis.addEventListener = () => {};
+globalThis.scrollTo = () => {};
+globalThis.requestAnimationFrame = (callback) => setTimeout(callback, 0);
 globalThis.matchMedia = () => ({ matches: false, addEventListener() {} });
 globalThis.getComputedStyle = () => ({ transitionDuration: "0s" });

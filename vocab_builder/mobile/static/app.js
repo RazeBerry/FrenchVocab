@@ -4,7 +4,7 @@ import { LibraryView } from "./library-view.js";
 import { TranslationView } from "./translation-view.js";
 import { PracticeView } from "./practice-view.js";
 import { ToolsView } from "./tools-view.js";
-import { el, readStorage, trackKeyboardInset, writeStorage } from "./ui.js";
+import { el, languageButton, readStorage, trackKeyboardInset, writeStorage } from "./ui.js";
 
 const LANGUAGE_KEY = "vocabbuilder-language";
 const THEME_KEY = "vocabbuilder-theme";
@@ -20,6 +20,9 @@ const state = {
 
 const api = new ApiClient(() => state.language);
 const views = {};
+/* Each collection's last status, painted at once on a switch while the fresh
+   one is a round trip away. Display only; nothing is decided from it. */
+const statusCache = new Map();
 
 function currentTheme() {
   return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
@@ -62,24 +65,22 @@ async function loadCollections() {
   const container = el("languages");
   container.replaceChildren();
   payload.collections.forEach(({ language, language_name: name }) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "lang";
-    button.dataset.lang = language;
-    button.setAttribute("aria-pressed", String(language === state.language));
-    // The code names the collection on sight; the hue still carries it.
-    const code = document.createElement("span");
-    code.className = "lang-code";
-    code.setAttribute("aria-hidden", "true");
-    code.textContent = language.toUpperCase();
-    const label = document.createElement("span");
-    label.className = "sr-only";
-    label.textContent = name;
-    button.append(code, label);
+    const button = languageButton(language, name, language === state.language);
     button.addEventListener("click", () => selectLanguage(language));
     container.appendChild(button);
   });
   document.documentElement.dataset.language = state.language;
+  return payload.collections.map(({ language }) => language);
+}
+
+function applyStatus(status) {
+  state.languageName = status.language_name;
+  setEntryCount(status.entry_count);
+  el("data-file").textContent = status.data_file;
+  views.capture.setLanguage(status);
+  document.documentElement.dataset.translation = String(status.supports_translation);
+  const translateTab = document.querySelector('.tab[data-tab="translate"]');
+  translateTab.hidden = !status.supports_translation;
 }
 
 async function loadStatus() {
@@ -91,13 +92,8 @@ async function loadStatus() {
   try {
     const status = await api.request("/api/status", {}, { scope: "status" });
     if (language !== state.language) return null;
-    state.languageName = status.language_name;
-    setEntryCount(status.entry_count);
-    el("data-file").textContent = status.data_file;
-    views.capture.setLanguage(status);
-    document.documentElement.dataset.translation = String(status.supports_translation);
-    const translateTab = document.querySelector('.tab[data-tab="translate"]');
-    translateTab.hidden = !status.supports_translation;
+    statusCache.set(language, status);
+    applyStatus(status);
     if (!status.supports_translation && state.activeView === "translate") {
       await showView("capture");
     }
@@ -133,9 +129,20 @@ async function selectLanguage(language) {
   document.querySelectorAll(".lang").forEach((button) => {
     button.setAttribute("aria-pressed", String(button.dataset.lang === language));
   });
+  // Paint the pressed collection before rendering it: its rows in the same
+  // task held back the tap's own feedback. A later tap supersedes this one.
+  await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+  if (state.language !== language) return;
   Object.values(views).forEach((view) => view.reset?.());
-  await Promise.allSettled([loadStatus(), views.capture.refresh()]);
-  await views[state.activeView].activate?.();
+  const known = statusCache.get(language);
+  if (known) applyStatus(known);
+  // The view paints from memory beside the status request, not after it. Only
+  // the translator waits, since status may close it (English has none), and
+  // capture's refresh is already one of the two.
+  const view = state.activeView;
+  const beside = view === "capture" || view === "translate" ? null : views[view].activate?.();
+  await Promise.allSettled([loadStatus(), views.capture.refresh(), beside]);
+  if (view === "translate" && state.activeView === "translate") await views.translate.activate();
 }
 
 async function showView(name) {
@@ -191,12 +198,14 @@ function showInstallTip() {
 
 async function refresh() {
   const active = views[state.activeView];
-  // A view that has loaded re-reads when the app comes back, or words saved
-  // elsewhere, from the Mac client say, stayed invisible until a local save.
-  const reread = active !== views.capture && active.loaded
-    ? active.refreshIfLoaded?.()
-    : active.activate?.();
-  await Promise.allSettled([loadStatus(), views.capture.refresh(), reread]);
+  const seen = statusCache.get(state.language)?.collection_version;
+  const first = active === views.capture || active.loaded ? null : active.activate?.();
+  const [status] = await Promise.all([loadStatus(), views.capture.refresh(), first]);
+  // The glossary re-reads only when the collection file changed (a save on
+  // the Mac, say): a fresh index is about 94 kB over the tailnet.
+  if (active === views.library && active.loaded && status?.collection_version !== seen) {
+    await active.refreshIfLoaded();
+  }
 }
 
 async function bootstrap() {
@@ -218,8 +227,11 @@ async function bootstrap() {
   trackKeyboardInset();
   showInstallTip();
   try {
-    await loadCollections();
+    const languages = await loadCollections();
     await Promise.all([loadStatus(), views.capture.activate()]);
+    const others = languages.filter((language) => language !== state.language);
+    api.prefetch("/api/status", others, (language, status) => statusCache.set(language, status));
+    views.capture.prefetchRecent(others);
   } catch (error) {
     setConnection(false, "Server unavailable");
     views.capture.showMessage(error.message);

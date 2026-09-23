@@ -460,6 +460,11 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
         object.__setattr__(self, "_entry_count_fallback", count)
 
     @property
+    def collection_version(self) -> str:
+        """The loaded collection file's state (delegated to VocabRepository)."""
+        return self._vocab_repo.collection_version
+
+    @property
     def provider(self) -> str:
         """The active provider identifier (delegated to LLMCoordinator)."""
         return self._llm.provider
