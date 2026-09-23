@@ -127,10 +127,12 @@ def test_capture_actions_stay_reachable_when_the_keyboard_opens(styles, shell_js
     measuring the whole screen. `.stage` went on reserving 54vh — 460px of an
     iPhone 14 Pro's 852px — while only 516px stayed visible, leaving "Look it
     up" about 57px below the fold. visualViewport is the only thing that reports
-    the real inset; Safari ignores the `interactive-widget` viewport key."""
+    the real inset; Safari ignores the `interactive-widget` viewport key. The
+    stage now reserves no viewport height in any state, so there is nothing
+    left for the keyboard rule to undo."""
     assert "window.visualViewport" in shell_js
     assert '"--kb"' in shell_js and "is-keyboard" in shell_js
-    assert "min-height: 0" in _rule(styles, ":root.is-keyboard .stage")
+    assert "vh" not in _rule(styles, ".stage")
     assert "none" in _rule(styles, ":root.is-keyboard .recent-strip")
 
 
@@ -503,11 +505,11 @@ def test_sort_toggles_reuse_the_loaded_index(library_view):
     assert "sort=${this.sort}" not in load
     assert "this.addedIndex = [...this.index].sort" in load
     assert "(right.added ?? -1) - (left.added ?? -1)" in load
-    sort = library_view.split("  renderSort() {", 1)[1].split(
-        "\n  renderTypeChips", 1
+    toggle = library_view.split('el("library-sort").addEventListener("click"', 1)[1].split(
+        "\n    });", 1
     )[0]
-    assert "this.render()" in sort
-    assert "this.loadIndex()" not in sort
+    assert "this.render()" in toggle
+    assert "this.loadIndex()" not in toggle
 
 
 def test_the_letter_rail_is_offered_only_where_it_is_true(

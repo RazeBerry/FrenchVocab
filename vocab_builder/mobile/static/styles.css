@@ -165,7 +165,6 @@ button { -webkit-tap-highlight-color: transparent; }
 :root.is-keyboard body,
 :root.is-keyboard .app { min-height: 0; }
 :root.is-keyboard .app { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
-:root.is-keyboard .stage { min-height: 0; }
 :root.is-keyboard .slip { max-height: calc((100dvh - var(--kb)) * 0.52); }
 :root.is-keyboard textarea.hw {
   max-height: calc((100dvh - var(--kb)) * 0.3);
@@ -204,30 +203,42 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .langs { display: flex; align-items: center; gap: 2px; }
 
+/* Each collection is named by its code, set in its own hue, so the switch
+   reads without a tap; the pressed one fills with the hue. Three bare dots
+   had to be probed to learn which one was German. */
 .lang {
   display: grid;
   place-items: center;
-  width: 34px;
+  min-width: 36px;
   min-height: var(--tap);
   padding: 0;
   border: 0;
   background: transparent;
   cursor: pointer;
   border-radius: var(--r-xs);
+  color: var(--lang-hue, var(--hue));
 }
-.lang::before {
-  content: "";
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.26;
-  transition: opacity var(--dur-fast) ease, transform var(--dur-fast) ease;
+.lang[data-lang="fr"] { --lang-hue: var(--hue-fr); }
+.lang[data-lang="de"] { --lang-hue: var(--hue-de); }
+.lang[data-lang="en"] { --lang-hue: var(--hue-en); }
+.lang-code {
+  display: grid;
+  place-items: center;
+  min-width: 32px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  font-size: var(--t-2xs);
+  font-weight: 780;
+  letter-spacing: 0.08em;
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
-.lang[data-lang="fr"] { color: var(--hue-fr); }
-.lang[data-lang="de"] { color: var(--hue-de); }
-.lang[data-lang="en"] { color: var(--hue-en); }
-.lang[aria-pressed="true"]::before { opacity: 1; transform: scale(1.18); }
+.lang[aria-pressed="true"] .lang-code {
+  border-color: var(--lang-hue, var(--hue));
+  background: var(--lang-hue, var(--hue));
+  color: var(--on-hue);
+}
 
 .count {
   margin: 0 0 0 auto;
@@ -290,13 +301,15 @@ button { -webkit-tap-highlight-color: transparent; }
 .conn.offline { cursor: pointer; }
 .conn.offline::before { background: var(--danger); }
 
-/* ---------------- the stage and the deck behind the slip ---------------- */
+/* ---------------- the stage and the deck behind the slip ----------------
+   The slip hangs from the top and grows downward as it fills in. Centring it
+   in a 54vh stage left about 140px of empty paper above the blank slip and
+   170px below it, while the ledger of today's words showed one row. The top
+   padding is the room the deck's back cards need above the slip. */
 .stage {
   display: flex;
-  flex: 1 0 auto;
-  align-items: center;
-  min-height: 54vh;
-  padding: 4px 0 8px;
+  align-items: flex-start;
+  padding: 30px 0 8px;
 }
 
 .deck { position: relative; width: 100%; }
@@ -455,6 +468,23 @@ textarea.hw::placeholder { color: var(--ghost); }
 }
 
 .mean { margin: 0; font-size: var(--t-md); line-height: 1.5; }
+
+/* A look-up in progress: the word sits where it was typed and the body waits
+   visibly. The bars are decoration; the button label names the action. */
+.slip-wait { display: grid; gap: 10px; padding-top: 4px; }
+.skel { display: block; height: 11px; border-radius: var(--r-pill); background: var(--line); }
+.skel:nth-child(2) { width: 82%; }
+.skel:nth-child(3) { width: 58%; }
+.wait-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0 0;
+  color: var(--dim);
+  font-size: var(--t-xs);
+}
+.wait-line span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wait-seconds { color: var(--hue); font-weight: 650; font-variant-numeric: tabular-nums; }
 .slip.is-capturing .mean { color: var(--placeholder); }
 
 .example { margin: 11px 0 0; font-size: var(--t-sm); line-height: 1.45; }
@@ -700,6 +730,10 @@ textarea.hw::placeholder { color: var(--ghost); }
   background: var(--hue-wash);
 }
 @media (prefers-reduced-motion: no-preference) {
+  .skel { animation: skel-breathe calc(var(--dur-slow) * 5) ease-in-out infinite; }
+  .skel:nth-child(2) { animation-delay: var(--dur-fast); }
+  .skel:nth-child(3) { animation-delay: var(--dur-slow); }
+  @keyframes skel-breathe { 50% { opacity: 0.45; } }
   .index-row.is-landing { animation: row-land var(--dur-slow) var(--ease) both; }
   @keyframes row-land {
     from { transform: translateX(-6px); }
@@ -858,7 +892,7 @@ textarea.hw::placeholder { color: var(--ghost); }
    above one index, and the row opens the entry in place. */
 .index-controls { display: flex; gap: 9px; align-items: start; }
 .index-controls .type-chips { flex: 1 1 auto; min-width: 0; }
-.sort-segment { flex: none; }
+.sort-toggle { flex: none; margin: 2px 0 8px; color: var(--hue); font-weight: 650; }
 
 .index-layout { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
 
@@ -1152,7 +1186,34 @@ footer {
 .pair-list .pair-term { font-family: var(--display); font-size: var(--t-md); }
 .pair-list .pair-gloss { color: var(--dim); }
 
-.library-search { margin-bottom: 11px; }
+.library-search-row { display: flex; gap: 8px; margin: 8px 0 11px; }
+.library-search-row .search { flex: 1 1 auto; min-width: 0; }
+.more-button {
+  flex: none;
+  width: var(--tap-lg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--card);
+  color: var(--ink-soft);
+  font-size: var(--t-lg);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.more-button[aria-expanded="true"] { border-color: var(--hue); color: var(--hue); }
+/* On a phone the tab already says Glossary; the heading and its subtitle
+   pushed the first word half-way down the screen. It stays for a screen
+   reader and returns at the desktop frame, which has the room. */
+@media (max-width: 559px) {
+  .library-heading {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
 .type-chips {
   display: flex;
   gap: 7px;

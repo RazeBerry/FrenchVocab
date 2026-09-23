@@ -67,10 +67,15 @@ async function loadCollections() {
     button.className = "lang";
     button.dataset.lang = language;
     button.setAttribute("aria-pressed", String(language === state.language));
+    // The code names the collection on sight; the hue still carries it.
+    const code = document.createElement("span");
+    code.className = "lang-code";
+    code.setAttribute("aria-hidden", "true");
+    code.textContent = language.toUpperCase();
     const label = document.createElement("span");
     label.className = "sr-only";
     label.textContent = name;
-    button.appendChild(label);
+    button.append(code, label);
     button.addEventListener("click", () => selectLanguage(language));
     container.appendChild(button);
   });

@@ -359,19 +359,30 @@ pytest -k "anki"
 - Plain HTML/CSS/JS with no build step and no external requests (Tailscale-only hosts may have no public egress).
 - The five implemented views are Capture, Translate, Library, Practice, and Tools. The production navigation exposes Capture, Translate, and the glossary-backed Library; Practice and Tools remain marked `hidden` until their presentation is ready. English is monolingual, so capability data from `/api/status` removes Translate and leaves Capture and Library. Hiding a view must not remove its tested backend capability or durable state.
 - `app.js` is only the shell and view dispatcher. `api.js`, `ui.js`, `entry-list.js`, and the `*-view.js` modules own transport, shared presentation, and one workflow each. Keep server rules on the server and keep view-local DOM/state out of the shell.
-- Collection stats and Random flashcard each own a separate glossary panel. Their controls coordinate which panel is disclosed and keep `aria-expanded` aligned with it; never render one action's result into the other action's container.
-- Every mutating flow is preview/confirm or an explicit tool action. Disable repeated submissions while a request is active, use idempotency tokens supplied by the server, and ignore stale responses after a language or view change.
-- In the capture actions the solid button **always commits the previewed entry** and the ghost always offers the alternative to committing it. Routing a sentence to the translator sat in the solid slot while the ghost wrote to disk, which read exactly backwards.
+- Collection stats and Random flashcard each own a separate glossary panel. Their controls coordinate which panel is disclosed and keep `aria-expanded` aligned with it; never render one action's result into the other action's container. Both buttons sit behind the `···` toggle beside the search field (`#library-tools-toggle`), and closing that row closes whichever panel was open.
+- On a phone the glossary starts at its search field. Below 560px the page heading is visually hidden (still read by a screen reader), the field's placeholder names the count ("Search 573 words"), and A-Z / Added is one toggle chip at the end of the type-chip row. The heading, the subtitle, a segmented sort pair sharing the chip row and two full-width buttons had pushed the first word to about half the screen height; it now starts at about 29% on a 390 x 844 screen. The desktop frame keeps the heading.
 - A view counts as loaded only when its data arrived. `LibraryView.activate` and `TranslationView.activate` set `loaded` from the result of the load, and `refresh()` in `app.js` re-reads an already loaded view when the app returns to the foreground or comes back online. Setting `loaded` unconditionally left the glossary empty after an offline launch, reading "No entries match that search", and hid every word saved from the Mac until a save on the phone.
 - Every mutating flow is preview/confirm or an explicit tool action. Disable repeated submissions while a request is active, use idempotency tokens supplied by the server, and ignore stale responses after a language or view change.
 - In the capture actions the solid button **always commits the previewed entry** and the ghost always offers the alternative to committing it. Routing a sentence to the translator sat in the solid slot while the ghost wrote to disk, which read exactly backwards.
-- Capture dispatches on an explicit mode (`capture` / `collected` / `preview`),
+- Capture dispatches on an explicit mode (`capture` / `looking` / `collected` / `preview`),
   never on whether `this.preview` happens to be truthy. Inferring the state that
   way left the solid button reading "Look it up" and still enabled while a
   duplicate was on screen, so tapping it re-sent the request that had just been
   rejected. In the collected state the solid button commits the decision to
   change nothing ("Keep what I have") and the ghost carries the alternative that
   costs a provider call.
+- A look-up in progress is the `looking` state of the same slip: the typed word
+  takes the headword's place, `.pos` reads "French · looking it up", three
+  decorative bars stand where the meaning will be (they breathe only without
+  reduced motion), and a line names the provider with an elapsed-seconds
+  counter that is hidden from assistive technology so it is not announced
+  every second. The field is hidden, which also locks it: typing during a
+  look-up used to re-enable the button and start a second paid request. The
+  ghost button is Cancel, the one control enabled while busy; it aborts the
+  `capture-ai` request in the browser and returns to the typed word, or to the
+  collected entry a merge look-up started from. The server still finishes the
+  generation behind the per-language AI lock, so the next look-up can wait for
+  it; nothing is saved.
 - Merge copy counts both kinds of addition wherever it appears: the button
   ("Add 2 senses, 1 example"), the ribbon ("+2 senses, +1 example") and the
   receipt ("gained 2 senses and 1 example"). Counting only senses undersold a
@@ -407,7 +418,9 @@ pytest -k "anki"
 - The whole capturing slip is the writing surface: a click anywhere on it focuses the headword. Without that, only the `textarea`'s own line box accepts a tap — a 39px target inside a card several times its height.
 - A text field **always** matches `:focus-visible` while focused, so a blanket `textarea:focus-visible` outline boxes the headword on every tap, inside the slip's own dashed outline. The generic ring excludes `.hw` and `.slip.is-capturing:focus-within` carries the focus treatment instead; the caret remains the in-field indicator.
 - `.hw` transitions `font-size` between steps, so a `scrollHeight` read on the same input event still belongs to the previous, larger step. Typing hides this because the next keystroke re-measures at the settled size; a paste delivers one event and left the field pinned at 141px for 22px of content. `autoGrow` must therefore also run on the `font-size` `transitionend`.
-- The capture placeholder is language-neutral ("Type a word") because `.pos` already names the collection directly beneath it and the language dots carry it a third time. A language-specific placeholder cannot wrap, and at `--hw--s1` it clipped mid-word for German and English on every phone width tested.
+- The capture placeholder is language-neutral ("Type a word") because `.pos` already names the collection directly beneath it and the language switch carries it a third time. A language-specific placeholder cannot wrap, and at `--hw--s1` it clipped mid-word for German and English on every phone width tested.
+- The collection switch shows each collection's code (FR, DE, EN) in its own hue, and the pressed one fills with that hue. Three unlabelled dots had to be tapped to learn which was German. The code is `aria-hidden` and the button's accessible name stays the language name. At 320px the bar still fits without overflow.
+- `.stage` reserves no viewport height. The slip hangs from the top and grows downward as it fills, with the capture actions right under it; a 54vh stage that centred the blank slip left about 140px of empty paper above it and 170px below, while the Recently kept ledger showed one row. The stage's top padding is the room the deck's back cards need.
 - Every `vh`/`dvh` length here measures the layout viewport, and iOS does not shrink that when the software keyboard opens — only the visual viewport shrinks. `.stage` therefore went on reserving 54vh, 460px of an iPhone 14 Pro's 852px, while just 516px stayed visible, leaving the capture actions 145px below the fold on the one screen the app opens to. `ui.js` publishes the covered height as `--kb` from `visualViewport` and stamps `.is-keyboard` on `<html>`; the rules under it re-fit the capture column to what is actually on screen and drop the furniture the keyboard already covers. Safari ignores the `interactive-widget` viewport key, so there is no declarative fix. Measure the inset as `innerHeight - visualViewport.height` and nothing else: `offsetTop` says where the visual viewport sits, not how tall it is, so subtracting it under-reports whenever iOS scrolls to keep the caret visible, and far enough would drop the inset back under the threshold mid-keystroke and flicker the whole column.
 - A shrunken visual viewport is not sufficient evidence of a keyboard: desktop
   zoom can create the same geometry and used to hide the tab bar, recent list,

@@ -73,6 +73,14 @@
                 </div>
                 <div class="slip-body" id="slip-body">
                   <p class="mean" id="slip-mean">The meaning will appear here.</p>
+                  <!-- The look-up in progress. The skeleton is decoration; the
+                       button label is what a screen reader hears. -->
+                  <div class="slip-wait" id="slip-wait" hidden>
+                    <span class="skel" aria-hidden="true"></span>
+                    <span class="skel" aria-hidden="true"></span>
+                    <span class="skel" aria-hidden="true"></span>
+                    <p class="wait-line" aria-hidden="true"><span id="wait-provider"></span><span class="wait-seconds" id="wait-seconds"></span></p>
+                  </div>
                   <div id="slip-example"></div>
                   <ol class="senses" id="slip-senses" hidden></ol>
                   <div id="slip-examples" hidden></div>
@@ -118,13 +126,16 @@
         </section>
 
         <section class="view" id="view-library" data-view="library" hidden>
-          <div class="page-heading"><p class="eyebrow">Glossary</p><h1>Your whole collection</h1><p id="library-summary">Search every word, type, meaning, and example.</p></div>
-          <label class="search library-search"><span aria-hidden="true">&#8981;</span><span class="sr-only">Search collection</span><input id="search-input" type="search" placeholder="Search everything" autocomplete="off"></label>
+          <div class="page-heading library-heading"><p class="eyebrow">Glossary</p><h1>Your whole collection</h1><p id="library-summary">Search every word, type, meaning, and example.</p></div>
+          <div class="library-search-row">
+            <label class="search library-search"><span aria-hidden="true">&#8981;</span><span class="sr-only">Search collection</span><input id="search-input" type="search" placeholder="Search your words" autocomplete="off"></label>
+            <button class="more-button" id="library-tools-toggle" type="button" aria-expanded="false" aria-controls="library-tools"><span aria-hidden="true">&middot;&middot;&middot;</span><span class="sr-only">Random flashcard and collection stats</span></button>
+          </div>
           <div class="index-controls">
             <div class="type-chips" id="type-chips"></div>
-            <div class="segmented sort-segment" id="library-sort" role="group" aria-label="Order"></div>
+            <button class="chip sort-toggle" id="library-sort" type="button">A&ndash;Z &#8645;</button>
           </div>
-          <div class="library-actions"><button class="quiet-button" id="random-button" type="button" aria-controls="random-panel" aria-expanded="false">Random flashcard</button><button class="quiet-button" id="stats-button" type="button" aria-controls="stats-panel" aria-expanded="false">Collection stats</button></div>
+          <div class="library-actions" id="library-tools" hidden><button class="quiet-button" id="random-button" type="button" aria-controls="random-panel" aria-expanded="false">Random flashcard</button><button class="quiet-button" id="stats-button" type="button" aria-controls="stats-panel" aria-expanded="false">Collection stats</button></div>
           <div class="stats-panel" id="stats-panel" hidden></div>
           <div class="stats-panel random-card" id="random-panel" hidden></div>
           <div class="index-layout">

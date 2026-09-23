@@ -26,6 +26,9 @@ export class CaptureView {
     // draft was the one that never came back.
     this.language = null;
     this.languageName = "";
+    this.providerLabel = "";
+    this.collectedEntry = null;
+    this.waitTimer = null;
     this.expanded = false;
     this.pendingDuplicateText = "";
     this.justSaved = "";
@@ -52,6 +55,7 @@ export class CaptureView {
     const changed = this.language !== status.language;
     this.language = status.language;
     this.languageName = status.language_name;
+    this.providerLabel = status.provider || "";
     el("entry-label").textContent = `${status.language_name} word or phrase`;
     const total = Number(status.entry_count || 0);
     el("library-link").textContent =
@@ -100,6 +104,7 @@ export class CaptureView {
   showMessage(text, options) { setMessage(this.message, text, options); }
 
   showCapture({ preserveMessage = false } = {}) {
+    this.stopWaiting();
     this.mode = "capture";
     this.preview = null;
     this.displayedEntry = null;
@@ -176,6 +181,7 @@ export class CaptureView {
     // this visit ends, whether by keeping the entry or by saving more senses.
     this.heldDraft = lookupText === this.input.value.trim() ? "" : this.input.value;
     this.mode = "collected";
+    this.collectedEntry = existingEntry;
     this.pendingDuplicateText = lookupText;
     this.preview = null;
     this.expanded = false;
@@ -321,25 +327,73 @@ export class CaptureView {
       return;
     }
     const text = this.pendingDuplicateText || this.input.value;
+    // A cancelled or failed look-up returns to whatever was on screen.
+    const returnTo = this.mode === "collected" ? this.collectedEntry : null;
     // The highlight marks the word this visit put there; asking for another
     // one ends that visit.
     this.justSaved = "";
+    this.showLookingUp(text.trim());
     this.setBusy(true, "Looking it up…");
     this.showMessage("");
+    let preview = null;
     try {
-      const preview = await this.api.request("/api/preview", {
+      preview = await this.api.request("/api/preview", {
         method: "POST",
         body: JSON.stringify({ text, duplicate_action: duplicateAction }),
       }, { scope: "capture-ai", timeout: 130000 });
-      this.showPreview(preview);
     } catch (error) {
       if (error.code === "duplicate_entry" && error.details?.existing_entry) {
         this.showCollected(error.details.existing_entry, this.input.value.trim());
       }
       else if (!ignoreCancelled(error)) this.showMessage(error.message);
     } finally {
+      this.stopWaiting();
       this.setBusy(false);
     }
+    if (preview) this.showPreview(preview);
+    else if (this.mode === "looking") {
+      if (returnTo) this.showCollected(returnTo, text);
+      else this.showCapture({ preserveMessage: true });
+    }
+  }
+
+  /* The slip is the progress surface: the word stays where it was typed, the
+     body shows it is being filled, and the seconds answer "is it stuck?"
+     without promising a duration. Hiding the field also locks it, so typing
+     can no longer re-enable the button and start a second paid look-up. */
+  showLookingUp(text) {
+    this.mode = "looking";
+    this.slip.classList.remove("is-capturing", "is-expanded");
+    this.slip.classList.add("is-looking");
+    this.ribbon.hidden = true;
+    this.input.hidden = true;
+    const word = el("preview-word");
+    word.hidden = false;
+    word.textContent = text;
+    scaleHeadword(word, text);
+    el("slip-pos").textContent = `${this.languageName} · looking it up`;
+    ["slip-mean", "slip-example", "slip-senses", "slip-examples"].forEach((id) => {
+      el(id).hidden = true;
+    });
+    this.more.hidden = true;
+    this.variant.hidden = true;
+    this.discard.hidden = false;
+    this.discard.textContent = "Cancel";
+    el("wait-provider").textContent = this.providerLabel;
+    const started = Date.now();
+    const tick = () => {
+      el("wait-seconds").textContent = `${Math.floor((Date.now() - started) / 1000)} s`;
+    };
+    tick();
+    window.clearInterval(this.waitTimer);
+    this.waitTimer = window.setInterval(tick, 1000);
+    el("slip-wait").hidden = false;
+  }
+
+  stopWaiting() {
+    window.clearInterval(this.waitTimer);
+    el("slip-wait").hidden = true;
+    this.slip.classList.remove("is-looking");
   }
 
   async save(useOriginal = false) {
@@ -460,7 +514,8 @@ export class CaptureView {
     this.primary.disabled = busy || (
       this.mode === "capture" && (!this.input.value.trim() || !navigator.onLine)
     );
-    this.discard.disabled = busy;
+    // Cancel is the one control a look-up in progress offers.
+    this.discard.disabled = busy && this.mode !== "looking";
     this.variant.disabled = busy;
   }
 
@@ -497,7 +552,8 @@ export class CaptureView {
       else this.save();
     });
     this.discard.addEventListener("click", () => {
-      if (this.mode === "collected") this.lookUp("merge");
+      if (this.mode === "looking") this.api.abort("capture-ai");
+      else if (this.mode === "collected") this.lookUp("merge");
       else if (this.preview?.duplicate_action === "merge" || this.preview?.duplicate_action === "variant") {
         this.dismissToBlank();
         this.input.focus();

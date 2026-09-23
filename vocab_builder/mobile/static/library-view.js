@@ -56,7 +56,8 @@ export class LibraryView {
     this.results = [];
     this.entries.clear();
     el("search-input").value = "";
-    this.setAuxiliaryPanel();
+    this.renderSort();
+    this.setToolsOpen(false);
     this.showMessage("");
     this.render();
   }
@@ -99,6 +100,8 @@ export class LibraryView {
       );
       this.letters = payload.letters;
       this.total = payload.total;
+      // The page heading is gone on a phone, so the field names the collection.
+      el("search-input").placeholder = `Search ${count(this.total, "word", "words")}`;
       this.showMessage("");
       this.render();
       return true;
@@ -172,21 +175,22 @@ export class LibraryView {
     return rows.filter((row) => (row.word_type || "").trim().toLowerCase() === filter);
   }
 
+  /* Two orders, so one toggle at the end of the chip row: the segmented pair
+     it replaces took the chips' width and clipped them after the second. */
   renderSort() {
-    const container = el("library-sort");
-    container.replaceChildren();
-    [["alpha", "A–Z"], ["added", "Added"]].forEach(([value, label]) => {
-      const button = makeButton(label, value, value === this.sort);
-      button.addEventListener("click", () => {
-        if (this.sort === value) return;
-        this.sort = value;
-        container.querySelectorAll("button").forEach((item) => {
-          item.setAttribute("aria-pressed", String(item === button));
-        });
-        this.render();
-      });
-      container.appendChild(button);
-    });
+    const button = el("library-sort");
+    const alpha = this.sort === "alpha";
+    button.textContent = alpha ? "A–Z ⇅" : "Added ⇅";
+    button.setAttribute(
+      "aria-label",
+      alpha ? "Order: A to Z. Switch to newest first." : "Order: newest first. Switch to A to Z.",
+    );
+  }
+
+  setToolsOpen(open) {
+    el("library-tools").hidden = !open;
+    el("library-tools-toggle").setAttribute("aria-expanded", String(open));
+    if (!open) this.setAuxiliaryPanel();
   }
 
   renderTypeChips(types) {
@@ -479,6 +483,14 @@ export class LibraryView {
       this.setAuxiliaryPanel(panel.hidden ? "stats-panel" : "");
     });
     el("random-button").addEventListener("click", () => this.showRandom());
+    el("library-tools-toggle").addEventListener("click", () => {
+      this.setToolsOpen(el("library-tools").hidden);
+    });
+    el("library-sort").addEventListener("click", () => {
+      this.sort = this.sort === "alpha" ? "added" : "alpha";
+      this.renderSort();
+      this.render();
+    });
     el("entry-list").addEventListener("focusin", (event) => {
       if (event.target === this.rows[this.cursor]) return;
       const at = this.rows.indexOf(event.target);

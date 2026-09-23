@@ -17,6 +17,11 @@ export class ApiClient {
     this.requests.clear();
   }
 
+  /* The caller rejects as "request_aborted", which views already ignore. */
+  abort(scope) {
+    this.requests.get(scope)?.controller.abort();
+  }
+
   async request(path, options = {}, config = {}) {
     const scope = config.scope || `${options.method || "GET"}:${path}`;
     const previous = this.requests.get(scope);

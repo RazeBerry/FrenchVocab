@@ -52,6 +52,72 @@ out.value = nodes["entry-input"].value;
     assert out["value"] == "néanmoins"
 
 
+def test_look_up_fills_the_slip_locks_the_field_and_cancel_returns_the_word():
+    out = _run(CAPTURE + """
+let pending = null;
+const aborted = [];
+const api = {
+  request: (path) => path.startsWith("/api/recent")
+    ? Promise.resolve([])
+    : new Promise((resolve, reject) => { pending = { resolve, reject }; }),
+  abort(scope) {
+    aborted.push(scope);
+    pending.reject(Object.assign(new Error("Request superseded."), { code: "request_aborted" }));
+  },
+};
+const view = new CaptureView(api, async () => {}, async () => {});
+view.setLanguage(FRENCH);
+nodes["entry-input"].value = "flâner";
+nodes["entry-input"].fire("input");
+const lookUp = view.lookUp();
+out.during = {
+  mode: view.mode,
+  fieldHidden: nodes["entry-input"].hidden,
+  word: nodes["preview-word"].textContent,
+  waiting: !nodes["slip-wait"].hidden,
+  provider: nodes["wait-provider"].textContent,
+  seconds: nodes["wait-seconds"].textContent,
+  cancel: nodes["discard-button"].textContent,
+  cancelEnabled: !nodes["discard-button"].disabled,
+  primaryDisabled: nodes["primary-button"].disabled,
+  label: nodes["primary-label"].textContent,
+};
+nodes["discard-button"].click();
+await lookUp;
+out.after = {
+  aborted,
+  mode: view.mode,
+  fieldHidden: nodes["entry-input"].hidden,
+  value: nodes["entry-input"].value,
+  waiting: !nodes["slip-wait"].hidden,
+  label: nodes["primary-label"].textContent,
+  primaryDisabled: nodes["primary-button"].disabled,
+};
+""")
+
+    assert out["during"] == {
+        "mode": "looking",
+        "fieldHidden": True,
+        "word": "flâner",
+        "waiting": True,
+        "provider": "Test provider",
+        "seconds": "0 s",
+        "cancel": "Cancel",
+        "cancelEnabled": True,
+        "primaryDisabled": True,
+        "label": "Looking it up…",
+    }
+    assert out["after"] == {
+        "aborted": ["capture-ai"],
+        "mode": "capture",
+        "fieldHidden": False,
+        "value": "flâner",
+        "waiting": False,
+        "label": "Look it up",
+        "primaryDisabled": False,
+    }
+
+
 def test_merge_button_and_receipt_count_senses_and_examples():
     out = _run(CAPTURE + """
 const api = {
@@ -106,8 +172,8 @@ await view.activate();
 out.offline = { loaded: view.loaded, message: nodes["library-message"].textContent };
 online = true;
 await view.activate();
-out.online = { loaded: view.loaded };
+out.online = { loaded: view.loaded, placeholder: nodes["search-input"].placeholder };
 """)
 
     assert out["offline"] == {"loaded": False, "message": "Server unavailable"}
-    assert out["online"] == {"loaded": True}
+    assert out["online"] == {"loaded": True, "placeholder": "Search 2 words"}
