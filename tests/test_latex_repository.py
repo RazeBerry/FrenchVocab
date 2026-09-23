@@ -45,8 +45,51 @@ def test_repo_round_trips_entries_with_literal_braces(tmp_path: Path):
     repo.load_existing_entries()
 
     loaded = repo.word_entries["brace"]
-    assert loaded["definitions_list"] == ["value \\{x\\}"]
-    assert loaded["examples_list"] == [("Use \\{x\\}", "means \\{y\\}")]
+    assert loaded["definitions_list"] == ["value {x}"]
+    assert loaded["examples_list"] == [("Use {x}", "means {y}")]
+
+
+_SPECIAL = "50% & more, $5 #1 a_b {x} ~ ^ back\\slash"
+
+
+def _write_initial(repo: VocabRepository, word: str, definitions, examples) -> None:
+    repo.latex_file.write_text(
+        repo.format_latex_entry(word, "noun", definitions, examples, entry_command="\\entry"),
+        encoding="utf-8",
+    )
+    repo.load_existing_entries()
+
+
+def test_every_escaped_character_reads_back_as_written(tmp_path: Path):
+    repo = _repo(tmp_path)
+    _write_initial(repo, "rock & roll", [_SPECIAL], [(_SPECIAL, "(fig.) he likes (it)")])
+
+    loaded = repo.word_entries["rock & roll"]
+    assert loaded["word"] == "Rock & roll"
+    assert loaded["definitions_list"] == [_SPECIAL]
+    assert loaded["examples_list"] == [(_SPECIAL, "(fig.) he likes (it)")]
+
+
+def test_headword_with_special_characters_finds_its_own_duplicate(tmp_path: Path):
+    repo = _repo(tmp_path)
+    _write_initial(repo, "rock & roll", ["music"], [("x", "y")])
+
+    assert repo.check_duplicate("rock & roll") == "rock & roll"
+    block = repo.format_latex_entry("rock & roll", "noun", ["again"], [], entry_command="\\entry")
+    assert repo.insert_entry_alphabetically(block, "rock & roll") is False
+    assert repo.latex_file.read_text(encoding="utf-8").count("\\entry{") == 1
+
+
+def test_repeated_merges_do_not_re_escape_stored_text(tmp_path: Path):
+    repo = _repo(tmp_path)
+    _write_initial(repo, "truc", [_SPECIAL], [("Il a 50% & plus", "He has 50% & more")])
+    before = repo.latex_file.read_text(encoding="utf-8")
+
+    for _ in range(3):
+        assert repo.merge_into_existing("truc", "noun", [_SPECIAL], [("Il a 50% & plus", "He has 50% & more")])
+
+    assert repo.latex_file.read_text(encoding="utf-8") == before
+    assert repo.word_entries["truc"]["definitions_list"] == [_SPECIAL]
 
 
 def test_load_entries_handles_invalid_utf8_without_crashing(tmp_path: Path):

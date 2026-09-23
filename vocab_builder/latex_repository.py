@@ -1,9 +1,41 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import List, Tuple, Optional
 
 from vocab_builder.models import WordEntry
+
+# Stored text is escaped once on write and unescaped once on read, so every
+# in-memory value is plain text. Comparing or re-writing the escaped form
+# re-escaped it on every merge and let "rock & roll" miss its own duplicate.
+_LATEX_ESCAPES = {
+    '&': r'\&',
+    '%': r'\%',
+    '$': r'\$',
+    '#': r'\#',
+    '_': r'\_',
+    '{': r'\{',
+    '}': r'\}',
+    '~': r'\textasciitilde{}',
+    '^': r'\textasciicircum{}',
+    '\\': r'\textbackslash{}',
+}
+_LATEX_UNESCAPES = {escaped: plain for plain, escaped in _LATEX_ESCAPES.items()}
+_ESCAPE_PATTERN = re.compile("|".join(re.escape(plain) for plain in _LATEX_ESCAPES))
+_UNESCAPE_PATTERN = re.compile(
+    "|".join(re.escape(escaped) for escaped in sorted(_LATEX_UNESCAPES, key=len, reverse=True))
+)
+
+
+def escape_latex(text: str) -> str:
+    """Escape plain text for a LaTeX argument."""
+    return _ESCAPE_PATTERN.sub(lambda match: _LATEX_ESCAPES[match.group(0)], text or "")
+
+
+def unescape_latex(text: str) -> str:
+    """Invert ``escape_latex``; other LaTeX commands pass through unchanged."""
+    return _UNESCAPE_PATTERN.sub(lambda match: _LATEX_UNESCAPES[match.group(0)], text or "")
 
 
 def parse_balanced_group(s: str, start: int) -> Tuple[str, int]:
@@ -101,7 +133,7 @@ def find_entry_bounds(
         if result is None:
             continue
         groups, _, entry_end = result
-        entry_word = groups[0].strip().lower()
+        entry_word = unescape_latex(groups[0].strip()).lower()
         if entry_word == word_lower:
             last_match = (entry_start, entry_end)
             if not prefer_last:
@@ -211,15 +243,15 @@ class LatexRepository:
             content, i = self._parse_balanced_group(s, i)
             groups.append(content)
         try:
-            word_raw = groups[0].strip()
-            type_raw = groups[1].strip().strip("'\"")
+            word_raw = unescape_latex(groups[0].strip())
+            type_raw = unescape_latex(groups[1].strip().strip("'\""))
             # third group is an itemize block with \item lines
             defs_block = groups[2]
             exs_block = groups[3]
             definitions = [line.strip() for line in defs_block.split('\n')
                            if line.strip().startswith('\\item')]
             # strip the leading \item and any extra spaces
-            definitions = [d[len('\\item'):].strip() for d in definitions]
+            definitions = [unescape_latex(d[len('\\item'):].strip()) for d in definitions]
             # examples as list of (fr, en) — same structure we generate
             examples: List[Tuple[str, str]] = []
             for line in exs_block.split('\n'):
@@ -232,13 +264,13 @@ class LatexRepository:
                     fr, rest = payload.split('\\\\', 1)
                     fr = fr.strip()
                     en = rest.strip()
-                    # unwrap optional parentheses
+                    # The writer always adds exactly one pair of parentheses.
                     if en.startswith('(') and en.endswith(')'):
                         en = en[1:-1]
-                    examples.append((fr, en))
+                    examples.append((unescape_latex(fr), unescape_latex(en)))
                 else:
                     # Fallback: store the entire payload as FR, empty EN
-                    examples.append((payload, ''))
+                    examples.append((unescape_latex(payload), ''))
 
             entry = WordEntry(
                 word=word_raw.strip(),

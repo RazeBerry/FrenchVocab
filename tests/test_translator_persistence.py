@@ -78,6 +78,18 @@ Literal percent \% before a command does not comment it out: \engfre{hello}{bonj
     assert list(translator.pairs.values()) == [{"source": "hello", "target": "bonjour"}]
 
 
+def test_translator_pairs_read_back_as_written(tmp_path):
+    translator = _translator(tmp_path)
+    source, target = "salt & pepper, 50% off", "sel & poivre, 50 % de remise"
+    translator.save_translation(translator.preview_translation(source, provided_translation=target))
+
+    reloaded = _translator(tmp_path)
+    reloaded.load_existing_entries()
+
+    assert list(reloaded.pairs.values()) == [{"source": source, "target": target}]
+    assert reloaded.check_duplicate(reloaded.normalize_text(source)) is not None
+
+
 def test_translator_loader_preserves_duplicate_pairs(tmp_path):
     translator = _translator(tmp_path)
     translator.latex_file.write_text(

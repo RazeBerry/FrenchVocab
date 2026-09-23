@@ -15,29 +15,17 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from vocab_builder.core.bulk_add import BulkAddReport, DuplicatePolicy
 from vocab_builder.core.file_safety import atomic_copy_file, atomic_write_text, file_lock
-from vocab_builder.latex_repository import LatexRepository, find_entry_bounds, iter_entry_groups, parse_all_entries
+from vocab_builder.latex_repository import (
+    LatexRepository,
+    escape_latex,
+    find_entry_bounds,
+    iter_entry_groups,
+    parse_all_entries,
+    unescape_latex,
+)
 from vocab_builder.models import WordEntry, normalize_word_key
 from vocab_builder.languages import LanguageConfig, get_language_config
 from vocab_builder.ui_helper import UIHelper
-
-_LATEX_ESCAPE_MAPPING = {
-    '&': r'\&',
-    '%': r'\%',
-    '$': r'\$',
-    '#': r'\#',
-    '_': r'\_',
-    '{': r'\{',
-    '}': r'\}',
-    '~': r'\textasciitilde{}',
-    '^': r'\textasciicircum{}',
-    '\\': r'\textbackslash{}',
-}
-_LATEX_ESCAPE_PATTERN = re.compile(
-    "|".join(
-        re.escape(k)
-        for k in sorted(_LATEX_ESCAPE_MAPPING.keys(), key=len, reverse=True)
-    )
-)
 
 
 class EntryNotFoundError(Exception):
@@ -348,7 +336,7 @@ class VocabRepository:
         entry_cmd = self._get_entry_command()
         entries: Set[str] = set()
         for groups, _, _ in iter_entry_groups(content, entry_cmd, num_groups=1):
-            word = groups[0].strip()
+            word = unescape_latex(groups[0].strip())
             if word:
                 entries.add(word.lower())
         return entries
@@ -466,7 +454,7 @@ class VocabRepository:
     def _contains_word(self, content: str, entry_cmd: str, word: str) -> bool:
         normalized = self.normalize_word(word)
         return any(
-            self.normalize_word(groups[0].strip()) == normalized
+            self.normalize_word(unescape_latex(groups[0].strip())) == normalized
             for groups, _, _ in iter_entry_groups(content, entry_cmd, num_groups=1)
         )
 
@@ -483,7 +471,7 @@ class VocabRepository:
         for groups, start, end in iter_entry_groups(content, entry_cmd, num_groups=4):
             saw_entries = True
             last_end = end
-            entry_word = groups[0].strip()
+            entry_word = unescape_latex(groups[0].strip())
             if new_word_normalized < self.normalize_word(entry_word):
                 insert_position = start
                 break
@@ -612,7 +600,7 @@ class VocabRepository:
         previous_key: Optional[str] = None
         for groups, start, end in parsed_entries:
             full_entry = entries_section[start:end]
-            word = groups[0].strip()
+            word = unescape_latex(groups[0].strip())
             normalized = self.normalize_word(word)
             if previous_key is not None and normalized < previous_key:
                 already_sorted = False
@@ -923,12 +911,6 @@ class VocabRepository:
         Returns:
             Formatted LaTeX entry string
         """
-        # LaTeX escape helper
-        def escape_latex(text: str) -> str:
-            if text is None:
-                return ""
-            return _LATEX_ESCAPE_PATTERN.sub(lambda m: _LATEX_ESCAPE_MAPPING[m.group(0)], text)
-
         # Determine which LaTeX command to use
         entry_cmd = entry_command or VocabRepository.DEFAULT_LANGUAGE_CONFIG.vocab.entry_command
         if not entry_cmd.startswith('\\'):
@@ -945,8 +927,9 @@ class VocabRepository:
         for fr, en in examples:
             fr_esc = escape_latex(fr)
             en_esc = escape_latex(en)
-            english_part = en_esc if (en_esc.startswith('(') and en_esc.endswith(')')) else f'({en_esc})'
-            example_lines.append(f"    \\item {fr_esc} \\\\ {english_part}\n")
+            # Always one pair: the reader removes exactly one, so "(fig.) x"
+            # must not be mistaken for an already wrapped translation.
+            example_lines.append(f"    \\item {fr_esc} \\\\ ({en_esc})\n")
         example_items = "".join(example_lines)
 
         latex_entry = f"""{entry_cmd}{{{capitalized_word}}}{{{escaped_type}}}

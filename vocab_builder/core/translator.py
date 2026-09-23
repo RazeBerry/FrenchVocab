@@ -21,7 +21,7 @@ from vocab_builder.llm_client import LLMClient
 from vocab_builder.ui_helper import UIHelper, read_line
 from vocab_builder.core.history_logger import TranslationLogger
 from vocab_builder.core.file_safety import atomic_copy_file, atomic_write_text, file_lock
-from vocab_builder.latex_repository import parse_balanced_group
+from vocab_builder.latex_repository import escape_latex, parse_balanced_group, unescape_latex
 
 
 @dataclass(frozen=True)
@@ -242,7 +242,7 @@ class TranslatorCLI:
             try:
                 # Parse first group (source)
                 source, pos = parse_balanced_group(content, pos)
-                source = source.strip()
+                source = unescape_latex(source.strip())
 
                 # Skip whitespace to second brace
                 while pos < n and content[pos].isspace():
@@ -255,7 +255,7 @@ class TranslatorCLI:
 
                 # Parse second group (target)
                 target, pos = parse_balanced_group(content, pos)
-                target = target.strip()
+                target = unescape_latex(target.strip())
 
                 if not source or not target:
                     self.ui.warning(
@@ -524,26 +524,9 @@ class TranslatorCLI:
 
         return text.strip()
 
-    @staticmethod
-    def _escape_latex(text: str) -> str:
-        replacements = {
-            "&": r"\&",
-            "%": r"\%",
-            "$": r"\$",
-            "#": r"\#",
-            "_": r"\_",
-            "{": r"\{",
-            "}": r"\}",
-            "~": r"\textasciitilde{}",
-            "^": r"\textasciicircum{}",
-            "\\": r"\textbackslash{}",
-        }
-        regex = re.compile("|".join(re.escape(key) for key in sorted(replacements, key=len, reverse=True)))
-        return regex.sub(lambda match: replacements[match.group(0)], text)
-
     def _format_latex_entry(self, source_text: str, target_text: str) -> str:
-        src = self._escape_latex(source_text)
-        tgt = self._escape_latex(target_text)
+        src = escape_latex(source_text)
+        tgt = escape_latex(target_text)
         command = self.latex_commands[0] if self.latex_commands else "pair"
         return f"\\{command}{{{src}}}{{{tgt}}}"
 

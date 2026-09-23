@@ -135,6 +135,16 @@ pytest -k "anki"
   stored "jemanden nicht im Stich lassen" as "Jemanden nicht im stich lassen";
   German nouns inside an expression, and proper nouns inside a French one,
   cannot survive that. Sentences are stored as typed.
+- Vocabulary and translation text is escaped exactly once on write and
+  unescaped exactly once on read, through `escape_latex` / `unescape_latex` in
+  `latex_repository.py`; every in-memory value, comparison, and API payload is
+  plain text. Any code that reads a raw brace group (a headword scan, a sort
+  key, `find_entry_bounds`) must unescape it before comparing. When only the
+  writer escaped, every merge re-escaped stored text (`\textbackslash{}` piled
+  up), "rock & roll" missed its own duplicate, and the phone showed held senses
+  containing `%` or `&` as new. Example translations are always wrapped in one
+  pair of parentheses and the reader removes exactly one, so "(fig.) he likes
+  (it)" survives.
 - `word_entry_workflow.py` orchestrates end-to-end word capture and save behavior, including explicit saved/routed/skipped outcomes so failed routing or merge paths never masquerade as successful saves.
 - `translator.py` and `auto_translator.py` handle directional and intelligent translation flows.
 - `text_utils.py` centralizes text normalization and input-type detection.

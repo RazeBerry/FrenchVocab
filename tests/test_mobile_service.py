@@ -475,6 +475,23 @@ def test_empty_merge_is_byte_identical_and_returns_unchanged(tmp_path, monkeypat
     assert preview.token not in service._transactions
 
 
+def test_merge_of_held_text_with_latex_specials_is_unchanged(tmp_path, monkeypatch):
+    service = build_service(tmp_path, monkeypatch)
+    service._token_factory = iter(("initial-preview-token", "merge-preview-token")).__next__
+    service.builder.client.response = ai_response_for("truc", "Worth 50% & more, $5 #1 {x}.")
+    service.save(service.preview("truc").token)
+
+    preview = service.preview("truc", duplicate_action="merge")
+    latex_file = tmp_path / "FrenchVocab.tex"
+    before = latex_file.read_bytes()
+
+    assert preview.existing_entry["definitions"] == ["Worth 50% & more, $5 #1 {x}."]
+    assert preview.new_definitions == []
+    assert preview.new_examples == []
+    assert service.save(preview.token)["action"] == "unchanged"
+    assert latex_file.read_bytes() == before
+
+
 def test_real_merge_receipt_reports_added_definition_and_example_counts(
     tmp_path,
     monkeypatch,

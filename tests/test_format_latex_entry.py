@@ -37,15 +37,11 @@ class TestFormatLatexEntry(unittest.TestCase):
         self.assertIn(r"\textasciicircum{}", out)
         self.assertIn(r"\textbackslash{}", out)
 
-    def test_preserves_parentheses_if_present(self):
-        word = "test"
-        wtype = "noun"
-        defs = ["one"]
-        examples = [("Bonjour", "(Hello)")]
-        out = self.formatter(word, wtype, defs, examples)
-        # Ensure we didn't double-wrap the translation
-        self.assertIn("\\\\ (Hello)", out)
-        self.assertNotIn("((Hello))", out)
+    def test_wraps_every_translation_in_exactly_one_pair(self):
+        # The reader removes exactly one pair, so a translation that itself
+        # begins and ends with parentheses must still be wrapped once.
+        out = self.formatter("test", "noun", ["one"], [("Bonjour", "(fig.) hello (there)")])
+        self.assertIn("\\\\ ((fig.) hello (there))", out)
 
     def test_escapes_word_and_type(self):
         word = "café_crème & croissant"
