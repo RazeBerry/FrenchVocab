@@ -392,8 +392,22 @@ def _read_key_posix() -> str:
 
 
 def _read_char(fd: int) -> str:
+    """Read one whole UTF-8 character; an empty string means end of input.
+
+    Decoding a single byte of "é" or "ß" yielded "", which the caller reads as
+    end of input and therefore Escape, so an accented key closed the menu.
+    """
     raw = os.read(fd, 1)
-    return raw.decode("utf-8", "ignore")
+    if not raw:
+        return ""
+    lead = raw[0]
+    length = 2 if 0xC0 <= lead < 0xE0 else 3 if 0xE0 <= lead < 0xF0 else 4 if 0xF0 <= lead < 0xF8 else 1
+    while len(raw) < length:
+        more = os.read(fd, length - len(raw))
+        if not more:
+            break
+        raw += more
+    return raw.decode("utf-8", "replace")
 
 
 def _read_escape_remainder(fd: int) -> str:

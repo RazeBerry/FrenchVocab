@@ -61,6 +61,23 @@ def test_complete_sequence_does_not_wait_for_another_byte(
     assert len(blocking_waits) == len(written) - 1
 
 
+@pytest.mark.parametrize("key", ["é", "ö", "ß", "œ", "€", "🙂"])
+def test_non_ascii_key_is_an_ordinary_key_not_escape(escape_pipe, monkeypatch, key):
+    read_fd, write_fd = escape_pipe
+    os.write(write_fd, key.encode("utf-8"))
+    monkeypatch.setattr(navigation.sys, "stdin", os.fdopen(os.dup(read_fd)))
+
+    assert navigation._read_key_posix() == key
+
+
+def test_end_of_input_still_reads_as_escape(monkeypatch):
+    read_fd, write_fd = os.pipe()
+    os.close(write_fd)
+    monkeypatch.setattr(navigation.sys, "stdin", os.fdopen(read_fd))
+
+    assert navigation._read_key_posix() == "escape"
+
+
 def test_bare_escape_still_reports_escape(escape_pipe):
     read_fd, _write_fd = escape_pipe
 
