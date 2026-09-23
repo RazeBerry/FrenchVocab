@@ -21,7 +21,10 @@ export class CaptureView {
     this.mode = "capture";
     this.preview = null;
     this.displayedEntry = null;
-    this.language = "fr";
+    // Unknown until the first status arrives, so that status always counts as
+    // a change and restores the draft. Starting at "fr" meant the French
+    // draft was the one that never came back.
+    this.language = null;
     this.languageName = "";
     this.expanded = false;
     this.pendingDuplicateText = "";
@@ -41,7 +44,9 @@ export class CaptureView {
     this.showCapture();
   }
 
-  draftKey() { return `vocabbuilder-capture-draft-${this.language}`; }
+  draftKey() {
+    return `vocabbuilder-capture-draft-${this.language || document.documentElement.dataset.language}`;
+  }
 
   setLanguage(status) {
     const changed = this.language !== status.language;
@@ -235,13 +240,10 @@ export class CaptureView {
         { note: true },
       );
     } else {
-      const addedCount = newDefinitions.length || newExamples.length;
-      const addedKind = newDefinitions.length ? "sense" : "example";
-      const added = countLabel(addedCount, addedKind);
-      this.setRibbon(
-        "Merging into your entry",
-        `${addedCount} new ${addedKind}${addedCount === 1 ? "" : "s"}`,
-      );
+      // Both counts, always: "Add 2 senses" for a merge that also adds two
+      // examples undersold the write the ledger then reported in full.
+      const added = additionLabel(newDefinitions.length, newExamples.length);
+      this.setRibbon("Merging into your entry", additionLabel(newDefinitions.length, newExamples.length, ", ", "+"));
       this.discard.hidden = false;
       this.discard.textContent = "Cancel";
       el("primary-label").textContent = `Add ${added}`;
@@ -355,11 +357,11 @@ export class CaptureView {
       // save and another session can have written above this row.
       this.justSaved = saved.word || "";
       this.landing = Boolean(this.justSaved);
-      const addedDefinitions = saved.added_definitions || 0;
-      const addedExamples = saved.added_examples || 0;
-      const mergedAddition = addedDefinitions
-        ? countLabel(addedDefinitions, "sense")
-        : countLabel(addedExamples, "example");
+      const mergedAddition = additionLabel(
+        saved.added_definitions || 0,
+        saved.added_examples || 0,
+        " and ",
+      );
       this.showMessage(
         saved.action === "merged"
           ? `${saved.word} gained ${mergedAddition}.`
@@ -572,6 +574,14 @@ function renderTag(marking) {
   // the person deciding whether to merge.
   tag.textContent = marking === "new" ? "New" : "In your entry";
   return tag;
+}
+
+/* "2 senses, 1 example", leaving out a kind that adds nothing. */
+function additionLabel(definitions, examples, joiner = ", ", sign = "") {
+  const parts = [];
+  if (definitions) parts.push(sign + countLabel(definitions, "sense"));
+  if (examples) parts.push(sign + countLabel(examples, "example"));
+  return parts.join(joiner) || countLabel(0, "sense");
 }
 
 function countLabel(count, singular) {

@@ -256,6 +256,7 @@ function toggleRow(container, row, detail) {
 }
 
 function collapse(detail) {
+  cancelRelease(detail);
   detail.style.height = `${detail.scrollHeight}px`;
   void detail.offsetHeight;
   detail.classList.remove("is-open");
@@ -264,6 +265,7 @@ function collapse(detail) {
 }
 
 function collapseInPlace(detail) {
+  cancelRelease(detail);
   const height = detail.getBoundingClientRect().height;
   detail.style.transition = "none";
   detail.classList.remove("is-open");
@@ -299,18 +301,33 @@ export function refit(detail, paint) {
 
 /* Released on the event and on a timer: a zero-duration tween under reduced
    motion, or a close that lands mid-flight, can swallow transitionend and
-   would otherwise leave the panel pinned at a stale height. */
-function releaseWhenSettled(detail) {
+   would otherwise leave the panel pinned at a stale height. A close cancels
+   the pending release; left attached, it fired when the close finished and
+   set a shut panel to auto height, leaving a blank gap under its row. */
+const pendingRelease = new WeakMap();
+
+function releaseWhenSettled(detail, onSettled = () => {}) {
+  cancelRelease(detail);
   const release = () => {
-    detail.removeEventListener("transitionend", onEnd);
-    window.clearTimeout(timer);
-    if (detail.classList.contains("is-open")) detail.style.height = "auto";
+    cancelRelease(detail);
+    if (!detail.classList.contains("is-open")) return;
+    detail.style.height = "auto";
+    onSettled();
   };
   const onEnd = (event) => {
     if (event.propertyName === "height") release();
   };
   detail.addEventListener("transitionend", onEnd);
   const timer = window.setTimeout(release, tweenMilliseconds(detail) + 50);
+  pendingRelease.set(detail, () => {
+    detail.removeEventListener("transitionend", onEnd);
+    window.clearTimeout(timer);
+  });
+}
+
+function cancelRelease(detail) {
+  pendingRelease.get(detail)?.();
+  pendingRelease.delete(detail);
 }
 
 function tweenMilliseconds(node) {
@@ -324,12 +341,7 @@ function expand(row, detail) {
   detail.style.height = "0px";
   void detail.offsetHeight;
   detail.style.height = `${detail.scrollHeight}px`;
-  detail.addEventListener("transitionend", function settle(event) {
-    if (event.propertyName !== "height") return;
-    detail.removeEventListener("transitionend", settle);
-    detail.style.height = "auto";
-    reveal(row, detail);
-  });
+  releaseWhenSettled(detail, () => reveal(row, detail));
 }
 
 /* The index opens in place. scrollIntoView aligned the whole panel and could

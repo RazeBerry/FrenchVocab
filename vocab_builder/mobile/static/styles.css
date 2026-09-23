@@ -563,6 +563,9 @@ textarea.hw::placeholder { color: var(--ghost); }
   font-weight: 650;
   cursor: pointer;
 }
+/* The commit carries its count ("Add 2 senses, 1 example"), so it takes the
+   larger share; the alternative is always a short verb. */
+.acts .solid-button { flex: 1.5; }
 .ghost-button {
   border: 1px solid var(--line-strong);
   background: transparent;

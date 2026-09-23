@@ -64,8 +64,10 @@ export class LibraryView {
   async activate() {
     if (this.loaded) return;
     this.renderSort();
-    await Promise.allSettled([this.loadIndex(), this.loadStats()]);
-    this.loaded = true;
+    const [indexArrived] = await Promise.all([this.loadIndex(), this.loadStats()]);
+    // Loaded means the index arrived. Remembering a failed first load as done
+    // left the glossary empty until a local save, even once back online.
+    this.loaded = indexArrived;
   }
 
   async refreshIfLoaded() {
@@ -99,8 +101,10 @@ export class LibraryView {
       this.total = payload.total;
       this.showMessage("");
       this.render();
+      return true;
     } catch (error) {
       if (!ignoreCancelled(error)) this.showMessage(error.message);
+      return false;
     }
   }
 
@@ -284,8 +288,11 @@ export class LibraryView {
       .catch((error) => {
         if (ignoreCancelled(error)) return;
         // Nothing to show, so the row closes and the message line says why
-        // rather than leaving an open panel that reads as still loading.
-        detail.previousElementSibling.click();
+        // rather than leaving an open panel that reads as still loading. The
+        // row is a toggle, so it is clicked only while still open: a click on
+        // a row the reader already closed reopened it.
+        const row = detail.previousElementSibling;
+        if (row.getAttribute("aria-expanded") === "true") row.click();
         this.showMessage(error.message);
       });
   }

@@ -186,7 +186,12 @@ function showInstallTip() {
 
 async function refresh() {
   const active = views[state.activeView];
-  await Promise.allSettled([loadStatus(), views.capture.refresh(), active.activate?.()]);
+  // A view that has loaded re-reads when the app comes back, or words saved
+  // elsewhere, from the Mac client say, stayed invisible until a local save.
+  const reread = active !== views.capture && active.loaded
+    ? active.refreshIfLoaded?.()
+    : active.activate?.();
+  await Promise.allSettled([loadStatus(), views.capture.refresh(), reread]);
 }
 
 async function bootstrap() {

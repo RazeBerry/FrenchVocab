@@ -27,8 +27,8 @@ export class TranslationView {
   async activate() {
     if (this.loaded) return;
     el("translation-input").value = readStorage(this.draftKey());
-    await this.refresh();
-    this.loaded = true;
+    // Only a load that arrived counts, or a failed first visit is never retried.
+    this.loaded = await this.refresh();
   }
 
   async refreshIfLoaded() { if (this.loaded) await this.refresh(); }
@@ -58,8 +58,10 @@ export class TranslationView {
         : (this.directions[0]?.id || "");
       this.renderDirections(this.autoAvailable);
       await this.loadPairs();
+      return true;
     } catch (error) {
       if (!ignoreCancelled(error)) setMessage(this.message, error.message);
+      return false;
     }
   }
 

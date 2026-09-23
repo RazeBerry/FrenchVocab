@@ -34,8 +34,12 @@ self.addEventListener("fetch", (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const copy = response.clone();
-        caches.open(SHELL_CACHE).then((cache) => cache.put(event.request, copy));
+        // Only a good answer may replace the shell the offline fallback
+        // serves; a 502 during a restart or a 403 used to overwrite it.
+        if (response.ok) {
+          const copy = response.clone();
+          event.waitUntil(caches.open(SHELL_CACHE).then((cache) => cache.put(event.request, copy)));
+        }
         return response;
       })
       .catch(() => caches.match(event.request))

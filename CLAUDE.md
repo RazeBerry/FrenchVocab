@@ -362,6 +362,9 @@ pytest -k "anki"
 - Collection stats and Random flashcard each own a separate glossary panel. Their controls coordinate which panel is disclosed and keep `aria-expanded` aligned with it; never render one action's result into the other action's container.
 - Every mutating flow is preview/confirm or an explicit tool action. Disable repeated submissions while a request is active, use idempotency tokens supplied by the server, and ignore stale responses after a language or view change.
 - In the capture actions the solid button **always commits the previewed entry** and the ghost always offers the alternative to committing it. Routing a sentence to the translator sat in the solid slot while the ghost wrote to disk, which read exactly backwards.
+- A view counts as loaded only when its data arrived. `LibraryView.activate` and `TranslationView.activate` set `loaded` from the result of the load, and `refresh()` in `app.js` re-reads an already loaded view when the app returns to the foreground or comes back online. Setting `loaded` unconditionally left the glossary empty after an offline launch, reading "No entries match that search", and hid every word saved from the Mac until a save on the phone.
+- Every mutating flow is preview/confirm or an explicit tool action. Disable repeated submissions while a request is active, use idempotency tokens supplied by the server, and ignore stale responses after a language or view change.
+- In the capture actions the solid button **always commits the previewed entry** and the ghost always offers the alternative to committing it. Routing a sentence to the translator sat in the solid slot while the ghost wrote to disk, which read exactly backwards.
 - Capture dispatches on an explicit mode (`capture` / `collected` / `preview`),
   never on whether `this.preview` happens to be truthy. Inferring the state that
   way left the solid button reading "Look it up" and still enabled while a
@@ -369,6 +372,13 @@ pytest -k "anki"
   rejected. In the collected state the solid button commits the decision to
   change nothing ("Keep what I have") and the ghost carries the alternative that
   costs a provider call.
+- Merge copy counts both kinds of addition wherever it appears: the button
+  ("Add 2 senses, 1 example"), the ribbon ("+2 senses, +1 example") and the
+  receipt ("gained 2 senses and 1 example"). Counting only senses undersold a
+  write the ledger then reported in full. The solid capture button takes a
+  1.5 share of the row because it carries that count.
+- The capture draft key is chosen after the first status arrives. The view used
+  to start as `fr`, so French was the one language whose draft never came back.
 - Held/new marking on senses and examples is rendered as real elements, never as
   CSS `content:`, which is not reliably announced by a screen reader.
 - There is one busy idiom app-wide: the label states what is happening ("Looking it up…", "Saving…", "Translating…"). The spinner this replaced was hidden under `prefers-reduced-motion`, which left capture with no visible feedback across a request that can run two minutes.
@@ -541,6 +551,7 @@ pytest -k "anki"
 - `TYPE_ABBREVIATIONS` is matched longest-first so `separable verb` does not collapse to `v.` and `adjective/noun` does not collapse to `n.`. The French collection alone holds 19 distinct type strings, inconsistently cased, so matching lowercases first; unrecognised values fall back to a truncation rather than being dropped.
 - `Unknown` is the parser's placeholder for a missing part of speech, not a part of speech. `knownType` strips it before either the badge or the full-type heading is built, so the badge is simply absent — it used to render as `UNKN.` on real entries.
 - Static assets carry **no version query**. `RevalidatingStaticFiles` sends `Cache-Control: no-cache` on everything under `/static`, so a changed file is picked up on the next load without any manual bump; the network-first service worker already makes that request, and the ETag answers 304 with no body. Do not reintroduce `?v=N`: a stale one is worse than none, because it silently pins the old asset.
+- The service worker caches only `response.ok` responses. Caching everything let a 502 during a restart, or a 403, replace the good shell that the offline fallback serves.
 - `SHELL_CACHE` is a stable name. The activate handler purges every cache except the current name, and network-first overwrites entries in place, so it never needs versioning either.
 - The icon is a didone `V` on the blank-slip ground, standing on the collection
   hue's short rule: the display face is the app's identity, and a single
@@ -691,7 +702,7 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 - Keep tests mirrored to modules (for example `vocab_builder/core/vocab.py` -> `tests/test_sentence_flow.py`).
 - Name new files `test_<feature>.py` and test functions `test_<behavior>`.
 - Use stubs/fixtures (`tests/_stubs.py`) to avoid real API calls.
-- Browser logic whose correctness depends on platform behavior runs under Node against the real module, not a grep of its source: `tests/test_mobile_api_client.py` drives `api.js` with Node's real `fetch` against a socket that never answers, because an aborted fetch rejects with the abort reason itself (the string `"timeout"`), not an `AbortError`. Node is required locally and is present on CI's `ubuntu-latest` runner.
+- Browser logic whose correctness depends on platform behavior runs under Node against the real module, not a grep of its source: `tests/test_mobile_api_client.py` drives `api.js` with Node's real `fetch` against a socket that never answers, because an aborted fetch rejects with the abort reason itself (the string `"timeout"`), not an `AbortError`. Node is required locally and is present on CI's `ubuntu-latest` runner. `tests/test_mobile_views_js.py` runs the real capture and glossary views against the small browser stand-in in `tests/js/fake_dom.mjs`; extend that stand-in rather than asserting on source text when a view's behavior changes.
 - Concurrency changes must cover both in-process threads and POSIX processes. Keep the isolated-`tempfile.tempdir` regression in `tests/test_concurrency_transactions.py`; it models systemd `PrivateTmp` without touching production data.
 - Mobile changes should exercise the ASGI surface in `tests/test_mobile_service.py`, including duplicate commits, save retries, language routing, Tailscale identity enforcement, and cross-language worker-thread behavior.
 - CI installs the project with its `[mobile]` extra before collecting the full suite because the mobile service tests import FastAPI directly. Keep the extra in the lint-and-test dependency install unless those tests move to a separately provisioned job.
