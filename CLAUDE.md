@@ -461,6 +461,11 @@ pytest -k "anki"
   let a wide badge ("V. PRON.", 49.6px at `--t-3xs`) shift that row's gloss
   about 30px off the shared left edge. The gloss is placed at `grid-column: 3`
   explicitly because an entry with no part of speech renders no badge.
+- A closed row may clip its headword; an open row never does. The panel does
+  not restate the headword, so the open row's `.index-word` wraps
+  (`white-space: normal`, `overflow-wrap: anywhere`) inside the width it had
+  when closed. Keeping the ellipsis left "C'est de bonne gu…" as the only name
+  of the open entry. Wrapping in place keeps the badge where it was.
 - Opening a glossary row fills its panel from `/api/library/entry` under the
   same tween, showing the app's busy idiom ("Opening…") in the panel while it
   loads and retargeting the animating height when the record lands. Fetched

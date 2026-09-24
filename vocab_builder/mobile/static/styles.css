@@ -799,6 +799,14 @@ textarea.hw::placeholder { color: var(--ghost); }
 /* Fade rather than un-display: the row keeps its width, so opening a word
    never nudges the layout sideways. */
 .index-row[aria-expanded="true"] .index-gloss { opacity: 0; }
+/* The panel below never restates the headword, so an open row that kept the
+   ellipsis showed "C'est de bonne gu…" as the only name of the entry. It wraps
+   inside the same width it had closed, so the badge stays where it was and a
+   short word does not move at all. */
+.index-row[aria-expanded="true"] .index-word {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
 
 /* One line per word is right on a 390px phone. At the desktop frame it is not:
    a right-aligned nowrap gloss makes the eye jump a different distance on every

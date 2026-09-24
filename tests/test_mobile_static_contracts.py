@@ -281,6 +281,17 @@ def test_the_open_row_still_fades_its_gloss_in_either_layout(styles):
     assert "opacity" not in _media(styles, "(min-width: 560px)")
 
 
+def test_the_open_row_shows_its_whole_headword(styles):
+    """The panel never restates the headword, so an open row that kept the
+    closed row's ellipsis left "C'est de bonne gu..." as the entry's only
+    name. It wraps inside its closed width instead of widening, so the badge
+    does not move."""
+    rule = _rule(styles, '.index-row[aria-expanded="true"] .index-word')
+    assert "white-space: normal" in rule
+    assert "overflow-wrap: anywhere" in rule
+    assert "max-width" not in rule
+
+
 def test_group_headings_are_real_elements_and_carry_their_count(entry_list, styles):
     """A screen reader does not reliably announce CSS `content:`, and a group
     whose size is invisible is just a divider. The day heading over the ledger
