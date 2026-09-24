@@ -88,6 +88,34 @@ entire VM or disk.
 
 ## Deployment layout
 
+For an existing VM, deploy code through `scripts/deploy/deploy_vm.sh` from the
+Mac checkout. Put the VM login in the same private
+`~/.config/vocabbuilder/remote.env` used by the Mac launcher:
+
+```text
+VOCABBUILDER_REMOTE_HOST=your-machine-name
+VOCABBUILDER_REMOTE_USER=your-vm-login
+```
+
+After committing and pushing the branch to its configured upstream, run:
+
+```bash
+scripts/deploy/deploy_vm.sh
+```
+
+The script refuses a dirty checkout or a `HEAD` that is not the current pushed
+tip of that upstream. It reports measured local and remote free space and an
+estimated peak additional remote allocation before streaming `git archive`.
+On the VM it extracts into a temporary directory, syncs the committed source
+to `/opt/vocabbuilder` while preserving `.venv`, installs the package, refreshes
+the systemd units and CLI wrapper, and restarts the mobile service. It checks
+every installed package file against the archived source, then checks that the
+service is active and answers a local HTTP request. Deployment needs the
+existing VM login to have non-interactive sudo for these install and service
+commands. A failed check exits nonzero; inspect the service journal before
+retrying. Mutable vocabulary and credentials stay under `/var/lib/vocabbuilder`.
+The first-time VM setup remains `scripts/deploy/install_mobile_server.sh`.
+
 - `/opt/vocabbuilder`: read-only installed application
 - `/opt/vocabbuilder/.venv`: Python runtime and mobile dependencies
 - `/var/lib/vocabbuilder`: vocabulary, history, exports, and backups

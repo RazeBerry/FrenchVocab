@@ -40,7 +40,7 @@ An optional private web interface (`vocabbuilder-mobile`, extras `[mobile]`) ser
   sends them through the same template, provider call and parser the app
   uses and scores the result, and `results/` keeps every run, rejected
   candidates included. `candidate_prompts.py` holds the prompt under trial.
-- `scripts/deploy/` holds VM provisioning and backup scripts; `scripts/macos/vocab` launches the local Rich client backed by the VM API.
+- `scripts/deploy/` holds the pushed-commit VM deploy front door, provisioning, and backup scripts; `scripts/macos/vocab` launches the local Rich client backed by the VM API.
 - `deploy/` holds the systemd unit and timer files for the mobile server and its daily backup.
 - `tests/` is a pytest suite (`test_*.py`) for architecture boundaries, onboarding, translators, language config, exporters, and UI behavior.
 
@@ -741,6 +741,7 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 - NEVER use `git checkout <file>` or restore files without explicit approval.
 
 ## Security and Configuration Tips
+- `scripts/deploy/deploy_vm.sh` is the sole repeat-deploy front door for an existing VM. It uses the private `~/.config/vocabbuilder/remote.env` login, requires a clean checkout whose `HEAD` equals the configured upstream's live remote tip, streams `git archive`, preserves the VM `.venv` and `/var/lib/vocabbuilder`, installs and checks the package, refreshes units, then restarts and probes the service. See `docs/MOBILE.md` for usage. Do not encode a personal VM login or tailnet address in tracked files.
 - Store provider keys in keyring or environment variables; never commit secrets.
 - This is a public repository. Before pushing, scan the entire unpushed commit range (not only the final worktree) for real API keys, `.env` content, private keys, tailnet FQDNs, account emails, cloud project/instance IDs, private IPs, personal VM logins, and vocabulary/history/Anki data.
 - Keep deployment identity in root-owned VM environment files or untracked local shell configuration. Tracked documentation and launcher defaults should use generic machine names and placeholders wherever practical.
