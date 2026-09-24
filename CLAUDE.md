@@ -35,8 +35,8 @@ An optional private web interface (`vocabbuilder-mobile`, extras `[mobile]`) ser
 - `FrenchVocab.py` is a deprecated shim that delegates to `vocab_builder.cli.main`.
 - `scripts/` contains utility and demo scripts, including `scripts/bulk_add.py` for operator-reviewed structured JSON vocabulary batches.
 - `scripts/prompt_panel/` is the yardstick for the vocabulary generation
-  prompts: `panel.json` names twenty words with the sense count and first
-  sense a careful reader expects and the reason for each, `run_panel.py`
+  prompts: `panel.json` names fifty words with the sense count, first sense,
+  word type or lemma a careful reader expects and the reason for each, `run_panel.py`
   sends them through the same template, provider call and parser the app
   uses and scores the result, and `results/` keeps every run, rejected
   candidates included. `candidate_prompts.py` holds the prompt under trial.
@@ -258,6 +258,19 @@ pytest -k "anki"
   three-slot form and forced Present/Perfekt/Futur examples are the reason
   every stored German entry has three senses and 83% of its verb entries end
   in a future sentence; those entries predate the contract.
+- On 2026-09-24 a dictionary-checked audit of every stored entry added thirty
+  words to the panel: invented senses and English calques, missing press
+  senses, types the closed list could not express, inflected headwords, and
+  seven guards against over-correction (real figurative senses, verbs that
+  must not become reflexive). The scorer gained word-type and lemma checks and
+  a `--thinking` flag. At medium thinking on all fifty words the 2026-09-03
+  prompt passed 39 and the 2026-09-24 prompt 46, with every type right and no
+  invented sense (`results/shipped-2026-09-24-medium-panel50.json`,
+  `results/candidate-2026-09-24-v2-medium.json`; v1 is kept as rejected).
+  Residuals: "Forthaaren" and "ausmachen" fail under both, "bescheiden" keeps
+  a third sense, and "gratter" dropped its "itch" sense in the shipped run
+  after keeping it in two earlier runs. The panel does not check example
+  grammar or definition-example agreement, so read the raw responses too.
 - French and German word and expression generation share one measured
   contract: one lexical identity and part of speech, one sense by default,
   a further sense only when a reader of contemporary press, literary prose
@@ -266,7 +279,13 @@ pytest -k "anki"
   hedged definitions ("can also", "sometimes", "metaphorically" are banned),
   at most one usage note on its own labelled line, the English equivalent
   before any paraphrase, exactly one example per entry, and no forced tense.
-  A form no serious dictionary lists is not defined. Only sentence analysis
+  A form no serious dictionary lists is not defined. Established figurative
+  and conversational senses are kept, but no meaning is imported from a
+  related word, a compound, another word's idiom, or an English look-alike.
+  A reflexive construction the input supplies is kept, and a bare verb gains
+  its pronoun only when the lemma requires it. Types include pronoun,
+  determiner, preposition, conjunction and interjection (German adds
+  reflexive verb, particle and numeral). Only sentence analysis
   retains its explicit three-part structure. Both templates are literals in
   `ai_prompts.py` generated from `scripts/prompt_panel/candidate_prompts.py`
   after the panel measured them.
@@ -593,9 +612,10 @@ pytest -k "anki"
   word to find its letter.
 - The page ground is the `--page` gradient painted `background-attachment: fixed`. Anything that has to sit on it — the sticky letter chip, pinned at `top: 0` — paints the same fixed gradient rather than a flat step. `--bg` is the gradient's *lower* stop, so a chip pinned to the viewport top against it leaves a permanently mismatched band.
 - `TYPE_ABBREVIATIONS` is matched longest-first so `separable verb` does not collapse to `v.` and `adjective/noun` does not collapse to `n.`. The French collection alone holds 19 distinct type strings, inconsistently cased, so matching lowercases first; unrecognised values fall back to a truncation rather than being dropped.
-- The glossary abbreviates `preposition`, `numeral`, `interjection`, and
-  `reflexive verb` as `prep.`, `num.`, `interj.`, and `v. refl.`; keep the
-  reflexive form ahead of the bare `verb` prefix.
+- The glossary abbreviates `preposition`, `numeral`, `interjection`,
+  `determiner`, `particle`, and `reflexive verb` as `prep.`, `num.`,
+  `interj.`, `det.`, `part.`, and `v. refl.`; keep the reflexive form ahead of
+  the bare `verb` prefix.
 - `Unknown` is the parser's placeholder for a missing part of speech, not a part of speech. `knownType` strips it before either the badge or the full-type heading is built, so the badge is simply absent — it used to render as `UNKN.` on real entries.
 - Static assets carry **no version query**. `RevalidatingStaticFiles` sends `Cache-Control: no-cache` on everything under `/static`, so a changed file is picked up on the next load without any manual bump; the network-first service worker already makes that request, and the ETag answers 304 with no body. Do not reintroduce `?v=N`: a stale one is worse than none, because it silently pins the old asset.
 - The service worker caches only `response.ok` responses. Caching everything let a 502 during a restart, or a 403, replace the good shell that the offline fallback serves.

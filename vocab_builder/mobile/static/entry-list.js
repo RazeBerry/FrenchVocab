@@ -12,7 +12,8 @@ const CALENDAR_DAY = new Intl.DateTimeFormat(undefined, {
 const TYPE_ABBREVIATIONS = [
   ["separable verb", "v. sep."], ["pronominal verb", "v. pron."],
   ["reflexive verb", "v. refl."], ["preposition", "prep."],
-  ["interjection", "interj."], ["numeral", "num."],
+  ["interjection", "interj."], ["determiner", "det."], ["particle", "part."],
+  ["numeral", "num."],
   ["conjunction", "conj."], ["expression", "expr."],
   ["adjective", "adj."], ["adverb", "adv."], ["pronoun", "pron."],
   ["sentence", "sent."], ["noun", "n."], ["verb", "v."],

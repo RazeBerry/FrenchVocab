@@ -28,10 +28,15 @@ form is listed, treat it as not listed and use the nearest attested lemma.
 Correctly Spelt Word:
 - If Detected Input Type = sentence: output the input EXACTLY (preserve punctuation, quotes, dashes, case).
 - If word/expression: {headword_rule}
+  Preserve a {reflexive_name} construction the input supplies. Add the
+  {reflexive_name} pronoun to a bare verb only when the lexical identity requires
+  it ({reflexive_examples}); never convert a valid ordinary verb because its
+  {reflexive_name} use is frequent. Keep every definition and example consistent
+  with the construction chosen.
 Word Type:
 - If Detected Input Type = sentence: sentence
 - Else: one of {word_types} (choose exactly one, matching the lexical identity
-  selected above)
+  selected above){type_rule}
 """
 
 _BODY = """
@@ -56,11 +61,24 @@ Definitions:
   qualification; never replace the equivalent with an encyclopedic paraphrase.
   Never write "can also",
   "can be used", "sometimes", "in some contexts", "metaphorically", "may refer
-  to", "loosely", or any similar hedge: a sense that needs a hedge is omitted.
-- Do not add senses that belong to a derived word, another part of speech, or a
-  different lemma. Do not describe slang, regional use, or wordplay unless a
-  serious dictionary prints it under this exact lemma. Never restate one sense
-  in different words to fill a slot.
+  to", "loosely", or any similar hedge. State meanings directly and express
+  register or construction restrictions explicitly; omit uncertain meanings, not
+  established meanings that need a usage label.
+- Include established senses of the selected headword and part of speech,
+  figurative and conversational ones included; dictionary subentries and
+  explicit cross-references count. Do not import meanings from a derived word,
+  a compound, an idiom built on another word, another part of speech, or a
+  related lemma, and do not invent meanings from a plausible metaphor. Slang,
+  regional use, and wordplay need a serious dictionary under this lemma.
+  Attestation does not establish frequency: apply the reader test above
+  separately. Never restate one sense in different words to fill a slot.
+- English resemblance is not evidence for a sense ({false_friends}). Keep
+  {language} meanings that English happens to share; reject meanings inferred
+  only from a similar English word or English idiom.
+- Include established senses met regularly in general news as well as in
+  conversation and literary prose, and order by likely frequency across that
+  whole reading diet; a political, legal, police, or business sense does not
+  automatically come first.
 - Mark register where relevant ({register_markers}). Avoid slash-separated
   synonym stacks and parenthetical alternatives.
 
@@ -74,6 +92,10 @@ Examples:
 - Each example must show its sense or usage note in a sentence that reader could
   meet. Vary tense and person only when it is natural; never force a future
   tense sentence.
+- Every example must be grammatically correct standard {language}: check
+  agreement, case, mood after conjunctions, the perfect auxiliary, verb valency,
+  required prepositions, and reflexive pronouns, and it must match the sense it
+  illustrates.
 - Render the English idiomatically at the same register as the {language}.
   Avoid calques, clefts, unnecessary passives, and inflated wording.
 
@@ -109,9 +131,19 @@ FRENCH = _build(
         "  inflected form when that form has its own identity or meaning. If the input\n"
         "  is an inflected form or a misspelling, the headword is the lemma, not the input."
     ),
-    word_types="noun, verb, adjective, adverb, pronominal verb, expression",
+    word_types=(
+        "noun, verb, pronominal verb, adjective, adverb, pronoun, determiner,\n"
+        "  preposition, conjunction, interjection, expression"
+    ),
+    type_rule="",
+    reflexive_name="pronominal",
+    reflexive_examples='"souvenir" as a verb is "se souvenir"; "laver" stays "laver"',
+    false_friends='"actuel" is not "actual", "éventuellement" is not "eventually"',
     register_markers="familier, soutenu, littéraire, vieilli, argot",
-    type_examples='- "manger" → verb\n- "avoir faim" → expression\n- "Il pleuvra demain." → sentence',
+    type_examples=(
+        '- "manger" → verb\n- "malgré" → preposition\n- "quelqu\'un" → pronoun\n'
+        '- "avoir faim" → expression\n- "Il pleuvra demain." → sentence'
+    ),
 )
 
 GERMAN = _build(
@@ -123,9 +155,24 @@ GERMAN = _build(
         "  inflected form, or is misspelled, the headword is the nearest real lemma and\n"
         "  the spelling check says so."
     ),
-    word_types="noun, verb, adjective, adverb, separable verb, expression",
+    word_types=(
+        "noun, verb, separable verb, reflexive verb, adjective, adverb, pronoun,\n"
+        "  determiner, preposition, conjunction, particle, numeral, interjection,\n"
+        "  expression"
+    ),
+    type_rule=(
+        "\n- For a verb, choose reflexive verb when the construction requires sich,\n"
+        "  otherwise separable verb when it separates, otherwise verb."
+    ),
+    reflexive_name="reflexive",
+    reflexive_examples='"schämen" is "sich schämen"; "waschen" stays "waschen"',
+    false_friends='"eventuell" is not "eventually", "sensibel" is not "sensible"',
     register_markers="umgangssprachlich, gehoben, derb, veraltet",
-    type_examples='- "essen" → verb\n- "gute Laune" → expression\n- "Morgen wird es regnen." → sentence',
+    type_examples=(
+        '- "essen" → verb\n- "trotz" → preposition\n- "obwohl" → conjunction\n'
+        '- "sich schämen" → reflexive verb\n- "gute Laune" → expression\n'
+        '- "Morgen wird es regnen." → sentence'
+    ),
 )
 
 __all__ = ["FRENCH", "GERMAN"]

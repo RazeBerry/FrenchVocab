@@ -31,6 +31,7 @@ sys.path.insert(0, str(HERE.parents[1]))
 from vocab_builder.ai_response_parser import parse_ai_response_text  # noqa: E402
 from vocab_builder.ai_response_parser import _extract_section  # noqa: E402
 from vocab_builder.core.text_utils import detect_input_type  # noqa: E402
+from vocab_builder.llm_client import DEFAULT_THINKING_LEVEL  # noqa: E402
 
 STOP = set(
     "the a an of to or in on for and with by is be as at from that this something "
@@ -52,8 +53,8 @@ def load_templates(name: str) -> dict[str, str]:
     raise SystemExit(f"unknown prompt set: {name}")
 
 
-def generate(client: Any, prompt: str) -> str:
-    return "".join(client.stream(prompt, thinking_level="low"))
+def generate(client: Any, prompt: str, thinking: str = DEFAULT_THINKING_LEVEL) -> str:
+    return "".join(client.stream(prompt, thinking_level=thinking))
 
 
 def content_words(text: str) -> set[str]:
@@ -90,6 +91,15 @@ def score(spec: dict[str, Any], parsed: Any, corrected: str, hedges: list[str]) 
         "corrected_ok": (
             not spec.get("corrected_not")
             or corrected.strip().lower() not in spec["corrected_not"]
+        ) and (
+            not spec.get("corrected_any")
+            or corrected.strip().lower() in spec["corrected_any"]
+        ),
+        # The type is the first line of the Word Type section; a closed list of
+        # types once forced "autrui" into noun and "als" into adverb.
+        "type_ok": (
+            not spec.get("type_any")
+            or (parsed.word_type[0].strip().lower() if parsed.word_type else "") in spec["type_any"]
         ),
         "parsed_ok": bool(definitions) and not parsed.parsing_warnings,
     }
@@ -134,7 +144,7 @@ def rescore(path: Path) -> None:
     print(f"rescored {path}")
 
 
-def run(prompts: str, out: Path) -> None:
+def run(prompts: str, out: Path, thinking: str = DEFAULT_THINKING_LEVEL) -> None:
     from vocab_builder.llm_client import GeminiClient
 
     panel = json.loads((HERE / "panel.json").read_text(encoding="utf-8"))
@@ -147,7 +157,7 @@ def run(prompts: str, out: Path) -> None:
             input_text=word, detected_type=detect_input_type(word)
         )
         started = dt.datetime.now(dt.timezone.utc)
-        response = generate(client, prompt)
+        response = generate(client, prompt, thinking)
         elapsed = (dt.datetime.now(dt.timezone.utc) - started).total_seconds()
         parsed = parse_ai_response_text(response)
         corrected = _extract_section(response, "Correctly Spelt Word:").strip().splitlines()
@@ -170,6 +180,7 @@ def run(prompts: str, out: Path) -> None:
         print(f"{mark:4} {spec['language']} {word:14} senses={len(parsed.definitions)} {elapsed:.1f}s", flush=True)
     payload = {
         "prompts": prompts,
+        "thinking": thinking,
         "model": client.model_name(),
         "run_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "summary": summarize(results),
@@ -184,7 +195,7 @@ def run(prompts: str, out: Path) -> None:
 def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
     keys = [
         "passed", "count_ok", "notes_ok", "first_ok", "first_clean",
-        "required_ok", "nothing_invented", "corrected_ok", "parsed_ok",
+        "required_ok", "nothing_invented", "corrected_ok", "type_ok", "parsed_ok",
     ]
     summary: dict[str, Any] = {k: sum(1 for r in results if r["score"][k]) for k in keys}
     summary["words"] = len(results)
@@ -218,6 +229,8 @@ def main() -> None:
     parser.add_argument("--out", type=Path)
     parser.add_argument("--compare", nargs=2, type=Path, metavar=("LEFT", "RIGHT"))
     parser.add_argument("--rescore", type=Path, help="re-score a saved run after a panel or scorer change")
+    parser.add_argument("--thinking", default=DEFAULT_THINKING_LEVEL, choices=["low", "medium", "high"],
+                        help="Gemini thinking level; defaults to the level the app ships")
     args = parser.parse_args()
     if args.compare:
         compare(*args.compare)
@@ -227,7 +240,7 @@ def main() -> None:
         return
     if not args.prompts or not args.out:
         parser.error("--prompts and --out are required to run the panel")
-    run(args.prompts, args.out)
+    run(args.prompts, args.out, args.thinking)
 
 
 if __name__ == "__main__":
