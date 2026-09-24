@@ -547,7 +547,9 @@ class MobileVocabService:
         logger = self.builder.history_logger
         if not logger or not logger.enabled:
             return []
-        records = logger.read_recent_vocab_entries(limit=safe_limit)
+        records = logger.read_recent_vocab_entries(
+            limit=safe_limit, actions={"new", "force", "merge"}
+        )
         with self._lock:
             return [
                 self._reconcile_with_stored_entry(self._history_record_for_json(record))

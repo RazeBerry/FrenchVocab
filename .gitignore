@@ -1,6 +1,8 @@
 # Ignore specific files
 French Vocabulary.apkg
 exported_words.json
+exported_words_*.json
+anki_identity_*.json
 
 # Ignore all .apkg files
 *.apkg

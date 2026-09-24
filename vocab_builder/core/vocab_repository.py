@@ -47,6 +47,21 @@ def display_headword(word: str, word_type: str) -> str:
     return word[0].upper() + word[1:]
 
 
+def choose_insert_position(content: str, entry_cmd: str, new_word: str) -> int:
+    """Use the collection's alphabetical insertion rule without repository state."""
+    target = normalize_word_key(new_word)
+    last_end = None
+    saw_entries = False
+    for groups, start, end in iter_entry_groups(content, entry_cmd, num_groups=4):
+        saw_entries = True
+        last_end = end
+        if target < normalize_word_key(unescape_latex(groups[0].strip())):
+            return start
+    if not saw_entries:
+        return VocabRepository._fallback_insert_position_no_entries(content)
+    return VocabRepository._fallback_insert_position_after_last_entry(content, last_end)
+
+
 class VocabRepository:
     """Manages vocabulary entries stored in LaTeX files."""
 
@@ -451,17 +466,7 @@ class VocabRepository:
             return False
 
     def _choose_insert_position(self, content: str, entry_cmd: str, new_word: str) -> int:
-        new_word_normalized = self.normalize_word(new_word)
-        insert_position, last_end, saw_entries = self._scan_entries_for_insertion(
-            content,
-            entry_cmd,
-            new_word_normalized,
-        )
-        if not saw_entries:
-            return self._fallback_insert_position_no_entries(content)
-        if insert_position is not None:
-            return insert_position
-        return self._fallback_insert_position_after_last_entry(content, last_end)
+        return choose_insert_position(content, entry_cmd, new_word)
 
     def _contains_word(self, content: str, entry_cmd: str, word: str) -> bool:
         normalized = self.normalize_word(word)
@@ -469,26 +474,6 @@ class VocabRepository:
             self.normalize_word(unescape_latex(groups[0].strip())) == normalized
             for groups, _, _ in iter_entry_groups(content, entry_cmd, num_groups=1)
         )
-
-    def _scan_entries_for_insertion(
-        self,
-        content: str,
-        entry_cmd: str,
-        new_word_normalized: str,
-    ) -> Tuple[Optional[int], Optional[int], bool]:
-        insert_position: Optional[int] = None
-        last_end: Optional[int] = None
-        saw_entries = False
-
-        for groups, start, end in iter_entry_groups(content, entry_cmd, num_groups=4):
-            saw_entries = True
-            last_end = end
-            entry_word = unescape_latex(groups[0].strip())
-            if new_word_normalized < self.normalize_word(entry_word):
-                insert_position = start
-                break
-
-        return insert_position, last_end, saw_entries
 
     @staticmethod
     def _fallback_insert_position_no_entries(content: str) -> int:

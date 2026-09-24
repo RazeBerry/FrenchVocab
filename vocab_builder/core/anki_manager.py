@@ -16,6 +16,7 @@ import shutil
 import sys
 import tempfile
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import (
     Callable,
@@ -39,6 +40,7 @@ from vocab_builder.anki_exporter import (
 )
 from vocab_builder.compat import get_env
 from vocab_builder.core.file_safety import atomic_write_text, create_backup_snapshot, file_lock
+from vocab_builder.core.anki_identity import identity_path, load_identity
 from vocab_builder.core.history_logger import default_history_base_dir
 from vocab_builder.languages.anki_shared_styles import compute_template_hash
 
@@ -1079,7 +1081,12 @@ class AnkiExportManager:
 
         self._sync_anki_exporter_genanki_module()
 
-        anki_config = self._language_config.anki
+        anki_config = replace(
+            self._language_config.anki,
+            guid_headword_aliases=load_identity(
+                identity_path(self._exported_words_file, self._language_config.code)
+            ),
+        )
         template_version = self._resolve_template_version()
 
         exporter = AnkiExporter(deck_title, anki_config)

@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 
 from vocab_builder.core import VocabBuilder
+from vocab_builder.core.anki_identity import identity_path, save_identity
 import genanki
 from vocab_builder.languages.french import FRENCH_CONFIG
 
@@ -168,13 +169,13 @@ class TestExportToAnki(unittest.TestCase):
         builder.ui = _StubUI()
         builder.console = types.SimpleNamespace()
         builder.word_entries = {
-            'palpitant': {
-                'word': 'Palpitant',
-                'type': 'adjective',
-                'definitions': 'Thrilling',
-                'definitions_list': ['Thrilling'],
-                'examples': 'Le film est palpitant. (The film is thrilling.)',
-                'examples_list': [('Le film est palpitant.', 'The film is thrilling.')],
+            'ânerie': {
+                'word': 'Ânerie',
+                'type': 'noun',
+                'definitions': 'Foolish act',
+                'definitions_list': ['Foolish act'],
+                'examples': 'Une ânerie. (A foolish act.)',
+                'examples_list': [('Une ânerie.', 'A foolish act.')],
             },
         }
         builder.exported_words = set()
@@ -183,15 +184,37 @@ class TestExportToAnki(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             builder.exported_words_file = os.path.join(tmp, 'exported_words.json')
+            save_identity(identity_path(Path(builder.exported_words_file), 'fr'), {'ânerie': 'anerie'})
             builder.export_to_anki('Test Deck')
 
         note = self.package_cls.last_deck.notes[0]
         expected = uuid.uuid5(
             uuid.NAMESPACE_URL,
-            'frenchdeck::paipitant',
+            'frenchdeck::anerie',
         ).hex
-        self.assertEqual(note.fields[0], 'Palpitant')
+        self.assertEqual(note.fields[0], 'Ânerie')
         self.assertEqual(note.guid, expected)
+
+    def test_export_without_identity_file_uses_current_headword(self):
+        builder = object.__new__(VocabBuilder)
+        builder.ui = _StubUI()
+        builder.console = types.SimpleNamespace()
+        builder.word_entries = {
+            'ânerie': {
+                'word': 'Ânerie', 'type': 'noun',
+                'definitions': 'Foolish act', 'definitions_list': ['Foolish act'],
+                'examples': 'Une ânerie. (A foolish act.)',
+                'examples_list': [('Une ânerie.', 'A foolish act.')],
+            },
+        }
+        builder.exported_words = set()
+        builder.exported_deck_version = None
+        builder.save_exported_words = lambda: None
+        with tempfile.TemporaryDirectory() as tmp:
+            builder.exported_words_file = os.path.join(tmp, 'exported_words.json')
+            builder.export_to_anki('Test Deck')
+        note = self.package_cls.last_deck.notes[0]
+        self.assertEqual(note.guid, uuid.uuid5(uuid.NAMESPACE_URL, 'frenchdeck::ânerie').hex)
 
     def test_export_strips_brace_artifacts(self):
         builder = object.__new__(VocabBuilder)

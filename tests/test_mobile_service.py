@@ -118,6 +118,22 @@ def test_preview_and_save_reuse_existing_workflow(tmp_path, monkeypatch):
     assert service.recent()[0]["word"] == "Chrysanthème"
 
 
+def test_correction_history_is_not_a_recent_save_or_acquisition(tmp_path, monkeypatch):
+    service = build_service(tmp_path, monkeypatch)
+    saved = service.save(service.preview("chrysantheme").token)
+    before_order = service.builder._anki.acquisition_positions([saved["word"]])
+    logger = service.builder.history_logger
+    assert logger.log_vocab_entry(
+        action="correct", provider=None, word=saved["word"], word_type="noun",
+        definitions=["Reviewed meaning"], examples=[], source_text=None,
+        normalized_key=saved["word"].lower(), latex_file=service.builder.latex_file,
+        metadata={"patch_id": "fr-test-a", "correction_id": "fr-0001"},
+    )
+    assert [row["action"] for row in service.recent()] == ["new"]
+    assert [row["action"] for row in service.builder._read_vocab_history_for_anki_order()] == ["new"]
+    assert service.builder._anki.acquisition_positions([saved["word"]]) == before_order
+
+
 def test_flexible_response_survives_mobile_save_reload_and_anki_export(
     tmp_path,
     monkeypatch,

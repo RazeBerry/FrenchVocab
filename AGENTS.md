@@ -159,11 +159,31 @@ pytest -k "anki"
   an unattended export without a consumer on the Mac side. A tracker written
   before that date still carries `snapshot_hash` and `snapshot_export`; the
   loader ignores them and the next save drops them.
-- Anki note GUIDs normally derive from the normalized headword. A corrected
-  historical headword must retain its former GUID through
-  `AnkiConfig.guid_headword_aliases`, keyed by the corrected normalized form,
-  so rebuilding a deck updates the existing note instead of creating a
-  duplicate.
+- Anki note GUIDs normally derive from the lowercased, stripped headword.
+  `anki_identity_<lang>.json` beside `exported_words_<lang>.json` is the sole
+  owner of corrected-headword GUID seeds. Its versioned alias map is private
+  mutable VM data, never a language-config literal or tracked repository file.
+  An export loads it under the catalog lock and supplies it to `AnkiExporter`;
+  a selected-words export updates the existing Anki note when its GUID stays
+  the same. Anki never deletes notes omitted from a package.
+- `scripts/apply_vocab_corrections.py` applies reviewed, base-hashed JSON
+  patches to one language. The VM maintenance procedure is: stop
+  `vocabbuilder-mobile`, run its default dry-run and review the entry, tracker,
+  and identity diffs, rerun with `--apply`, restart the service, export the
+  reported surviving headwords with selected-words export, then delete the
+  reported retired GUIDs by hand in Anki. The tool refuses pending mobile
+  transactions; repair them before the maintenance window. It takes the
+  catalog lock, snapshots all four data artifacts into a correction bundle,
+  and writes identity, vocabulary, tracker, and correction history in order.
+  If interrupted between those writes, inspect the bundle before retrying;
+  a rerun can finish missing history when all three rewritten files match its
+  recorded post-write hashes. Do not run it against repository snapshots.
+  A corrected headword may not land on another live entry even up to
+  accents, because the app finds duplicates by the accent-free key; such a
+  case is a merge and must name the other entry in `retire`.
+- Correction history uses action `correct`. It records provenance but is not
+  an acquisition or save: Anki order reconstruction and recent-save ledgers
+  filter it out. The phone ledger includes only `new`, `force`, and `merge`.
 - `llm_coordinator.py` manages provider initialization lifecycle, degraded mode, and usage metrics, and uses generation-guarded background init so stale workers cannot overwrite newer provider changes.
 - `history_logger.py` writes append-only JSONL history.
 - `file_safety.py` provides atomic file operations and backup/restore support.
@@ -569,6 +589,9 @@ pytest -k "anki"
   word to find its letter.
 - The page ground is the `--page` gradient painted `background-attachment: fixed`. Anything that has to sit on it — the sticky letter chip, pinned at `top: 0` — paints the same fixed gradient rather than a flat step. `--bg` is the gradient's *lower* stop, so a chip pinned to the viewport top against it leaves a permanently mismatched band.
 - `TYPE_ABBREVIATIONS` is matched longest-first so `separable verb` does not collapse to `v.` and `adjective/noun` does not collapse to `n.`. The French collection alone holds 19 distinct type strings, inconsistently cased, so matching lowercases first; unrecognised values fall back to a truncation rather than being dropped.
+- The glossary abbreviates `preposition`, `numeral`, `interjection`, and
+  `reflexive verb` as `prep.`, `num.`, `interj.`, and `v. refl.`; keep the
+  reflexive form ahead of the bare `verb` prefix.
 - `Unknown` is the parser's placeholder for a missing part of speech, not a part of speech. `knownType` strips it before either the badge or the full-type heading is built, so the badge is simply absent — it used to render as `UNKN.` on real entries.
 - Static assets carry **no version query**. `RevalidatingStaticFiles` sends `Cache-Control: no-cache` on everything under `/static`, so a changed file is picked up on the next load without any manual bump; the network-first service worker already makes that request, and the ETag answers 304 with no body. Do not reintroduce `?v=N`: a stale one is worse than none, because it silently pins the old asset.
 - The service worker caches only `response.ok` responses. Caching everything let a 502 during a restart, or a 403, replace the good shell that the offline fallback serves.
