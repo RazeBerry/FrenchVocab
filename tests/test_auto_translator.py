@@ -14,7 +14,10 @@ class _FakeLLMClient:
         self.response_text = response_text
         self.last_thinking_level = None
 
-    def stream(self, _prompt: str, *, thinking_level: str = "low"):
+    # A sentinel, not the production default: the assertion below proves the
+    # workflow leaves the level to the client, whose default is pinned in
+    # test_llm_client_metrics.
+    def stream(self, _prompt: str, *, thinking_level: str = "unset"):
         self.last_thinking_level = thinking_level
         response_text = self.response_text
 
@@ -104,7 +107,7 @@ def test_auto_translator_routes_to_english_direction(monkeypatch):
 
     assert eng_translator.calls == [("Hello!", "Bonjour !")]
     assert target_translator.calls == []
-    assert client.last_thinking_level == "low"
+    assert client.last_thinking_level == "unset"
     assert usage_events and usage_events[0]["output_tokens"] == 12
 
 

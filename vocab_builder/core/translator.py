@@ -411,7 +411,7 @@ class TranslatorCLI:
         try:
             with self.console.status("[cyan]Querying AI for translation..."):
                 chunks = []
-                stream = self.client.stream(prompt, thinking_level="low")
+                stream = self.client.stream(prompt)
                 while True:
                     try:
                         chunk = next(stream)

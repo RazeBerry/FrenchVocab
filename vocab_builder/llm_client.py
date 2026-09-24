@@ -191,15 +191,21 @@ def classify_provider_error(provider_name: str, exc: Exception) -> Optional[Tupl
     return None
 
 
+# Every application request thinks at this level. Medium was chosen on
+# 2026-09-24 after the prompt panel measured it against low; the numbers are in
+# AGENTS.md and scripts/prompt_panel/results/.
+DEFAULT_THINKING_LEVEL = "medium"
+
+
 class LLMClient(ABC):
     @abstractmethod
-    def stream(self, prompt: str, *, thinking_level: str = "low"):
+    def stream(self, prompt: str, *, thinking_level: str = DEFAULT_THINKING_LEVEL):
         """Yield chunks of pure text.
 
         Args:
             prompt: The text prompt to send to the model.
-            thinking_level: Reasoning depth. Latency-sensitive application
-                           workflows use "low".
+            thinking_level: Reasoning depth; application workflows use
+                           DEFAULT_THINKING_LEVEL.
         """
         ...
 
@@ -353,14 +359,14 @@ class GeminiClient(LLMClient):
             metrics["usage"] = usage_summary
         return metrics
 
-    def stream(self, prompt: str, *, thinking_level: str = "low"):
+    def stream(self, prompt: str, *, thinking_level: str = DEFAULT_THINKING_LEVEL):
         """
         Yield Gemini's complete response while calculating request metrics.
 
         Args:
             prompt: The text prompt to send to the model.
-            thinking_level: Reasoning depth. Application workflows use "low"
-                           to minimize latency.
+            thinking_level: Reasoning depth; application workflows use
+                           DEFAULT_THINKING_LEVEL.
 
         Returns a dictionary with performance metrics upon generator completion.
         Example return: {'ttft': 0.5, 'tps': 50.0, 'tokens_out': 100, 'usage': {...}}
@@ -486,7 +492,7 @@ class ClaudeClient(LLMClient):
             self.MODEL_NAME,
         )
 
-    def stream(self, prompt: str, *, thinking_level: str = "low"):
+    def stream(self, prompt: str, *, thinking_level: str = DEFAULT_THINKING_LEVEL):
         # Claude doesn't use thinking_level; parameter accepted for interface compatibility
         t0 = perf_counter()
         t_first = 0.0

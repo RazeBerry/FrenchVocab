@@ -452,7 +452,7 @@ def test_resolved_models_are_used_for_provider_requests(monkeypatch):
         gemini_config = gemini._client.models.last_generate_kwargs["config"].kwargs
         assert gemini_config["response_mime_type"] == "text/plain"
         assert gemini_config["max_output_tokens"] == 8192
-        assert gemini_config["thinking_config"].kwargs["thinking_level"] == "LOW"
+        assert gemini_config["thinking_config"].kwargs["thinking_level"] == "MEDIUM"
         assert gemini_config["automatic_function_calling"].kwargs == {"disable": True}
         for unsupported_parameter in (
             "temperature",

@@ -211,9 +211,13 @@ pytest -k "anki"
   `top_p`, `top_k`); current Claude models reject them with a 400, so pinning
   one made `VOCABBUILDER_CLAUDE_MODEL` unable to name a current model.
 - Vocabulary generation, directional translation, and automatic direction
-  detection all use Gemini's low thinking level. Raise it only when a measured
-  quality gain justifies the latency and hidden-token cost on representative
-  prompts.
+  detection all think at `DEFAULT_THINKING_LEVEL` in `llm_client.py`, set to
+  medium on 2026-09-24 at the user's request. No workflow passes its own level,
+  so that constant is the one owner. The prompt panel measured the change: the
+  2026-09-03 prompt scored 35 of 43 at both low and medium, the 2026-09-24
+  prompt scored 37 at low and 39 at medium, and a panel call took about 4.4 s
+  instead of 2.2 s. Change the level only with a panel run saved in
+  `scripts/prompt_panel/results/`.
 - Provider diagnostics record model, elapsed time, classified outcome, and
   exception type but never prompt text. A request taking at least 10 seconds and
   every failure emits a warning to the service journal so production latency can

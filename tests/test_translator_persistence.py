@@ -11,7 +11,10 @@ class _StubClient:
     def __init__(self):
         self.last_thinking_level = None
 
-    def stream(self, _prompt: str, *, thinking_level: str = "low"):  # noqa: ARG002
+    # A sentinel, not the production default: the assertion below proves the
+    # workflow leaves the level to the client, whose default is pinned in
+    # test_llm_client_metrics.
+    def stream(self, _prompt: str, *, thinking_level: str = "unset"):  # noqa: ARG002
         self.last_thinking_level = thinking_level
         yield "bonjour"
 
@@ -28,12 +31,12 @@ def _translator(tmp_path: Path, client: _StubClient | None = None) -> Translator
     )
 
 
-def test_translation_uses_low_thinking_for_latency(tmp_path):
+def test_translation_uses_the_client_default_thinking_level(tmp_path):
     client = _StubClient()
     translator = _translator(tmp_path, client)
 
     assert translator.query_ai_for_translation("hello") == "bonjour"
-    assert client.last_thinking_level == "low"
+    assert client.last_thinking_level == "unset"
 
 
 def test_translate_and_save_stops_on_file_write_failure(tmp_path):
