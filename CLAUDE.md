@@ -199,7 +199,14 @@ pytest -k "anki"
   filter it out. The phone ledger includes only `new`, `force`, and `merge`.
 - `llm_coordinator.py` manages provider initialization lifecycle, degraded mode, and usage metrics, and uses generation-guarded background init so stale workers cannot overwrite newer provider changes.
 - `history_logger.py` writes append-only JSONL history.
-- `file_safety.py` provides atomic file operations and backup/restore support.
+- `file_safety.py` provides atomic file operations and rotating backups, and
+  owns the lost-file rule: when a vocabulary or translation file is missing
+  but a `.bak` beside it proves it held data, `refuse_to_recreate_lost_file`
+  raises `LostDataFileError` naming the newest backup, and the CLI exits with
+  that message. Three copies of an automatic restore used to put the `.bak`
+  back, which is the state before the last write, so the latest save
+  vanished while history and Anki still referenced it. Only a file with no
+  backups at all is a first run and gets the blank template.
 - `startup_warmup.py` schedules the background LaTeX parse and owns the synchronous-load escape hatch.
 - `protocols.py` defines structural typing contracts used by menu/workflow modules.
 

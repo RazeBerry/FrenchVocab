@@ -38,7 +38,7 @@ from vocab_builder.core.providers.manager import (
     ProviderManager,
     ProviderMetadata,
 )
-from vocab_builder.core.file_safety import atomic_copy_file, file_lock
+from vocab_builder.core.file_safety import atomic_copy_file, file_lock, refuse_to_recreate_lost_file
 
 if TYPE_CHECKING:  # pragma: no cover - optional provider clients
     from vocab_builder.llm_client import GeminiClient  # noqa: F401
@@ -712,18 +712,12 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
             if self.latex_file.exists():
                 self.ui.warning(f"Initial LaTeX file already exists; leaving it unchanged: {self.latex_file}")
                 return
+            refuse_to_recreate_lost_file(self.latex_file)
             try:
                 template = getattr(self, "vocab_template", self.DEFAULT_LANGUAGE_CONFIG.vocab)
                 # Create the parent directory if needed (only if not in the current directory)
                 if self.latex_file.parent != Path('.'):
                     self.latex_file.parent.mkdir(parents=True, exist_ok=True)
-                backup_path = self.latex_file.with_suffix(self.latex_file.suffix + ".bak")
-                if backup_path.exists() and backup_path.is_file():
-                    atomic_copy_file(backup_path, self.latex_file)
-                    self.ui.warning(
-                        f"{self.latex_file} was missing; restored it from backup {backup_path}."
-                    )
-                    return
                 with self.latex_file.open('x', encoding='utf-8') as file:
                     file.write(template.initial_content)
                     sample = template.sample_entry or ""

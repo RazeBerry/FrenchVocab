@@ -1,8 +1,9 @@
 from pathlib import Path
-from unittest.mock import patch
 
+import pytest
 from rich.console import Console
 
+from vocab_builder.core.file_safety import LostDataFileError
 from vocab_builder.core.translator import TranslatorCLI
 from vocab_builder.languages import get_language_config
 
@@ -116,44 +117,12 @@ def test_translator_loader_preserves_duplicate_pairs(tmp_path):
     assert duplicate_entries == [{"source": "hello!", "target": "salut", "duplicate_of": "hello"}]
 
 
-def test_translator_restores_backup_instead_of_blank_template(tmp_path):
+def test_translator_refuses_to_recreate_a_file_its_backups_prove_existed(tmp_path):
     path = tmp_path / "translations.tex"
-    backup = path.with_suffix(".tex.bak")
-    backup.write_text(
-        get_language_config("fr").eng_to_target.initial_tex_content
-        + r"\engfre{saved source}{saved target}"
-        + "\n\n"
-        + get_language_config("fr").eng_to_target.final_tex_content,
-        encoding="utf-8",
-    )
+    backup = path.with_name(f"{path.name}.20260101T000000000000Z.bak")
+    backup.write_text(r"\engfre{saved source}{saved target}", encoding="utf-8")
 
-    translator = TranslatorCLI(
-        console=Console(),
-        client=_StubClient(),
-        config=get_language_config("fr").eng_to_target,
-        latex_file_path=path,
-    )
-
-    assert path.read_text(encoding="utf-8") == backup.read_text(encoding="utf-8")
-    assert list(translator.pairs.values()) == [{"source": "saved source", "target": "saved target"}]
-
-
-def test_translator_does_not_replace_failed_backup_restore_with_template(tmp_path):
-    path = tmp_path / "translations.tex"
-    backup = path.with_suffix(".tex.bak")
-    backup.write_text(
-        get_language_config("fr").eng_to_target.initial_tex_content
-        + r"\engfre{saved source}{saved target}"
-        + "\n\n"
-        + get_language_config("fr").eng_to_target.final_tex_content,
-        encoding="utf-8",
-    )
-
-    def fail_copy(_source, temp_destination):
-        Path(temp_destination).write_text("partial restore", encoding="utf-8")
-        raise OSError("simulated restore failure")
-
-    with patch("vocab_builder.core.file_safety.shutil.copy2", side_effect=fail_copy):
+    with pytest.raises(LostDataFileError, match="translations.tex is missing"):
         TranslatorCLI(
             console=Console(),
             client=_StubClient(),
@@ -162,4 +131,6 @@ def test_translator_does_not_replace_failed_backup_restore_with_template(tmp_pat
         )
 
     assert not path.exists()
-    assert "saved source" in backup.read_text(encoding="utf-8")
+    assert backup.read_text(encoding="utf-8") == r"\engfre{saved source}{saved target}"
+
+

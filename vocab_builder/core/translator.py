@@ -20,7 +20,7 @@ from vocab_builder.languages import TranslatorConfig
 from vocab_builder.llm_client import LLMClient
 from vocab_builder.ui_helper import UIHelper, read_line
 from vocab_builder.core.history_logger import TranslationLogger
-from vocab_builder.core.file_safety import atomic_copy_file, atomic_write_text, file_lock
+from vocab_builder.core.file_safety import atomic_write_text, file_lock, refuse_to_recreate_lost_file
 from vocab_builder.latex_repository import escape_latex, parse_balanced_group, unescape_latex
 
 
@@ -126,32 +126,8 @@ class TranslatorCLI:
         with file_lock(self.latex_file):
             if self.latex_file.exists():
                 return
-            backup_path = self._backup_path()
-            if backup_path.exists() and backup_path.is_file():
-                self._restore_from_backup_if_available()
-                return
+            refuse_to_recreate_lost_file(self.latex_file)
             self._create_initial_tex_file_unlocked()
-
-    def _backup_path(self) -> Path:
-        return self.latex_file.with_suffix(self.latex_file.suffix + ".bak")
-
-    def _restore_from_backup_if_available(self) -> bool:
-        backup_path = self._backup_path()
-        if not backup_path.exists() or not backup_path.is_file():
-            return False
-        try:
-            self.latex_file.parent.mkdir(parents=True, exist_ok=True)
-            atomic_copy_file(backup_path, self.latex_file)
-            self.ui.warning(
-                f"{self.latex_file} was missing; restored it from backup {backup_path}."
-            )
-            return True
-        except OSError as exc:
-            self.ui.error(
-                f"Failed to restore {self.latex_file} from backup {backup_path}: {exc}",
-                with_panel=True,
-            )
-            return False
 
     def _create_initial_tex_file(self) -> None:
         with file_lock(self.latex_file):

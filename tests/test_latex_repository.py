@@ -2,7 +2,10 @@ from pathlib import Path
 import threading
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from vocab_builder.core import VocabBuilder
+from vocab_builder.core.file_safety import LostDataFileError
 from vocab_builder.core.vocab_repository import VocabRepository
 from vocab_builder.languages import get_language_config
 from vocab_builder.latex_repository import (
@@ -346,10 +349,26 @@ def test_create_initial_tex_file_does_not_overwrite_existing_file(tmp_path: Path
     assert repo.latex_file.read_text(encoding="utf-8") == "existing saved content"
 
 
-def test_create_initial_tex_file_restores_backup_when_primary_missing(tmp_path: Path):
+def test_create_initial_tex_file_refuses_when_backups_prove_the_collection_existed(tmp_path: Path):
     latex_file = tmp_path / "FrenchVocab.tex"
     backup = latex_file.with_suffix(".tex.bak")
     backup.write_text("backup saved content", encoding="utf-8")
+    repo = VocabRepository(
+        latex_file=latex_file,
+        entry_command="\\entry",
+        language_config=get_language_config("fr"),
+        ui=MagicMock(),
+    )
+
+    with pytest.raises(LostDataFileError, match="FrenchVocab.tex.bak"):
+        repo.create_initial_tex_file()
+
+    assert not latex_file.exists()
+    assert backup.read_text(encoding="utf-8") == "backup saved content"
+
+
+def test_create_initial_tex_file_starts_a_first_collection_without_backups(tmp_path: Path):
+    latex_file = tmp_path / "FrenchVocab.tex"
     repo = VocabRepository(
         latex_file=latex_file,
         entry_command="\\entry",
@@ -359,29 +378,7 @@ def test_create_initial_tex_file_restores_backup_when_primary_missing(tmp_path: 
 
     repo.create_initial_tex_file()
 
-    assert latex_file.read_text(encoding="utf-8") == "backup saved content"
-
-
-def test_create_initial_tex_file_does_not_replace_failed_backup_restore_with_template(tmp_path: Path):
-    latex_file = tmp_path / "FrenchVocab.tex"
-    backup = latex_file.with_suffix(".tex.bak")
-    backup.write_text("backup saved content", encoding="utf-8")
-    repo = VocabRepository(
-        latex_file=latex_file,
-        entry_command="\\entry",
-        language_config=get_language_config("fr"),
-        ui=MagicMock(),
-    )
-
-    def fail_copy(_source, temp_destination):
-        Path(temp_destination).write_text("partial restore", encoding="utf-8")
-        raise OSError("simulated restore failure")
-
-    with patch("vocab_builder.core.file_safety.shutil.copy2", side_effect=fail_copy):
-        repo.create_initial_tex_file()
-
-    assert not latex_file.exists()
-    assert backup.read_text(encoding="utf-8") == "backup saved content"
+    assert latex_file.exists()
 
 
 def test_exported_words_legacy_migration_failure_leaves_no_partial_candidate(tmp_path: Path):

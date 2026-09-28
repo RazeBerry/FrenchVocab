@@ -6,6 +6,8 @@ import argparse
 import os
 from typing import Sequence
 
+from vocab_builder.core.file_safety import LostDataFileError
+
 __all__ = ["main"]
 
 
@@ -91,7 +93,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             return
 
         run_cli(argv=argv, **builder_kwargs)
-    except ValueError as exc:
+    except (ValueError, LostDataFileError) as exc:
         raise SystemExit(f"Error: {exc}") from None
 
 

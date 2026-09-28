@@ -179,6 +179,38 @@ def _acquire_lock(lock_path: Path) -> Iterator[None]:
                 _unlock_handle(handle)
 
 
+class LostDataFileError(RuntimeError):
+    """A data file is gone although its backups prove it held data."""
+
+
+def refuse_to_recreate_lost_file(path: Path, backup_suffix: str = ".bak") -> None:
+    """Raise when ``path`` is missing but backups show it existed.
+
+    Every backup is the state before some later write, so restoring one would
+    silently drop the latest save, and a blank replacement would accept new
+    saves while history and Anki still reference the old entries. Only an
+    operator can choose, so the choice is stated instead of made.
+    """
+    target = Path(path)
+    if target.exists():
+        return
+    backups = [
+        candidate
+        for pattern in (f"{target.name}{backup_suffix}", f"{target.name}.*{backup_suffix}")
+        for candidate in target.parent.glob(pattern)
+        if candidate.is_file()
+    ]
+    if not backups:
+        return
+    newest = max(backups, key=lambda candidate: candidate.stat().st_mtime_ns)
+    raise LostDataFileError(
+        f"{target} is missing, but {len(backups)} backup(s) show it held data. "
+        f"The newest, {newest}, predates the last save made to it. Restore it "
+        f"deliberately with: cp '{newest}' '{target}' -- or move the backups "
+        f"aside to start an empty file."
+    )
+
+
 def create_backup_snapshot(path: Path, backup_suffix: str = ".bak") -> Optional[Path]:
     """Create a latest backup plus a timestamped snapshot for an existing file."""
     source = Path(path)
