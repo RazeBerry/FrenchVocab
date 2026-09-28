@@ -148,6 +148,7 @@ def test_the_mac_keeps_the_newest_archive_once_and_prunes_old_copies(tmp_path):
     pulled = pull_latest(api, tmp_path, keep=2)
 
     assert pulled == tmp_path / "vocabbuilder-data-20260928T000000Z.tar.gz"
+    assert pulled.stat().st_mode & 0o777 == 0o600
     assert sorted(path.name for path in tmp_path.glob("vocabbuilder-data-*")) == [
         "vocabbuilder-data-20260903T000000Z.tar.gz",
         "vocabbuilder-data-20260928T000000Z.tar.gz",

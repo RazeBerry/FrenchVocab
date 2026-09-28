@@ -30,7 +30,7 @@ KEEP = 30
 
 
 def default_destination() -> Path:
-    return config_home(create=True) / "vm-backups"
+    return config_home(create=True, warn_on_legacy=False) / "vm-backups"
 
 
 def verify_archive(path: Path) -> None:
@@ -55,6 +55,7 @@ def pull_latest(api: RemoteAPI, destination: Path, keep: int = KEEP) -> Optional
     partial = destination / f".{target.name}.part"
     try:
         api.download(newest["download_url"], partial)
+        partial.chmod(0o600)
         verify_archive(partial)
         os.replace(partial, target)
     finally:
@@ -71,7 +72,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument("--dest", type=Path, default=None)
     args = parser.parse_args(argv)
     destination = (args.dest or default_destination()).expanduser()
-    destination.mkdir(parents=True, exist_ok=True)
+    destination.mkdir(mode=0o700, parents=True, exist_ok=True)
     try:
         api = RemoteAPI(resolve_base_url(args.remote_host, explicit_url=args.remote_url))
         pulled = pull_latest(api, destination)
