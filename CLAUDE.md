@@ -40,7 +40,7 @@ An optional private web interface (`vocabbuilder-mobile`, extras `[mobile]`) ser
   sends them through the same template, provider call and parser the app
   uses and scores the result, and `results/` keeps every run, rejected
   candidates included. `candidate_prompts.py` holds the prompt under trial.
-- `scripts/deploy/` holds the pushed-commit VM deploy front door, provisioning, and backup scripts; `scripts/macos/vocab` launches the local Rich client backed by the VM API.
+- `scripts/deploy/` holds the pushed-commit VM deploy front door, provisioning, backup and restore scripts; `scripts/macos/vocab` launches the local Rich client backed by the VM API, and `scripts/macos/install_backup_pull.sh` schedules the daily off-host archive copy.
 - `deploy/` holds the systemd unit and timer files for the mobile server and its daily backup.
 - `tests/` is a pytest suite (`test_*.py`) for architecture boundaries, onboarding, translators, language config, exporters, and UI behavior.
 
@@ -418,7 +418,8 @@ pytest -k "anki"
   is already in memory; raising discarded it and made the user pay for the same
   provider call a second time.
 - Destructive vocabulary editing, deletion, and backup restoration are not CLI
-  workflows and are intentionally absent from the phone. Recovery artifacts are
+  workflows and are intentionally absent from the phone; restoration is the
+  operator script above. Recovery artifacts are
   allowlisted, read-only downloads. This is parity with the product's behavior,
   not unrestricted file-system parity.
 - Privacy, connectivity, and installability should be legible but quiet:
@@ -703,6 +704,8 @@ pytest -k "anki"
 - Never infer transaction ownership from the presence of a duplicate alone. Recovery may treat stored content as this operation only when the durable pre-write journal and exact/contained structured payload prove it; a competing session's duplicate must remain a conflict.
 - Anki tracker writes use a three-way merge of the manager's persisted baseline, current disk state, and local changes so concurrent additions and intentional removals do not overwrite one another.
 - `scripts/deploy/backup_mobile_data.sh` takes the same catalog lock with util-linux `flock` before archiving. Any new backup/export path that needs a coherent multi-file snapshot must join that lock domain.
+- Daily archives are named `vocabbuilder-data-*.tar.gz` and never contain `.env`. That name is the contract `MobileStorage` reads: only those archives join the read-only recovery downloads, so the provider key still never leaves the VM, while older `vocabbuilder-*.tar.gz` archives (which may hold it) stay VM-local until the 30-day prune. The Mac keeps the off-host copy: `vocab_builder/cli/backup_pull.py` pulls the newest archive through the identity-checked API, not Tailscale SSH, whose periodic browser check would stall an unattended job; it reads the whole stream before keeping a file and keeps 30. `scripts/macos/install_backup_pull.sh` schedules it with launchd and resolves the interpreter and private URL at install time, so no personal value is tracked.
+- `scripts/deploy/restore_mobile_data.sh ARCHIVE` is the one restore path: it verifies the archive decompresses whole before stopping anything, stops the service (its in-memory journal must not replay onto restored files), moves every current file into `backups/pre-restore-<stamp>/` rather than deleting it, extracts under the catalog lock, never touches `.env`, and restarts. `tests/test_backup_restore.py` runs the real backup and restore scripts and reads the collection back.
 - Repository cache invalidation uses `(device, inode, mtime_ns, size)` signatures. Do not weaken it to timestamps alone.
 
 ### Shared Modules (`vocab_builder/`)

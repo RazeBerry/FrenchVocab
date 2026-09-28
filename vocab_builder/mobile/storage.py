@@ -1,4 +1,4 @@
-"""Read-only downloads for authoritative data and automatic backup snapshots."""
+"""Read-only downloads for authoritative data, backup snapshots and daily archives."""
 
 from __future__ import annotations
 
@@ -25,19 +25,22 @@ class MobileStorage:
         with self._state_lock:
             current = [self._describe(path, "current") for path in self._source_paths()]
             backups = [self._describe(path, "backup") for path in self._backup_paths()]
+            archives = [self._describe(path, "archive") for path in self._archive_paths()]
         return {
             "current": [item for item in current if item is not None],
             "backups": [item for item in backups if item is not None],
+            "archives": [item for item in archives if item is not None],
         }
 
     def resolve_download(self, filename: str) -> Path:
         if not _SAFE_NAME.fullmatch(filename):
             raise ValueError("Invalid data download name.")
-        candidate = (self.root / filename).resolve()
-        if not candidate.is_relative_to(self.root) or not candidate.is_file():
-            raise FileNotFoundError(filename)
-        allowed = {path.resolve() for path in (*self._source_paths(), *self._backup_paths())}
-        if candidate not in allowed:
+        allowed = {
+            path.name: path
+            for path in (*self._source_paths(), *self._backup_paths(), *self._archive_paths())
+        }
+        candidate = allowed.get(filename)
+        if candidate is None or not candidate.is_file():
             raise FileNotFoundError(filename)
         return candidate
 
@@ -71,6 +74,19 @@ class MobileStorage:
             )
         except OSError:
             return ()
+
+    def _archive_paths(self) -> tuple[Path, ...]:
+        # Only "vocabbuilder-data-" archives: backup_mobile_data.sh keeps the
+        # provider key out of those, and older archives may still hold it.
+        try:
+            candidates = [
+                path
+                for path in (self.root / "backups").glob("vocabbuilder-data-*.tar.gz")
+                if path.is_file()
+            ]
+        except OSError:
+            return ()
+        return tuple(sorted(candidates, key=lambda path: path.name, reverse=True))
 
     @staticmethod
     def _describe(path: Path, kind: str) -> dict[str, Any] | None:

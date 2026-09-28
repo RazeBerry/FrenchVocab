@@ -82,9 +82,22 @@ launcher, including its unavoidable per-key network latency.
 
 The VM stores mutable state under `/var/lib/vocabbuilder`. Atomic writes and the
 existing rotating `.tex` backups protect each edit. A systemd timer also creates
-a compressed daily snapshot in `/var/lib/vocabbuilder/backups` and keeps 30
-days. Periodically copying one snapshot to the Mac protects against loss of the
-entire VM or disk.
+a compressed daily archive, `vocabbuilder-data-<stamp>.tar.gz`, in
+`/var/lib/vocabbuilder/backups` and keeps 30 days. Archives leave out `.env`, so
+the provider key never travels with them.
+
+An archive on the VM's own disk does not survive the loss of that disk. Run
+`scripts/macos/install_backup_pull.sh` once on the Mac: a launchd job then pulls
+the newest archive daily through the private API into
+`~/.vocabbuilder/vm-backups/` (log: `~/Library/Logs/vocabbuilder-backup-pull.log`)
+and keeps 30. Run `python -m vocab_builder.cli.backup_pull` to pull by hand.
+
+To restore, copy an archive to the VM if it is only on the Mac, then run
+`sudo /opt/vocabbuilder/scripts/deploy/restore_mobile_data.sh ARCHIVE`. It checks
+the archive first, stops the service, moves the current files to
+`backups/pre-restore-<stamp>/` rather than deleting them, extracts, and restarts.
+If a vocabulary file is ever missing while its `.bak` files remain, the app
+refuses to start and names the newest backup instead of guessing.
 
 ## Deployment layout
 
@@ -132,4 +145,4 @@ data and history invariants.
   runtime paths and then drops privileges before launching the full CLI; the
   provider manager reads the service-user credential
 - `vocabbuilder-mobile.service`: app server bound to localhost
-- `vocabbuilder-backup.timer`: daily local snapshot
+- `vocabbuilder-backup.timer`: daily local archive, copied off the VM by the Mac's backup pull
