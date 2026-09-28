@@ -72,7 +72,10 @@ tar -x -C "$stage"
 sudo -n rsync -a --delete --chown=root:root --exclude .venv "$stage/" /opt/vocabbuilder/
 # mktemp makes the staging root private; rsync copies its mode to the app root.
 sudo -n chmod 0755 /opt/vocabbuilder
-sudo -n /opt/vocabbuilder/.venv/bin/python -m pip install --no-deps /opt/vocabbuilder
+# Dependencies install with the package: a raised SDK floor must reach the VM,
+# and pip check refuses a service whose requirements are unmet.
+sudo -n /opt/vocabbuilder/.venv/bin/python -m pip install '/opt/vocabbuilder[mobile]'
+sudo -n /opt/vocabbuilder/.venv/bin/python -m pip check
 sudo -n install -m 0644 /opt/vocabbuilder/deploy/vocabbuilder-mobile.service /etc/systemd/system/vocabbuilder-mobile.service
 sudo -n install -m 0644 /opt/vocabbuilder/deploy/vocabbuilder-backup.service /etc/systemd/system/vocabbuilder-backup.service
 sudo -n install -m 0644 /opt/vocabbuilder/deploy/vocabbuilder-backup.timer /etc/systemd/system/vocabbuilder-backup.timer

@@ -74,6 +74,9 @@ def test_deploy_vm_streams_only_pushed_commit_and_checks_install(tmp_path: Path)
     command = Path(env["REMOTE_COMMAND_FILE"]).read_text()
     assert "--delete --chown=root:root --exclude .venv" in command
     assert "Installed package differs from the archived source" in command
+    assert "pip install '/opt/vocabbuilder[mobile]'" in command
+    assert "--no-deps" not in command
+    assert "-m pip check" in command
     assert "systemctl restart vocabbuilder-mobile.service" in command
     assert "http://127.0.0.1:8080/static/styles.css" in command
 
