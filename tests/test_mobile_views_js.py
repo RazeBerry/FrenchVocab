@@ -419,3 +419,46 @@ out.painted = painted;
 
     assert "458" not in out["painted"]
     assert out["painted"][-1] == "573"
+
+
+def test_corrected_preview_discards_without_writing_and_keeps_the_typed_spelling_on_the_link():
+    out = _run(CAPTURE + """
+const posts = [];
+const api = {
+  request: async (path, init) => {
+    if (path === "/api/save") posts.push(JSON.parse(init.body));
+    return path === "/api/save" ? { action: "saved", word: "Flaner" } : [];
+  },
+};
+const view = new CaptureView(api, async () => {}, async () => {});
+view.setLanguage(FRENCH);
+nodes["entry-input"].value = "flaner";
+const corrected = {
+  token: "t",
+  word: "flâner",
+  original_input: "flaner",
+  spelling_suggestion: "flâner",
+  definitions: ["To stroll."],
+  examples: [],
+};
+view.showPreview(corrected);
+out.preview = {
+  ghost: nodes["discard-button"].textContent,
+  alternative: nodes["alternative-button"].textContent,
+  alternativeShown: !nodes["alternative-button"].hidden,
+};
+nodes["discard-button"].click();
+out.discarded = { mode: view.mode, value: nodes["entry-input"].value, posts: posts.length };
+view.showPreview(corrected);
+nodes["alternative-button"].click();
+await new Promise((resolve) => setTimeout(resolve, 0));
+out.kept = posts;
+""")
+
+    assert out["preview"] == {
+        "ghost": "Discard",
+        "alternative": "Keep “flaner” as typed",
+        "alternativeShown": True,
+    }
+    assert out["discarded"] == {"mode": "capture", "value": "flaner", "posts": 0}
+    assert out["kept"] == [{"token": "t", "use_original": True}]

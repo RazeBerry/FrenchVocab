@@ -47,7 +47,8 @@ export class CaptureView {
     this.more = el("more-button");
     this.message = el("form-message");
     this.ribbon = el("slip-ribbon");
-    this.variant = el("variant-button");
+    this.alternative = el("alternative-button");
+    this.alternativeAction = null;
     this.wire();
     this.showCapture();
   }
@@ -144,7 +145,7 @@ export class CaptureView {
     el("preview-word").hidden = true;
     this.discard.hidden = true;
     this.more.hidden = true;
-    this.variant.hidden = true;
+    this.hideAlternative();
     el("slip-senses").hidden = true;
     el("slip-examples").hidden = true;
     el("slip-example").replaceChildren();
@@ -176,16 +177,20 @@ export class CaptureView {
   showStandardPreview(preview) {
     this.expanded = false;
     this.ribbon.hidden = true;
-    this.variant.hidden = true;
     this.renderEntry(preview, preview.word);
-    // The solid button always commits the previewed entry and the ghost always
-    // offers the alternative to committing it. Routing a sentence to the
-    // translator used to sit in the solid slot while the ghost wrote to disk,
-    // which read exactly backwards.
+    // The solid button commits the previewed entry, the ghost always leaves
+    // without writing, and a different way to commit sits in the tertiary
+    // link. The ghost once saved the original spelling or left for the
+    // translator, which left a corrected preview no way out but a write.
     this.discard.hidden = false;
-    this.discard.textContent = preview.route_recommended
-      ? "Translate instead"
-      : (preview.spelling_suggestion ? `Keep “${preview.original_input}”` : "Discard");
+    this.discard.textContent = "Discard";
+    if (preview.route_recommended) {
+      this.offerAlternative("Translate instead", () => this.onRouteSentence(preview.original_input));
+    } else if (preview.spelling_suggestion) {
+      this.offerAlternative(`Keep “${preview.original_input}” as typed`, () => this.save(true));
+    } else {
+      this.hideAlternative();
+    }
     el("primary-label").textContent = preview.route_recommended
       ? "Keep as vocabulary"
       : "Keep it";
@@ -220,7 +225,7 @@ export class CaptureView {
     this.discard.textContent = "Add new senses";
     el("primary-label").textContent = "Keep what I have";
     this.primary.disabled = false;
-    this.variant.hidden = false;
+    this.offerAlternative("Keep a separate variant instead", () => this.lookUp("variant"));
     this.showMessage(
       "Looking up again asks the model for senses you may be missing. It takes a moment.",
       { note: true },
@@ -249,7 +254,7 @@ export class CaptureView {
     first.hidden = true;
     this.more.hidden = true;
     this.more.setAttribute("aria-expanded", "false");
-    this.variant.hidden = true;
+    this.hideAlternative();
 
     const senses = el("slip-senses");
     senses.replaceChildren(
@@ -297,7 +302,7 @@ export class CaptureView {
     this.setRibbon("New, separate entry", "yours is untouched");
     this.discard.hidden = false;
     this.discard.textContent = "Cancel";
-    this.variant.hidden = true;
+    this.hideAlternative();
     el("primary-label").textContent = "Keep as a variant";
     this.primary.disabled = false;
     this.showMessage(
@@ -402,7 +407,7 @@ export class CaptureView {
       el(id).hidden = true;
     });
     this.more.hidden = true;
-    this.variant.hidden = true;
+    this.hideAlternative();
     this.discard.hidden = false;
     this.discard.textContent = "Cancel";
     el("wait-provider").textContent = this.providerLabel;
@@ -542,7 +547,7 @@ export class CaptureView {
     );
     // Cancel is the one control a look-up in progress offers.
     this.discard.disabled = busy && this.mode !== "looking";
-    this.variant.disabled = busy;
+    this.alternative.disabled = busy;
   }
 
   wire() {
@@ -583,14 +588,21 @@ export class CaptureView {
       else if (this.preview?.duplicate_action === "merge" || this.preview?.duplicate_action === "variant") {
         this.dismissToBlank();
         this.input.focus();
-      } else if (this.preview?.route_recommended) this.onRouteSentence(this.preview.original_input);
-      else if (this.preview?.spelling_suggestion) this.save(true);
-      else { this.showCapture(); this.input.focus(); }
+      } else { this.showCapture(); this.input.focus(); }
     });
     this.more.addEventListener("click", () => this.toggleExpanded());
-    this.variant.addEventListener("click", () => {
-      if (this.mode === "collected") this.lookUp("variant");
-    });
+    this.alternative.addEventListener("click", () => this.alternativeAction?.());
+  }
+
+  offerAlternative(label, action) {
+    this.alternative.textContent = label;
+    this.alternativeAction = action;
+    this.alternative.hidden = false;
+  }
+
+  hideAlternative() {
+    this.alternative.hidden = true;
+    this.alternativeAction = null;
   }
 
   isNothingNew() {
