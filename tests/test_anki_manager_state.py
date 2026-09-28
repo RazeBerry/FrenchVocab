@@ -509,3 +509,78 @@ def test_retired_snapshot_fields_load_silently_and_are_dropped_on_save(tmp_path)
     assert "snapshot_export" not in payload
     assert payload["words"] == ["alpha"]
     assert payload["entry_order"] == ["alpha"]
+
+
+class _CollectionRepo(_StubRepo):
+    def __init__(self, entries):
+        self.word_entries = entries
+
+    def get_all_latex_entries(self):
+        return set(self.word_entries)
+
+
+def _packaged_headwords(monkeypatch):
+    packaged: list[list[str]] = []
+
+    class _Package:
+        def __init__(self, deck):
+            packaged.append([note.fields[0] for note in deck.notes])
+
+        def write_to_file(self, path):
+            Path(path).write_bytes(b"stub apkg")
+
+    monkeypatch.setattr(genanki, "Package", _Package)
+    return packaged
+
+
+def test_merged_senses_reach_anki_on_the_next_incremental_export(tmp_path, monkeypatch):
+    packaged = _packaged_headwords(monkeypatch)
+    tracker = tmp_path / "exported_words.json"
+    repo = _CollectionRepo({"alpha": _vocab_entry("alpha"), "beta": _vocab_entry("beta")})
+    manager = AnkiExportManager(
+        ui=_StubUI(),
+        language_config=get_language_config("fr"),
+        vocab_repo=repo,  # type: ignore[arg-type]
+        exported_words_file=tracker,
+        project_root=tmp_path,
+    )
+    manager.export_to_anki("French Vocabulary", quiet=True)
+    assert sorted(packaged[-1]) == ["Alpha", "Beta"]
+    assert manager.compare_entries_and_exports() == (set(), set())
+
+    repo.word_entries["alpha"]["definitions_list"].append("A sense a merge added")
+    reopened = AnkiExportManager(
+        ui=_StubUI(),
+        language_config=get_language_config("fr"),
+        vocab_repo=repo,  # type: ignore[arg-type]
+        exported_words_file=tracker,
+        project_root=tmp_path,
+    )
+
+    assert reopened.compare_entries_and_exports() == ({"alpha"}, set())
+    reopened.export_to_anki("French Vocabulary", auto_retry_on_empty=False, quiet=True)
+    assert packaged[-1] == ["Alpha"]
+    assert reopened.compare_entries_and_exports() == (set(), set())
+
+
+def test_tracker_written_before_fingerprints_packages_exported_words_again(tmp_path, monkeypatch):
+    packaged = _packaged_headwords(monkeypatch)
+    tracker = tmp_path / "exported_words.json"
+    tracker.write_text(
+        json.dumps({"words": ["alpha"], "deck_version": None, "entry_order": ["alpha"]}),
+        encoding="utf-8",
+    )
+    repo = _CollectionRepo({"alpha": _vocab_entry("alpha")})
+    manager = AnkiExportManager(
+        ui=_StubUI(),
+        language_config=get_language_config("fr"),
+        vocab_repo=repo,  # type: ignore[arg-type]
+        exported_words_file=tracker,
+        project_root=tmp_path,
+    )
+
+    assert manager.compare_entries_and_exports() == ({"alpha"}, set())
+    manager.export_to_anki("French Vocabulary", auto_retry_on_empty=False, quiet=True)
+    assert packaged[-1] == ["Alpha"]
+    assert set(json.loads(tracker.read_text(encoding="utf-8"))["fingerprints"]) == {"alpha"}
+    assert manager.compare_entries_and_exports() == (set(), set())

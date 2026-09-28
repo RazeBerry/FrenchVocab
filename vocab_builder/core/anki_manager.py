@@ -96,6 +96,7 @@ class AnkiExportManager:
         )
         self._entry_history_reader = entry_history_reader
         self._entry_order: List[str] = []
+        self._fingerprints: Dict[str, str] = {}
 
         # Load exported words state
         (
@@ -153,6 +154,7 @@ class AnkiExportManager:
     def _load_exported_words(self) -> Tuple[Set[str], Optional[str], Optional[Dict[str, Any]]]:
         """Load exported words from the tracking file."""
         self._entry_order = []
+        self._fingerprints = {}
         path = self._exported_words_file
         if path.exists():
             try:
@@ -212,6 +214,7 @@ class AnkiExportManager:
             "words": set(words),
             "deck_version": deck_version,
             "entry_order": list(self._entry_order),
+            "fingerprints": dict(self._fingerprints),
             "last_export": dict(last_export) if last_export is not None else None,
         }
         self._apply_export_state(local_state)
@@ -234,6 +237,7 @@ class AnkiExportManager:
             "words": set(self._exported_words),
             "deck_version": self._exported_deck_version,
             "entry_order": list(self._entry_order),
+            "fingerprints": dict(self._fingerprints),
             "last_export": (
                 dict(self._last_export_metadata)
                 if self._last_export_metadata is not None
@@ -245,6 +249,7 @@ class AnkiExportManager:
         self._exported_words = set(state["words"])
         self._exported_deck_version = state.get("deck_version")
         self._entry_order = list(state.get("entry_order") or [])
+        self._fingerprints = dict(state.get("fingerprints") or {})
         last_export = state.get("last_export")
         self._last_export_metadata = dict(last_export) if last_export else None
 
@@ -274,9 +279,23 @@ class AnkiExportManager:
         ]
         merged_order.extend(key for key in local_order if key not in merged_order)
 
+        base_prints = dict(base.get("fingerprints") or {})
+        local_prints = dict(local.get("fingerprints") or {})
+        merged_prints = dict(current.get("fingerprints") or {})
+        for key in base_prints.keys() | local_prints.keys():
+            if local_prints.get(key) == base_prints.get(key):
+                continue
+            if key in local_prints:
+                merged_prints[key] = local_prints[key]
+            else:
+                merged_prints.pop(key, None)
+
         merged: Dict[str, Any] = {
             "words": merged_words,
             "entry_order": merged_order,
+            "fingerprints": {
+                key: value for key, value in merged_prints.items() if key in merged_words
+            },
         }
         for key in ("deck_version", "last_export"):
             merged[key] = local.get(key) if local.get(key) != base.get(key) else current.get(key)
@@ -287,6 +306,11 @@ class AnkiExportManager:
             "words": sorted(self._exported_words),
             "deck_version": self._exported_deck_version,
             "entry_order": list(self._entry_order),
+            "fingerprints": {
+                key: self._fingerprints[key]
+                for key in sorted(self._fingerprints)
+                if key in self._exported_words
+            },
         }
         if self._last_export_metadata:
             payload["last_export"] = self._last_export_metadata
@@ -438,6 +462,35 @@ class AnkiExportManager:
                 cleaned.append((fr_clean, en_clean))
         return cleaned
 
+    def _note_fields(self, entry: Dict[str, Any]) -> Tuple[str, str, List[str], List[Tuple[str, str]]]:
+        """Return the fields an Anki note is built from, in one place."""
+        return (
+            entry["word"],
+            self._coerce_word_type(entry),
+            self._coerce_definitions(entry),
+            self._coerce_examples(entry),
+        )
+
+    @staticmethod
+    def _fingerprint(fields: Tuple[str, str, List[str], List[Tuple[str, str]]]) -> str:
+        # Binds a headword to the note content Anki last received, so a merge,
+        # a correction or a hand edit makes the note pending again.
+        payload = json.dumps(fields, ensure_ascii=False, separators=(",", ":"))
+        return hashlib.blake2b(payload.encode("utf-8"), digest_size=16).hexdigest()
+
+    def _changed_exported_words(self, word_entries: Dict[str, Any]) -> Set[str]:
+        """Exported words whose note content differs from what Anki last received.
+
+        A word exported before fingerprints existed has none, so it counts as
+        changed: nothing records what its note holds.
+        """
+        return {
+            key
+            for key, entry in word_entries.items()
+            if key in self._exported_words
+            and self._fingerprints.get(key) != self._fingerprint(self._note_fields(entry))
+        }
+
     def _collect_entries_for_export(
         self,
         *,
@@ -448,6 +501,11 @@ class AnkiExportManager:
     ) -> List[Tuple[str, str, AnkiExportEntry, bool]]:
         entries_for_export: List[Tuple[str, str, AnkiExportEntry, bool]] = []
         self._sync_entry_order(word_entries)
+        changed = (
+            self._changed_exported_words(word_entries)
+            if selected_words is None and not include_all
+            else set()
+        )
         entries_by_key = {
             self._entry_order_key(key): (key, entry)
             for key, entry in word_entries.items()
@@ -463,17 +521,18 @@ class AnkiExportManager:
             if selected_words is not None:
                 if key not in selected_words:
                     continue
-            elif already_exported and not include_all:
+            elif already_exported and not include_all and key not in changed:
                 continue
             ordered_entries.append((normalized_word, key, entry, already_exported))
 
         for export_order, item in enumerate(ordered_entries, start=1):
             normalized_word, _key, entry, already_exported = item
+            word, word_type, definitions, examples = self._note_fields(entry)
             export_entry = AnkiExportEntry(
-                word=entry["word"],
-                word_type=self._coerce_word_type(entry),
-                definitions=self._coerce_definitions(entry),
-                examples=self._coerce_examples(entry),
+                word=word,
+                word_type=word_type,
+                definitions=definitions,
+                examples=examples,
                 order=export_order,
             )
             entries_for_export.append((normalized_word, entry["word"], export_entry, already_exported))
@@ -827,8 +886,14 @@ class AnkiExportManager:
         newly_added_words_normalized: Set[str] = set()
         newly_added_display: Set[str] = set()
 
-        for normalized_word, display_word, _, already_exported in entries_for_export:
+        for normalized_word, display_word, export_entry, already_exported in entries_for_export:
             all_exported_words.add(normalized_word)
+            self._fingerprints[normalized_word] = self._fingerprint((
+                export_entry.word,
+                export_entry.word_type,
+                list(export_entry.definitions),
+                list(export_entry.examples),
+            ))
             if not already_exported:
                 newly_added_words_normalized.add(normalized_word)
                 newly_added_display.add(display_word)
@@ -870,6 +935,18 @@ class AnkiExportManager:
             self._entry_order = []
         else:
             self._entry_order = list(dict.fromkeys(self._entry_order_key(word) for word in entry_order))
+
+        fingerprints_raw = data.get("fingerprints", {})
+        if isinstance(fingerprints_raw, dict) and all(
+            isinstance(key, str) and isinstance(value, str)
+            for key, value in fingerprints_raw.items()
+        ):
+            self._fingerprints = dict(fingerprints_raw)
+        else:
+            self._ui.warning(
+                "Ignoring invalid Anki fingerprint metadata; exported words will be "
+                "packaged again on the next export."
+            )
 
         version = data.get("deck_version")
         if version is not None and not isinstance(version, str):
@@ -1267,7 +1344,7 @@ class AnkiExportManager:
         """Handle the Anki export workflow with mode selection."""
         default_deck = self._language_config.anki.default_deck_name
         mode_options = [
-            ("incremental", "Incremental (new words only)"),
+            ("incremental", "Incremental (new and changed words)"),
             ("rebuild", "Full rebuild (all words)"),
             ("selected", "Selected words"),
         ]
@@ -1499,11 +1576,14 @@ class AnkiExportManager:
         """Compare LaTeX entries with exported words.
 
         Returns:
-            Tuple of (in_latex_not_exported, in_exports_not_latex)
+            Tuple of (pending, in_exports_not_latex). Pending holds words Anki
+            has never received and exported words whose note has changed since.
         """
         latex_entries = self._vocab_repo.get_all_latex_entries()
         exported_words = self.get_all_exported_words()
-        in_latex_not_exported = latex_entries - exported_words
+        self._vocab_repo.ensure_entries_loaded()
+        changed = self._changed_exported_words(self._vocab_repo.word_entries)
+        in_latex_not_exported = (latex_entries - exported_words) | changed
         in_exports_not_latex = exported_words - latex_entries
         return in_latex_not_exported, in_exports_not_latex
 

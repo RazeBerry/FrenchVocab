@@ -103,12 +103,15 @@ class TestExportToAnki(unittest.TestCase):
                 'examples_list': [('Salut !', 'Hi!')],
             },
         }
-        builder.exported_words = {'salut'}
+        bonjour = builder.word_entries.pop('bonjour')
+        builder.exported_words = set()
         builder.exported_deck_version = None
         builder.save_exported_words = lambda: None
 
         with tempfile.TemporaryDirectory() as tmp:
             builder.exported_words_file = os.path.join(tmp, 'exported_words.json')
+            builder.export_to_anki('Test Deck')
+            builder.word_entries['bonjour'] = bonjour
             builder.export_to_anki('Test Deck')
 
         package = self.package_cls

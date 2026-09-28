@@ -166,12 +166,25 @@ pytest -k "anki"
   An export loads it under the catalog lock and supplies it to `AnkiExporter`;
   a selected-words export updates the existing Anki note when its GUID stays
   the same. Anki never deletes notes omitted from a package.
+- The tracker records, for every exported word, a fingerprint of the note
+  fields Anki received (headword, type, definitions, examples). Pending means
+  never exported *or* exported with different fields, so a merge, a
+  correction or a hand edit makes the note pending again and the next
+  incremental export updates it in place. Merges used to be marked done for
+  Anki and every later incremental export skipped the word, so the deck kept
+  the old note for good. The exporter is the sole owner: no write path has to
+  remember to mark a word dirty. A word with no fingerprint (tracker written
+  before 2026-09-28) counts as changed. When this shipped, the VM's trackers
+  were seeded with each word's current fields, because the packages in
+  `exports/` showed every merged or corrected word packaged after its last
+  change.
 - `scripts/apply_vocab_corrections.py` applies reviewed, base-hashed JSON
   patches to one language. The VM maintenance procedure is: stop
   `vocabbuilder-mobile`, run its default dry-run and review the entry, tracker,
-  and identity diffs, rerun with `--apply`, restart the service, export the
-  reported surviving headwords with selected-words export, then delete the
-  reported retired GUIDs by hand in Anki. The tool refuses pending mobile
+  and identity diffs, rerun with `--apply`, restart the service, run an
+  ordinary incremental export (corrected notes are pending by fingerprint;
+  a selected-words export of the reported headwords does the same), then
+  delete the reported retired GUIDs by hand in Anki. The tool refuses pending mobile
   transactions; repair them before the maintenance window. It takes the
   catalog lock, snapshots all four data artifacts into a correction bundle,
   and writes identity, vocabulary, tracker, and correction history in order.
