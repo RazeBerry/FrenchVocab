@@ -76,3 +76,20 @@ def test_interactive_confirm_treats_ctrl_c_as_cancel(monkeypatch):
     monkeypatch.setattr(navigation, "_read_key", lambda: "ctrl_c")
 
     assert navigation.interactive_confirm(console, "Proceed?", default=True) is False
+
+
+def test_exit_writes_no_cursor_sequence_into_piped_output():
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run(
+        [sys.executable, "-c", "import vocab_builder.cli.navigation; print('value')"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert result.stdout == "value\n"

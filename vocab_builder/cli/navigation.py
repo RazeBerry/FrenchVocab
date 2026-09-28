@@ -20,6 +20,9 @@ from vocab_builder.core.esc_config import read_esc_sequence_timeout
 def _restore_cursor_on_exit() -> None:
     """Best-effort cursor restore for abnormal exits (SIGTERM, atexit)."""
     try:
+        # A pipe has no cursor; the sequence would only corrupt captured output.
+        if not sys.stdout.isatty():
+            return
         sys.stdout.write("\033[?25h")
         sys.stdout.flush()
     except Exception:
