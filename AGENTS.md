@@ -195,9 +195,16 @@ pytest -k "anki"
 - Gemini defaults to the stable `gemini-3.7-flash` model. Its generation config
   uses thinking levels and omits deprecated sampling parameters (`temperature`,
   `top_p`, and `top_k`) that current Gemini models no longer support.
-- The Google Gen AI Python SDK is constrained to `>=2.19.0,<3.0.0`. Version
-  2.19 is the tested floor for Gemini 3.7; the upper bound follows Google's
-  published warning that direct model-call behavior changes in the next major.
+- The Google Gen AI Python SDK is constrained to `>=2.25.0,<3.0.0`. Version
+  2.25 is the tested floor for Gemini 3.7: on 2026-09-28 the fifty-word panel
+  ran on it at medium thinking with every response parsed, every type right
+  and no invented sense, 44 passes against the 46 the same prompt scored on
+  2026-09-24 (`results/shipped-2026-09-28-genai-2.25-medium.json`). The SDK
+  carries the same request, and the swing ("bescheiden" newly passed;
+  "berühmt", "brailler" and "travée" newly failed; "gratter" failed in
+  both) reads as run-to-run variance, not a regression. The upper bound
+  follows Google's published warning that direct model-call behavior
+  changes in the next major.
 - Gemini generation is atomic because every application caller consumes a full
   response before using it. Each application action makes exactly one generation
   request to the selected model. SDK retries are disabled (`attempts=1`), there
