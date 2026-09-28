@@ -40,6 +40,9 @@ An optional private web interface (`vocabbuilder-mobile`, extras `[mobile]`) ser
   sends them through the same template, provider call and parser the app
   uses and scores the result, and `results/` keeps every run, rejected
   candidates included. `candidate_prompts.py` holds the prompt under trial.
+  `merge_panel.json` and `run_merge_panel.py` measure merge look-ups the same
+  way: eighteen held entries, most complete, seven lacking one regularly met
+  sense, scored through the app's own merge diff.
 - `scripts/deploy/` holds the pushed-commit VM deploy front door, provisioning, backup and restore scripts; `scripts/macos/vocab` launches the local Rich client backed by the VM API, and `scripts/macos/install_backup_pull.sh` schedules the daily off-host archive copy.
 - `deploy/` holds the systemd unit and timer files for the mobile server and its daily backup.
 - `tests/` is a pytest suite (`test_*.py`) for architecture boundaries, onboarding, translators, language config, exporters, and UI behavior.
@@ -316,6 +319,22 @@ pytest -k "anki"
   retains its explicit three-part structure. Both templates are literals in
   `ai_prompts.py` generated from `scripts/prompt_panel/candidate_prompts.py`
   after the panel measured them.
+- A merge look-up sends the held entry. `vocabulary_prompt` is the one place a
+  look-up prompt is built (CLI workflow, `VocabBuilder.query_ai`, mobile
+  service); given the held repository record it appends `MERGE_ADDENDUM`, which
+  lists the held senses and asks only for senses they lack, with empty
+  Definitions and Examples sections meaning nothing is missing. Before
+  2026-09-28 a merge regenerated the whole entry and the exact-text diff
+  offered every rewording as new: on the merge panel that behavior scored 1 of
+  18 and offered 44 senses to entries that needed 7, while the addendum scored
+  18 and 17 on two runs with no restatement
+  (`results/merge-fresh-2026-09-28.json`, `merge-candidate-2026-09-28-v1.json`,
+  `merge-shipped-2026-09-28.json`). The v1 score was 15 until three cases the
+  panel had marked complete were found in Larousse, Duden and Wiktionary to
+  lack an attested sense, and were re-marked as optional after the run; the
+  17 is the run that followed. Its miss was "gratter" losing "itch" again.
+  The CLI's stage-two duplicate asks again with the held entry when the user
+  chooses merge, since the response in hand is a fresh entry.
 - French and German directional translation prompts share the same fidelity
   floor while retaining language-specific idiom guidance: preserve agency,
   logical relations, quantifiers, modality, historical distance, structural
@@ -414,9 +433,12 @@ pytest -k "anki"
   preview cannot disagree with what lands on disk, and the rule is not
   reimplemented in the browser.
 - A duplicate found only after generation, when spelling correction resolves to
-  a word already held, returns that merge preview instead of raising. The answer
-  is already in memory; raising discarded it and made the user pay for the same
-  provider call a second time.
+  a word already held, raises the ordinary duplicate with `corrected_from`, and
+  the phone lands on the held entry saying it was corrected (the Mac client
+  prints the same). It used to return a merge preview so the paid generation was
+  not wasted, but a fresh generation rewords the held senses, so that preview
+  offered "ronger" three paraphrases of its own senses as new. "Look up new
+  senses" from there is a merge look-up for the held headword.
 - Destructive vocabulary editing, deletion, and backup restoration are not CLI
   workflows and are intentionally absent from the phone; restoration is the
   operator script above. Recovery artifacts are

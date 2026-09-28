@@ -462,3 +462,61 @@ out.kept = posts;
     }
     assert out["discarded"] == {"mode": "capture", "value": "flaner", "posts": 0}
     assert out["kept"] == [{"token": "t", "use_original": True}]
+
+
+def test_a_corrected_duplicate_opens_the_held_entry_and_looks_up_the_headword():
+    out = _run(CAPTURE + """
+const requests = [];
+const held = { word: "Ronger", word_type: "verb", definitions: ["To gnaw."], examples: [] };
+const api = {
+  request: async (path, init) => {
+    if (path !== "/api/preview") return [];
+    requests.push(JSON.parse(init.body));
+    throw Object.assign(new Error("Ronger is already in your vocabulary."), {
+      code: "duplicate_entry",
+      details: { existing_entry: held, corrected_from: "ronjer" },
+    });
+  },
+};
+const view = new CaptureView(api, async () => {}, async () => {});
+view.setLanguage(FRENCH);
+nodes["entry-input"].value = "ronjer";
+await view.lookUp();
+out.collected = {
+  mode: view.mode,
+  message: nodes["form-message"].textContent,
+  lookupText: view.pendingDuplicateText,
+  ghost: nodes["discard-button"].textContent,
+};
+nodes["primary-button"].click();
+out.kept = { mode: view.mode, value: nodes["entry-input"].value, requests };
+""")
+
+    assert out["collected"] == {
+        "mode": "collected",
+        "message": "Corrected to “Ronger”, which you already have. "
+        "Looking up again asks the model only for senses your entry lacks.",
+        "lookupText": "Ronger",
+        "ghost": "Look up new senses",
+    }
+    assert out["kept"] == {
+        "mode": "capture",
+        "value": "",
+        "requests": [{"text": "ronjer", "duplicate_action": "reject"}],
+    }
+
+
+def test_a_glossary_visit_gives_the_capture_draft_back():
+    """Arriving from the glossary must not cost an unrelated draft; a duplicate
+    raised by the field holds nothing, since the field held the rejected word."""
+    out = _run(CAPTURE + """
+const view = new CaptureView({ request: async () => [] }, async () => {}, async () => {});
+view.setLanguage(FRENCH);
+nodes["entry-input"].value = "brouillon";
+view.showCollected({ word: "Ronger", word_type: "verb", definitions: ["To gnaw."], examples: [] });
+nodes["primary-button"].click();
+out.value = nodes["entry-input"].value;
+out.stored = store["vocabbuilder-capture-draft-fr"];
+""")
+
+    assert out == {"value": "brouillon", "stored": "brouillon"}

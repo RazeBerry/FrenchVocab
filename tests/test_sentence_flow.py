@@ -186,7 +186,7 @@ class TestSentenceFlow(unittest.TestCase):
                 return False
 
         b.target_to_eng_translator = _Spy()
-        b.query_ai = lambda _text: "stub"
+        b.query_ai = lambda _text, _held=None: "stub"
         b.parse_ai_response = lambda _resp: (
             ["sentence"],
             ["translated sentence"],
@@ -243,7 +243,7 @@ class TestSentenceFlow(unittest.TestCase):
         b.sentence_examples_in_vocab = False
 
         # Stub AI + parser
-        b.query_ai = lambda x: "stub"
+        b.query_ai = lambda x, _held=None: "stub"
         b.parse_ai_response = lambda _resp: (['sentence'], ['EN translation', 'note', 'paraphrase'], [('FR ex', 'EN ex')])
         b.check_duplicate = lambda _w: None
         b.is_valid_latex_entry = lambda _s: True
@@ -267,7 +267,7 @@ class TestSentenceFlow(unittest.TestCase):
         b = self._builder(client=fake_client)
 
         b.get_word_input = lambda: "nein"
-        b.query_ai = lambda _word: "stubbed"
+        b.query_ai = lambda _word, _held=None: "stubbed"
         b.check_spelling = lambda word, _resp: word
         b.parse_ai_response = lambda _resp: (
             ['verb'],
@@ -305,7 +305,7 @@ class TestSentenceFlow(unittest.TestCase):
         b = self._builder(client=fake_client)
 
         b.get_word_input = lambda: "bonjour"
-        b.query_ai = lambda _word: "stubbed"
+        b.query_ai = lambda _word, _held=None: "stubbed"
         b.check_spelling = lambda word, _resp: word
         b.parse_ai_response = lambda _resp: (
             ['noun'],
@@ -338,7 +338,7 @@ class TestSentenceFlow(unittest.TestCase):
         b = self._builder(client=fake_client)
 
         b.get_word_input = lambda: "bonjour"
-        b.query_ai = lambda _word: "stubbed"
+        b.query_ai = lambda _word, _held=None: "stubbed"
         b.check_spelling = lambda word, _resp: word
         b.parse_ai_response = lambda _resp: (
             ['noun'],
@@ -372,7 +372,7 @@ class TestSentenceFlow(unittest.TestCase):
         )
 
         b.get_word_input = lambda: "orig"
-        b.query_ai = lambda _word: ai_resp
+        b.query_ai = lambda _word, _held=None: ai_resp
         b.parse_ai_response = lambda _resp: (
             ['verb'],
             ['meaning'],

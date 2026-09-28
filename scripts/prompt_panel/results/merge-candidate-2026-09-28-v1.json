@@ -1,0 +1,400 @@
+{
+  "prompts": "merge-candidate",
+  "thinking": "medium",
+  "model": "gemini-3.7-flash",
+  "run_at": "2026-09-28T13:25:55+00:00",
+  "summary": {
+    "passed": 18,
+    "cases": 18,
+    "complete_left_alone": 8,
+    "complete_cases": 8,
+    "optional_sense_ok": 3,
+    "optional_cases": 3,
+    "missing_sense_found": 7,
+    "missing_cases": 7,
+    "senses_offered": 17,
+    "restatements_offered": 0,
+    "parse_failures": 0,
+    "mean_seconds": 3.7
+  },
+  "results": [
+    {
+      "language": "fr",
+      "word": "ronger",
+      "expect": "none",
+      "definitions": [],
+      "added": [],
+      "contract_issues": [],
+      "elapsed_seconds": 3.2,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 0,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: ronger\nWord Type: verb\nDefinitions:\nExamples:"
+    },
+    {
+      "language": "fr",
+      "word": "flâner",
+      "expect": "either",
+      "definitions": [
+        "To idle; to dawdle."
+      ],
+      "added": [
+        "To idle; to dawdle."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 4.4,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 1,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: flâner\nWord Type: verb\nDefinitions:\na. To idle; to dawdle.\nExamples:\n1. Cesse de flâner et termine ton rapport avant la réunion de midi.\n(Stop dawdling and finish your report before the midday meeting.)"
+    },
+    {
+      "language": "fr",
+      "word": "laver",
+      "expect": "either",
+      "definitions": [
+        "To clear of suspicion or blame, or to wipe away a stain on one's honor."
+      ],
+      "added": [
+        "To clear of suspicion or blame, or to wipe away a stain on one's honor."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 3.3,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 1,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: laver\nWord Type: verb\n\nDefinitions:\na. To clear of suspicion or blame, or to wipe away a stain on one's honor.\n\nExamples:\n1. Cette enquête approfondie a enfin permis de laver le directeur de tout soupçon de fraude.\n(This thorough investigation finally cleared the director of any suspicion of fraud.)"
+    },
+    {
+      "language": "fr",
+      "word": "réglisse",
+      "expect": "none",
+      "definitions": [],
+      "added": [],
+      "contract_issues": [],
+      "elapsed_seconds": 3.4,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 0,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: réglisse\nWord Type: noun\nDefinitions:\nExamples:"
+    },
+    {
+      "language": "fr",
+      "word": "meurtre",
+      "expect": "none",
+      "definitions": [],
+      "added": [],
+      "contract_issues": [],
+      "elapsed_seconds": 2.1,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 0,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: meurtre\nWord Type: noun\nDefinitions:\nExamples:"
+    },
+    {
+      "language": "fr",
+      "word": "encombrant",
+      "expect": "none",
+      "definitions": [],
+      "added": [],
+      "contract_issues": [],
+      "elapsed_seconds": 2.5,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 0,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: encombrant\nWord Type: adjective\nDefinitions:\nExamples:"
+    },
+    {
+      "language": "de",
+      "word": "Kühlschrank",
+      "expect": "none",
+      "definitions": [],
+      "added": [],
+      "contract_issues": [],
+      "elapsed_seconds": 2.5,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 0,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: Kühlschrank\nWord Type: noun\nDefinitions:\nExamples:"
+    },
+    {
+      "language": "de",
+      "word": "zufrieden",
+      "expect": "none",
+      "definitions": [],
+      "added": [],
+      "contract_issues": [],
+      "elapsed_seconds": 2.7,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 0,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: zufrieden\nWord Type: adjective\nDefinitions:\nExamples:"
+    },
+    {
+      "language": "de",
+      "word": "Einladung",
+      "expect": "none",
+      "definitions": [],
+      "added": [],
+      "contract_issues": [],
+      "elapsed_seconds": 3.1,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 0,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: Einladung\nWord Type: noun\nDefinitions:\nExamples:"
+    },
+    {
+      "language": "de",
+      "word": "sich beeilen",
+      "expect": "none",
+      "definitions": [],
+      "added": [],
+      "contract_issues": [],
+      "elapsed_seconds": 2.5,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 0,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: sich beeilen\nWord Type: reflexive verb\nDefinitions:\nExamples:"
+    },
+    {
+      "language": "de",
+      "word": "berühmt",
+      "expect": "either",
+      "definitions": [
+        "Remarkable or impressive, used mostly in the negative to mean mediocre or nothing special (umgangssprachlich)."
+      ],
+      "added": [
+        "Remarkable or impressive, used mostly in the negative to mean mediocre or nothing special (umgangssprachlich)."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 5.0,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 1,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: berühmt\nWord Type: adjective\nDefinitions:\na. Remarkable or impressive, used mostly in the negative to mean mediocre or nothing special (umgangssprachlich).\nExamples:\n1. Das Essen in der neuen Kantine war leider nicht gerade berühmt.\n(Unfortunately, the food in the new cafeteria was nothing to write home about.)"
+    },
+    {
+      "language": "fr",
+      "word": "gratter",
+      "expect": "add",
+      "definitions": [
+        "To itch; to cause an itching sensation.",
+        "Familier. To shave off, gain, or scrounge a small advantage, such as time, money, or points."
+      ],
+      "added": [
+        "To itch; to cause an itching sensation.",
+        "Familier. To shave off, gain, or scrounge a small advantage, such as time, money, or points."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 4.8,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 2,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: gratter\nWord Type: verb\n\nDefinitions:\na. To itch; to cause an itching sensation.\nb. Familier. To shave off, gain, or scrounge a small advantage, such as time, money, or points.\n\nExamples:\n1. Ce pull en laine me gratte tellement que je ne peux pas le porter.\n(This wool sweater itches so much that I cannot wear it.)\n2. En prenant ce raccourci, nous avons réussi à gratter dix minutes sur le trajet.\n(By taking this shortcut, we managed to shave ten minutes off the journey.)"
+    },
+    {
+      "language": "fr",
+      "word": "fusiller",
+      "expect": "add",
+      "definitions": [
+        "To glare at or look daggers at someone, especially with intense anger or hostility.",
+        "Familier. To ruin, wreck, or tear apart with scathing criticism."
+      ],
+      "added": [
+        "To glare at or look daggers at someone, especially with intense anger or hostility.",
+        "Familier. To ruin, wreck, or tear apart with scathing criticism."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 6.2,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 2,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: fusiller\nWord Type: verb\n\nDefinitions:\na. To glare at or look daggers at someone, especially with intense anger or hostility.\nb. Familier. To ruin, wreck, or tear apart with scathing criticism.\n\nExamples:\n1. Quand il a révélé leur secret en pleine réunion, sa collègue l'a fusillé du regard.\n(When he revealed their secret right in the middle of the meeting, his colleague shot daggers at him.)\n2. La presse a complètement fusillé le dernier long-métrage de ce réalisateur pourtant réputé.\n(The press completely trashed the latest feature film by this otherwise renowned director.)"
+    },
+    {
+      "language": "fr",
+      "word": "interpeller",
+      "expect": "add",
+      "definitions": [
+        "To stop and question someone, or take someone into police custody.",
+        "To resonate with, strike, or provoke thought in someone."
+      ],
+      "added": [
+        "To stop and question someone, or take someone into police custody.",
+        "To resonate with, strike, or provoke thought in someone."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 3.3,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 2,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: interpeller\nWord Type: verb\n\nDefinitions:\na. To stop and question someone, or take someone into police custody.\nb. To resonate with, strike, or provoke thought in someone.\n\nExamples:\n1. Les forces de l'ordre ont interpellé trois suspects près du lieu du cambriolage.\n(The police took three suspects into custody near the scene of the burglary.)\n2. Ce documentaire sur la crise du logement a profondément interpellé le public.\n(This documentary on the housing crisis really struck a chord with the public and made them think.)"
+    },
+    {
+      "language": "fr",
+      "word": "racheter",
+      "expect": "add",
+      "definitions": [
+        "To buy out, take over, or buy back (a business, debt, or property).",
+        "To redeem, atone for, or make up for (a fault, error, or defect)."
+      ],
+      "added": [
+        "To buy out, take over, or buy back (a business, debt, or property).",
+        "To redeem, atone for, or make up for (a fault, error, or defect)."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 3.9,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 2,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: racheter\nWord Type: verb\n\nDefinitions:\na. To buy out, take over, or buy back (a business, debt, or property).\nb. To redeem, atone for, or make up for (a fault, error, or defect).\n\nExamples:\n1. Le groupe pharmaceutique a racheté son principal concurrent afin de renforcer sa présence à l'international.\n(The pharmaceutical group bought out its main competitor to strengthen its international presence.)\n2. Son dévouement sans faille a fini par racheter les quelques erreurs commises au début du projet.\n(His flawless dedication eventually made up for the few mistakes made at the start of the project.)"
+    },
+    {
+      "language": "fr",
+      "word": "travée",
+      "expect": "add",
+      "definitions": [
+        "Seating section; a block of seats between two aisles in a legislative chamber, stadium, or auditorium."
+      ],
+      "added": [
+        "Seating section; a block of seats between two aisles in a legislative chamber, stadium, or auditorium."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 4.2,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 1,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: travée\nWord Type: noun\n\nDefinitions:\na. Seating section; a block of seats between two aisles in a legislative chamber, stadium, or auditorium.\n\nExamples:\n1. Des applaudissements nourris ont retenti dans les travées de l'hémicycle.\n(Loud applause rang out across the benches of the assembly chamber.)"
+    },
+    {
+      "language": "de",
+      "word": "schaffen",
+      "expect": "add",
+      "definitions": [
+        "To create, establish, or bring into being.",
+        "Usage note: In the sense of creating or establishing, the verb inflects strongly (schuf, hat geschaffen), whereas in the sense of managing or accomplishing, it inflects weakly (schaffte, hat geschafft)."
+      ],
+      "added": [
+        "To create, establish, or bring into being.",
+        "Usage note: In the sense of creating or establishing, the verb inflects strongly (schuf, hat geschaffen), whereas in the sense of managing or accomplishing, it inflects weakly (schaffte, hat geschafft)."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 5.5,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 2,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: schaffen\nWord Type: verb\nDefinitions:\na. To create, establish, or bring into being.\nb. Usage note: In the sense of creating or establishing, the verb inflects strongly (schuf, hat geschaffen), whereas in the sense of managing or accomplishing, it inflects weakly (schaffte, hat geschafft).\nExamples:\n1. Die Reform soll mehr Transparenz im gesamten Finanzsektor schaffen.\n(The reform is intended to create more transparency across the financial sector.)\n2. Der Bildhauer schuf im Laufe seines Lebens zahlreiche weltberühmte Denkmäler.\n(Over the course of his life, the sculptor created numerous world-famous monuments.)"
+    },
+    {
+      "language": "de",
+      "word": "ausmachen",
+      "expect": "add",
+      "definitions": [
+        "To constitute, account for, or make up.",
+        "To bother, trouble, or matter to someone (used with the dative).",
+        "To agree on or arrange."
+      ],
+      "added": [
+        "To constitute, account for, or make up.",
+        "To bother, trouble, or matter to someone (used with the dative).",
+        "To agree on or arrange."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 3.5,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 3,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: ausmachen\nWord Type: separable verb\n\nDefinitions:\na. To constitute, account for, or make up.\nb. To bother, trouble, or matter to someone (used with the dative).\nc. To agree on or arrange.\n\nExamples:\n1. Erneuerbare Energien machen inzwischen über die Hälfte des deutschen Stromverbrauchs aus.\n(Renewable energy now accounts for more than half of German electricity consumption.)\n2. Macht es Ihnen etwas aus, wenn ich für einen Moment das Fenster öffne?\n(Do you mind if I open the window for a moment?)\n3. Die beiden Parteien haben einen festen Termin für die Unterzeichnung des Vertrags ausgemacht.\n(The two parties agreed on a fixed date for signing the contract.)"
+    }
+  ]
+}

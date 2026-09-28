@@ -526,20 +526,50 @@ def test_real_merge_receipt_reports_added_definition_and_example_counts(
     assert receipt["added_examples"] == 1
 
 
-def test_spell_corrected_duplicate_reuses_one_generation_as_merge_preview(
-    tmp_path,
-    monkeypatch,
-):
+def test_spell_corrected_duplicate_lands_on_the_held_entry(tmp_path, monkeypatch):
     service = build_service(tmp_path, monkeypatch)
-    service._token_factory = iter(("initial-preview-token", "merge-preview-token")).__next__
+    service._token_factory = iter(("initial-preview-token", "unused-token")).__next__
     service.save(service.preview("chrysantheme").token)
     calls_before = len(service.builder.client.prompts)
 
-    preview = service.preview("krizantem")
+    with pytest.raises(DuplicateEntryError) as raised:
+        service.preview("krizantem")
 
-    assert preview.duplicate_action == "merge"
-    assert preview.existing_entry["word"] == "Chrysanthème"
+    assert raised.value.details["existing_word"] == "Chrysanthème"
+    assert raised.value.details["corrected_from"] == "krizantem"
     assert len(service.builder.client.prompts) == calls_before + 1
+
+
+def test_merge_look_up_sends_the_held_senses_and_a_fresh_one_does_not(tmp_path, monkeypatch):
+    service = build_service(tmp_path, monkeypatch)
+    service._token_factory = iter(("initial-preview-token", "merge-preview-token")).__next__
+    service.save(service.preview("chrysantheme").token)
+    fresh_prompt = service.builder.client.prompts[-1]
+
+    service.preview("chrysanthème", duplicate_action="merge")
+    merge_prompt = service.builder.client.prompts[-1]
+
+    assert "Held entry:" not in fresh_prompt
+    assert "Held entry:" in merge_prompt
+    assert "- A flowering plant in the daisy family." in merge_prompt
+    assert "- A flower associated with autumn in France." in merge_prompt
+
+
+def test_merge_that_finds_nothing_missing_is_an_empty_preview(tmp_path, monkeypatch):
+    service = build_service(tmp_path, monkeypatch)
+    service._token_factory = iter(("initial-preview-token", "merge-preview-token")).__next__
+    service.save(service.preview("chrysantheme").token)
+    service.builder.client.response = (
+        "Spelling Check: OK\nCorrectly Spelt Word: chrysanthème\nWord Type: noun\n"
+        "Definitions:\nExamples:\n"
+    )
+
+    preview = service.preview("chrysanthème", duplicate_action="merge")
+
+    assert preview.definitions == []
+    assert preview.new_definitions == []
+    assert preview.new_examples == []
+    assert service.save(preview.token)["action"] == "unchanged"
 
 
 def test_variant_preview_name_matches_the_committed_variant(tmp_path, monkeypatch):

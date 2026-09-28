@@ -67,7 +67,7 @@ def test_the_whole_blank_slip_focuses_the_field(capture_view):
 def test_duplicate_content_leaves_the_blank_capture_styling(capture_view):
     """Stored definitions are content, not placeholder copy, so the duplicate
     landing state must use the filled slip before rendering the stored entry."""
-    collected = capture_view.split("showCollected(existingEntry, lookupText", 1)[1].split(
+    collected = capture_view.split("showCollected(existingEntry, {", 1)[1].split(
         "showMergePreview(preview)", 1
     )[0]
     renderer = capture_view.split("renderEntry(entry, displayWord)", 1)[1].split(
@@ -732,22 +732,6 @@ def test_type_chips_keep_exactly_the_rows_their_count_promised(library_view):
     rows = library_view.split("  visibleRows(rows) {", 1)[1].split("\n  }", 1)[0]
     assert '.trim().toLowerCase() === filter' in rows
     assert ".includes(filter)" not in rows
-
-
-def test_a_glossary_visit_gives_the_capture_draft_back(capture_view):
-    """Arriving in the collected state from the glossary must not cost a draft.
-
-    Keeping what you have used to blank the field and its stored draft, which
-    is right when the field raised the duplicate and wrong when the glossary
-    handed the word over while an unrelated draft sat in the field.
-    """
-    collected = capture_view.split("  showCollected(", 1)[1].split("\n  }", 1)[0]
-    assert 'this.heldDraft = lookupText === this.input.value.trim() ? "" : this.input.value' in collected
-    dismiss = capture_view.split("  dismissToBlank(", 1)[1].split("\n  }", 1)[0]
-    assert "this.input.value = this.heldDraft" in dismiss
-    assert "writeStorage(this.draftKey(), this.heldDraft)" in dismiss
-    blank = capture_view.split("  showCapture(", 1)[1].split("\n  }", 1)[0]
-    assert 'this.heldDraft = ""' in blank
 
 
 def test_every_sheet_is_the_same_paper(styles):

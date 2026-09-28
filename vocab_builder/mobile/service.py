@@ -249,6 +249,14 @@ class MobileVocabService:
             existing_word = self._existing_word(original)
             if existing_word and duplicate_action == "reject":
                 self._raise_if_duplicate(original)
+            # A merge asks only for what the held entry lacks; a fresh entry
+            # rewords every held sense and the exact-text diff offered each
+            # rewording as new.
+            held_entry = (
+                self.builder.word_entries.get(self.builder.check_duplicate(existing_word))
+                if existing_word and duplicate_action == "merge"
+                else None
+            )
             ai_ready = bool(self.builder.api_available)
 
         # Provider recovery and generation are slow and do not touch repository
@@ -260,7 +268,7 @@ class MobileVocabService:
                     or "The AI provider is not configured."
                 )
 
-            response = self.builder.query_ai(original)
+            response = self.builder.query_ai(original, held_entry)
 
         with self._lock:
             if not response:
@@ -275,7 +283,8 @@ class MobileVocabService:
             word_type = parsed.word_type
             definitions = parsed.definitions
             examples = parsed.examples
-            if not definitions:
+            if not definitions and held_entry is None:
+                # An empty completion of a held entry means nothing is missing.
                 raise AIUnavailableError(
                     "The AI response did not contain a usable definition. Please try again."
                 )
@@ -290,9 +299,10 @@ class MobileVocabService:
             final_word = suggestion or original
             corrected_existing = self._existing_word(final_word)
             if corrected_existing and duplicate_action == "reject":
-                # Generation has already completed. Return its merge diff rather
-                # than discard paid-for work and require the same call again.
-                duplicate_action = "merge"
+                # The correction found a word already held. Its fresh entry is
+                # no merge candidate (it rewords the held senses), so the user
+                # lands on the held entry, exactly as if they had typed it.
+                self._raise_if_duplicate(final_word, corrected_from=original)
             existing_word = corrected_existing or existing_word
 
             word_type = next(
@@ -611,20 +621,20 @@ class MobileVocabService:
             )
         return text
 
-    def _raise_if_duplicate(self, word: str) -> None:
+    def _raise_if_duplicate(self, word: str, *, corrected_from: Optional[str] = None) -> None:
         existing_key = self.builder.check_duplicate(word)
         if not existing_key:
             return
         existing = self.builder.word_entries.get(existing_key, {})
         existing_word = str(existing.get("word") or existing_key)
-        raise DuplicateEntryError(
-            f"{existing_word} is already in your vocabulary.",
-            details={
-                "existing_word": existing_word,
-                "existing_entry": self._entry_for_json(existing),
-                "actions": ["merge", "variant", "skip"],
-            },
-        )
+        details: dict[str, Any] = {
+            "existing_word": existing_word,
+            "existing_entry": self._entry_for_json(existing),
+            "actions": ["merge", "variant", "skip"],
+        }
+        if corrected_from is not None:
+            details["corrected_from"] = corrected_from
+        raise DuplicateEntryError(f"{existing_word} is already in your vocabulary.", details=details)
 
     def _existing_word(self, word: str) -> Optional[str]:
         existing_key = self.builder.check_duplicate(word)

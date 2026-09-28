@@ -1,0 +1,267 @@
+{
+  "_about": "Merge look-ups: an entry the collection already holds, and what a careful reader would add to it. 'none' cases are complete, so the right answer adds nothing; 'add' cases lack one regularly met sense, which must appear without restating a held one. Held senses are written for the panel, not copied from any collection. 'either' cases are complete except for one attested but optional sense: adding nothing or only that sense both pass.",
+  "cases": [
+    {
+      "language": "fr",
+      "word": "ronger",
+      "type": "verb",
+      "held": [
+        "To gnaw or nibble at something persistently.",
+        "To erode or wear away gradually.",
+        "To torment; to prey on someone's mind."
+      ],
+      "expect": "none",
+      "why": "The case that exposed the defect: a fresh generation reworded all three senses and the exact-text diff offered them as new."
+    },
+    {
+      "language": "fr",
+      "word": "flâner",
+      "type": "verb",
+      "held": [
+        "To stroll; to wander about without hurry."
+      ],
+      "expect": "either",
+      "why": "Wiktionary sense 2, 'passer son temps à des bagatelles', is attested; expecting nothing was the panel's error, found when v1 added it (2026-09-28).",
+      "allowed_any": [
+        "idle",
+        "dawdl",
+        "trifl",
+        "waste",
+        "laze",
+        "lounge",
+        "loaf"
+      ]
+    },
+    {
+      "language": "fr",
+      "word": "laver",
+      "type": "verb",
+      "held": [
+        "To wash."
+      ],
+      "expect": "either",
+      "why": "Larousse lists 'laver un affront' and clearing someone of an accusation; expecting nothing was the panel's error, found when v1 added it (2026-09-28).",
+      "allowed_any": [
+        "suspicion",
+        "blame",
+        "affront",
+        "insult",
+        "clear",
+        "honor",
+        "honour",
+        "accus"
+      ]
+    },
+    {
+      "language": "fr",
+      "word": "réglisse",
+      "type": "noun",
+      "held": [
+        "Liquorice."
+      ],
+      "expect": "none",
+      "why": "Concrete noun; the plant and the sweet are the same entry."
+    },
+    {
+      "language": "fr",
+      "word": "meurtre",
+      "type": "noun",
+      "held": [
+        "Murder."
+      ],
+      "expect": "none",
+      "why": "Single sense; a legal nuance is a restatement."
+    },
+    {
+      "language": "fr",
+      "word": "encombrant",
+      "type": "adjective",
+      "held": [
+        "Bulky, cumbersome; taking up too much room.",
+        "Burdensome; unwelcome because in the way (of a person or presence)."
+      ],
+      "expect": "none",
+      "why": "Both regular senses are held."
+    },
+    {
+      "language": "de",
+      "word": "Kühlschrank",
+      "type": "noun",
+      "held": [
+        "Refrigerator."
+      ],
+      "expect": "none",
+      "why": "The 2026-09-03 slot-filling failure, now as a merge."
+    },
+    {
+      "language": "de",
+      "word": "zufrieden",
+      "type": "adjective",
+      "held": [
+        "Satisfied, content."
+      ],
+      "expect": "none",
+      "why": "One sense; 'pleased' is the same meaning."
+    },
+    {
+      "language": "de",
+      "word": "Einladung",
+      "type": "noun",
+      "held": [
+        "Invitation."
+      ],
+      "expect": "none",
+      "why": "Single sense."
+    },
+    {
+      "language": "de",
+      "word": "sich beeilen",
+      "type": "reflexive verb",
+      "held": [
+        "To hurry."
+      ],
+      "expect": "none",
+      "why": "Single sense."
+    },
+    {
+      "language": "de",
+      "word": "berühmt",
+      "type": "adjective",
+      "held": [
+        "Famous."
+      ],
+      "expect": "either",
+      "why": "Duden lists the colloquial 'nicht (gerade) berühmt', mediocre; expecting nothing was the panel's error, found when v1 added it (2026-09-28).",
+      "allowed_any": [
+        "mediocre",
+        "nothing special",
+        "not great",
+        "not particularly",
+        "negat",
+        "not exactly"
+      ]
+    },
+    {
+      "language": "fr",
+      "word": "gratter",
+      "type": "verb",
+      "held": [
+        "To scratch or scrape."
+      ],
+      "expect": "add",
+      "add_any": [
+        "itch"
+      ],
+      "why": "'Ça me gratte' is everyday speech and was lost in a shipped run."
+    },
+    {
+      "language": "fr",
+      "word": "fusiller",
+      "type": "verb",
+      "held": [
+        "To shoot; to execute by firing squad."
+      ],
+      "expect": "add",
+      "add_any": [
+        "glare",
+        "look",
+        "ruin",
+        "wreck",
+        "break",
+        "bust",
+        "knacker"
+      ],
+      "why": "'Fusiller du regard' and the familier 'wreck' are met regularly."
+    },
+    {
+      "language": "fr",
+      "word": "interpeller",
+      "type": "verb",
+      "held": [
+        "To call out to; to hail someone."
+      ],
+      "expect": "add",
+      "add_any": [
+        "detain",
+        "arrest",
+        "question",
+        "challenge",
+        "pull",
+        "stop"
+      ],
+      "why": "The police sense dominates the press."
+    },
+    {
+      "language": "fr",
+      "word": "racheter",
+      "type": "verb",
+      "held": [
+        "To buy more of something; to buy again."
+      ],
+      "expect": "add",
+      "add_any": [
+        "buy back",
+        "redeem",
+        "atone",
+        "make up for",
+        "buy out",
+        "take over",
+        "acquire"
+      ],
+      "why": "Buying a company and redeeming a fault are both press senses."
+    },
+    {
+      "language": "fr",
+      "word": "travée",
+      "type": "noun",
+      "held": [
+        "Bay; the span between two supports."
+      ],
+      "expect": "add",
+      "add_any": [
+        "row",
+        "seat",
+        "bench",
+        "tier",
+        "stand",
+        "aisle"
+      ],
+      "why": "Rows of seats in a stadium or assembly are what a reader meets."
+    },
+    {
+      "language": "de",
+      "word": "schaffen",
+      "type": "verb",
+      "held": [
+        "To manage; to get something done."
+      ],
+      "expect": "add",
+      "add_any": [
+        "create",
+        "creat"
+      ],
+      "why": "The strong verb 'schuf, geschaffen' means to create."
+    },
+    {
+      "language": "de",
+      "word": "ausmachen",
+      "type": "separable verb",
+      "held": [
+        "To switch off (a light or device)."
+      ],
+      "expect": "add",
+      "add_any": [
+        "matter",
+        "mind",
+        "agree",
+        "arrange",
+        "make out",
+        "spot",
+        "constitute",
+        "amount",
+        "account for"
+      ],
+      "why": "'Das macht mir nichts aus' and 'einen Termin ausmachen' are everyday."
+    }
+  ]
+}

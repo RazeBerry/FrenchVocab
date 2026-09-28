@@ -175,4 +175,31 @@ GERMAN = _build(
     ),
 )
 
-__all__ = ["FRENCH", "GERMAN"]
+# Appended to a language template when the collection already holds the
+# headword. The template's own rules still govern every sense; this section
+# only narrows the output to what the held entry lacks. "{held_entry}" is
+# replaced, not formatted, because held senses may contain braces.
+MERGE = """
+Held entry:
+The learner's collection already holds this headword, with these senses:
+
+{held_entry}
+
+This request completes that entry; it is not a new entry. Keep the Spelling
+Check, Correctly Spelt Word and Word Type sections as the rules above require.
+Under Definitions, list only senses the held entry lacks, applying every rule
+above to each of them, and give exactly one example for each under Examples.
+
+A held sense already covers a candidate when both name the same meaning: in
+other words, as a synonym list, more narrowly or more broadly, or with a
+register label added. A rewording, a narrower or broader restatement, or a
+usage note about a held meaning is not missing. A candidate is missing only if
+it passes the reader test above on its own; a short held entry is no evidence
+that anything is missing, and most held entries are complete.
+
+When nothing is missing, write the "Definitions:" label with nothing under it
+and the "Examples:" label with nothing under it, then stop. Never write "none"
+or any other placeholder line.
+"""
+
+__all__ = ["FRENCH", "GERMAN", "MERGE"]

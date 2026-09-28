@@ -19,7 +19,7 @@ def test_handle_new_word_entry_logs(tmp_path, monkeypatch):
     builder = VocabBuilder(str(tex_path), provider="gemini", verbose=False, client=_StubClient())
 
     builder.get_word_input = lambda: "bonjour"
-    builder.query_ai = lambda _: "stub"
+    builder.query_ai = lambda _, _held=None: "stub"
     builder.parse_ai_response = lambda _resp: (["noun"], ["greeting"], [("Bonjour", "Hello")])
     builder.check_duplicate = lambda _w: None
     builder.is_valid_latex_entry = lambda _entry: True

@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Callable, Dict, List, Optional, Tuple, TYPE_CHECKING
 
+from vocab_builder.ai_prompts import vocabulary_prompt
 from vocab_builder.ai_response_parser import parse_ai_response_text
 from vocab_builder.languages import LanguageConfig, TranslatorConfig
 from vocab_builder.ui_helper import UIHelper, read_line
@@ -56,7 +57,7 @@ class WorkflowCallbacks:
     on_entry_saved: Optional[Callable[[str], None]] = None
     on_post_translation_menu: Optional[Callable[[], Optional[str]]] = None
     get_word_input_fn: Optional[Callable[[], str]] = None
-    query_ai_fn: Optional[Callable[[str], str]] = None
+    query_ai_fn: Optional[Callable[[str, Optional[Dict[str, Any]]], str]] = None
     check_spelling_fn: Optional[Callable[[str, str], Optional[str]]] = None
     parse_ai_response_fn: Optional[Callable[[str], Tuple[str, List[str], List[Tuple[str, str]]]]] = None
     check_duplicate_fn: Optional[Callable[[str], Optional[str]]] = None
@@ -186,7 +187,8 @@ class WordEntryWorkflow:
         detected_type = self._detect_input_type(original_word)
         self._maybe_show_sentence_hint(detected_type)
 
-        ai_response = self._query_ai(original_word)
+        held = self._held_for_merge()
+        ai_response = self._query_ai(original_word, held)
         if not ai_response:
             return None
 
@@ -196,6 +198,14 @@ class WordEntryWorkflow:
 
         if not self._run_second_duplicate_check(final_word, original_word, existing_word_check1):
             return None
+        if held is None and self._held_for_merge() is not None:
+            # The corrected spelling is a word already held and the user chose
+            # to merge. The response in hand is a whole new entry, whose
+            # rewordings an exact-text merge would add as senses; ask for what
+            # the held entry lacks instead.
+            ai_response = self._query_ai(final_word, self._held_for_merge())
+            if not ai_response:
+                return None
 
         return _PreparedEntry(
             original_word=original_word,
@@ -206,6 +216,11 @@ class WordEntryWorkflow:
 
     def _parse_entry(self, ai_response: str) -> Optional[_ParsedEntry]:
         word_type, definitions, examples, parsing_warnings = self._parse_ai_response(ai_response)
+        if not definitions and not examples and self._held_for_merge() is not None:
+            existing = self.duplicate_resolution.get("existing")
+            self.ui.info(f"Nothing new: the model found no sense missing from '{existing}'.")
+            self.duplicate_resolution = None
+            return None
         if not self._report_parsing_status(definitions, examples, parsing_warnings):
             return None
 
@@ -306,10 +321,18 @@ class WordEntryWorkflow:
             accent="dim",
         )
 
-    def _query_ai(self, original_word: str) -> Optional[str]:
+    def _held_for_merge(self) -> Optional[Dict[str, Any]]:
+        """The repository record a chosen merge completes, if one was chosen."""
+        if not self.duplicate_resolution or self.duplicate_resolution.get("mode") != "merge":
+            return None
+        existing = self.duplicate_resolution.get("existing", "")
+        key = self.vocab_repo.check_duplicate(existing) or existing.lower()
+        return self.vocab_repo.word_entries.get(key)
+
+    def _query_ai(self, original_word: str, held: Optional[Dict[str, Any]] = None) -> Optional[str]:
         if self._query_ai_fn:
-            return self._query_ai_fn(original_word)
-        return self._query_ai_with_recovery(original_word)
+            return self._query_ai_fn(original_word, held)
+        return self._query_ai_with_recovery(original_word, held)
 
     def _determine_final_word(self, original_word: str, ai_response: str, detected_type: str) -> Optional[str]:
         if detected_type == "sentence":
@@ -529,11 +552,14 @@ class WordEntryWorkflow:
     def _detect_input_type(self, text: str) -> str:
         return detect_input_type(text)
 
-    def _query_ai_with_recovery(self, word: str) -> Optional[str]:
+    def _query_ai_with_recovery(self, word: str, held: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Query AI with recovery options on failure."""
-        detected_type = self._detect_input_type(word)
-        prompt_template = self.language_config.prompt_template
-        prompt = prompt_template.format(input_text=word, detected_type=detected_type)
+        prompt = vocabulary_prompt(
+            self.language_config.prompt_template,
+            word,
+            self._detect_input_type(word),
+            held,
+        )
 
         def _on_exception(exc: Exception, label: str) -> bool:
             return self.llm.handle_ai_exception(

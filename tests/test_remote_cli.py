@@ -138,3 +138,102 @@ def test_remote_cli_uses_api_catalog_without_constructing_server_builder(monkeyp
 
     assert calls == ["/api/collections", "/api/status"]
     assert client.api.language == "fr"
+
+
+class _CaptureAPI:
+    """A private API that holds "Ronger" and answers one merge look-up."""
+
+    language = "fr"
+
+    def __init__(self, merge_preview):
+        self.merge_preview = merge_preview
+        self.calls = []
+
+    def request(self, path, *, method="GET", payload=None, **_kwargs):
+        self.calls.append((path, payload))
+        if path == "/api/preview" and payload["duplicate_action"] == "reject":
+            raise RemoteAPIError(
+                "Ronger is already in your vocabulary.",
+                code="duplicate_entry",
+                details={
+                    "existing_entry": {"word": "Ronger", "word_type": "verb", "definitions": ["To gnaw."], "examples": []},
+                    "corrected_from": "ronjer",
+                },
+            )
+        if path == "/api/preview":
+            return self.merge_preview
+        if path == "/api/save":
+            return {"word": "Ronger", "action": "merged", "added_definitions": 2, "added_examples": 1}
+        raise AssertionError(path)
+
+
+class _RecordingConsole:
+    def __init__(self):
+        self.lines = []
+
+    def print(self, *objects, **_kwargs):
+        self.lines.append(" ".join(str(item) for item in objects))
+
+    def status(self, *_args, **_kwargs):
+        from contextlib import nullcontext
+
+        return nullcontext()
+
+    def export_text(self):
+        return "\n".join(self.lines)
+
+
+def _capture(monkeypatch, api, answers):
+    menus = []
+
+    def select(_console, title, options, *_args, **_kwargs):
+        menus.append((title, options))
+        return answers[title]
+
+    monkeypatch.setattr("vocab_builder.cli.remote_client.interactive_select", select)
+    client = RemoteCLI(api, console=_RecordingConsole())  # type: ignore[arg-type]
+    client.status = {"language_name": "French"}
+    monkeypatch.setattr(client, "_prompt", lambda _prompt: "ronjer")
+    # Entry panels need the real Rich tables the suite stubs out.
+    monkeypatch.setattr(client, "_show_entry", lambda *_args, **_kwargs: None)
+    client._capture()
+    return client.console.export_text(), menus
+
+
+def test_a_corrected_duplicate_merges_into_the_held_headword_and_counts_both_kinds(monkeypatch):
+    api = _CaptureAPI({
+        "token": "t",
+        "word": "Ronger",
+        "word_type": "verb",
+        "definitions": ["To erode.", "To torment."],
+        "examples": [],
+        "duplicate_action": "merge",
+        "new_definitions": ["To erode.", "To torment."],
+        "new_examples": [["L'eau ronge la pierre.", "Water eats away the stone."]],
+    })
+
+    output, menus = _capture(monkeypatch, api, {"Existing Entry": "merge", "Confirm Entry": "save"})
+
+    assert "Corrected to Ronger, which you already have." in output
+    assert api.calls[1] == ("/api/preview", {"text": "Ronger", "duplicate_action": "merge"})
+    assert menus[1][1][0] == ("save", "Add 2 senses, 1 example")
+    assert "Ronger gained 2 senses and 1 example." in output
+
+
+def test_a_merge_that_finds_nothing_missing_offers_no_save(monkeypatch):
+    api = _CaptureAPI({
+        "token": "t",
+        "word": "Ronger",
+        "word_type": "verb",
+        "definitions": [],
+        "examples": [],
+        "duplicate_action": "merge",
+        "new_definitions": [],
+        "new_examples": [],
+    })
+
+    output, menus = _capture(monkeypatch, api, {"Existing Entry": "merge"})
+
+    assert "Nothing new: the model found no sense your entry lacks." in output
+    assert [title for title, _ in menus] == ["Existing Entry"]
+    assert all(path != "/api/save" for path, _ in api.calls)

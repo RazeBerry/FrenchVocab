@@ -185,6 +185,16 @@ def resolve_base_url(
     )
 
 
+def _addition_label(definitions: int, examples: int, joiner: str) -> str:
+    """Name what a merge adds, both kinds, as the phone does ("2 senses, 1 example")."""
+    parts = [
+        f"{count} {noun}{'' if count == 1 else 's'}"
+        for count, noun in ((definitions, "sense"), (examples, "example"))
+        if count
+    ]
+    return joiner.join(parts)
+
+
 def _tailscale_status() -> Mapping[str, Any]:
     try:
         result = subprocess.run(
@@ -349,12 +359,17 @@ class RemoteCLI:
                 raise
             existing = dict(exc.details["existing_entry"])
             self._show_entry(existing, title="Already in your collection")
+            if exc.details.get("corrected_from"):
+                # The correction found a held word, so a further look-up asks
+                # about that headword rather than the text as typed.
+                text = str(existing.get("word") or text)
+                self.console.print(f"[dim]Corrected to {escape(text)}, which you already have.[/dim]")
             choice = interactive_select(
                 self.console,
                 "Existing Entry",
                 [
                     ("keep", "Keep what I have"),
-                    ("merge", "Look up and add new senses"),
+                    ("merge", "Look up senses it lacks"),
                     ("variant", "Create a separate labelled variant"),
                     ("back", "Back to main menu"),
                 ],
@@ -366,14 +381,18 @@ class RemoteCLI:
 
         self._show_entry(preview, title="Vocabulary Preview")
         action = str(preview.get("duplicate_action", "new"))
+        new_definitions = len(preview.get("new_definitions", []))
+        new_examples = len(preview.get("new_examples", []))
+        if action == "merge" and not new_definitions and not new_examples:
+            self.console.print("[dim]Nothing new: the model found no sense your entry lacks.[/dim]")
+            return
         options: list[tuple[str, str]] = [("save", "Save this entry")]
         if preview.get("spelling_suggestion"):
             options.append(("original", f"Save original spelling: {escape(str(preview['original_input']))}"))
         if preview.get("route_recommended"):
             options.append(("translate", "Translate instead"))
         if action == "merge":
-            added = len(preview.get("new_definitions", [])) or len(preview.get("new_examples", []))
-            options[0] = ("save", f"Merge {added} new item{'s' if added != 1 else ''}")
+            options[0] = ("save", f"Add {_addition_label(new_definitions, new_examples, ', ')}")
         elif action == "variant" and preview.get("variant_word"):
             options[0] = ("save", f"Save as {escape(str(preview['variant_word']))}")
         options.append(("back", "Discard preview"))
@@ -394,7 +413,18 @@ class RemoteCLI:
             payload={"token": preview["token"], "use_original": choice == "original"},
             label="Saving…",
         )
-        self.console.print(f"[bold green]✓ {escape(str(receipt['word']))} is saved.[/bold green]")
+        word = escape(str(receipt["word"]))
+        if receipt.get("action") == "merged":
+            gained = _addition_label(
+                int(receipt.get("added_definitions") or 0),
+                int(receipt.get("added_examples") or 0),
+                " and ",
+            )
+            self.console.print(f"[bold green]✓ {word} gained {gained}.[/bold green]")
+        elif receipt.get("action") == "unchanged":
+            self.console.print(f"[dim]Nothing changed: {word} already had those senses.[/dim]")
+        else:
+            self.console.print(f"[bold green]✓ {word} is saved.[/bold green]")
 
     def _preview_entry(self, text: str, duplicate_action: str) -> dict[str, Any]:
         result = self._call(

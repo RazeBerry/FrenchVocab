@@ -1,0 +1,470 @@
+{
+  "prompts": "merge-fresh",
+  "thinking": "medium",
+  "model": "gemini-3.7-flash",
+  "run_at": "2026-09-28T13:24:39+00:00",
+  "summary": {
+    "passed": 1,
+    "cases": 18,
+    "complete_left_alone": 0,
+    "complete_cases": 8,
+    "optional_sense_ok": 0,
+    "optional_cases": 3,
+    "missing_sense_found": 1,
+    "missing_cases": 7,
+    "senses_offered": 44,
+    "restatements_offered": 17,
+    "parse_failures": 0,
+    "mean_seconds": 4.3
+  },
+  "results": [
+    {
+      "language": "fr",
+      "word": "ronger",
+      "expect": "none",
+      "definitions": [
+        "To gnaw, nibble, or bite repeatedly.",
+        "To eat away at, corrode, or erode.",
+        "To consume, torment, or eat away at inwardly."
+      ],
+      "added": [
+        "To gnaw, nibble, or bite repeatedly.",
+        "To eat away at, corrode, or erode.",
+        "To consume, torment, or eat away at inwardly."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 3.5,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": false,
+        "restated": 2,
+        "hedged": 0,
+        "added": 3,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: ronger\nWord Type: verb\n\nDefinitions:\na. To gnaw, nibble, or bite repeatedly.\nb. To eat away at, corrode, or erode.\nc. To consume, torment, or eat away at inwardly.\n\nExamples:\n1. Le chien passe des heures à ronger son os dans le jardin.\n(The dog spends hours gnawing on his bone in the garden.)\n2. L'air marin et l'humidité finissent par ronger les structures métalliques du port.\n(Sea air and dampness eventually corrode the harbor's metal structures.)\n3. Le remords et l'incertitude continuent de le ronger depuis cette décision.\n(Remorse and uncertainty continue to eat away at him since that decision.)"
+    },
+    {
+      "language": "fr",
+      "word": "flâner",
+      "expect": "either",
+      "definitions": [
+        "To stroll or wander aimlessly at a leisurely pace.",
+        "To dawdle, idle, or waste time."
+      ],
+      "added": [
+        "To stroll or wander aimlessly at a leisurely pace.",
+        "To dawdle, idle, or waste time."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 3.4,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": false,
+        "restated": 0,
+        "hedged": 0,
+        "added": 2,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: flâner\nWord Type: verb\n\nDefinitions:\na. To stroll or wander aimlessly at a leisurely pace.\nb. To dawdle, idle, or waste time.\n\nExamples:\n1. Le dimanche après-midi, nous aimons flâner le long des quais de Seine.\n(On Sunday afternoons, we like to stroll along the banks of the Seine.)\n2. Arrête de flâner en chemin et dépêche-toi, nous allons être en retard.\n(Stop dawdling on the way and hurry up; we are going to be late.)"
+    },
+    {
+      "language": "fr",
+      "word": "laver",
+      "expect": "either",
+      "definitions": [
+        "To wash, clean using water or another liquid.",
+        "(soutenu) To clear, vindicate, or purge someone or something of an affront, suspicion, or dishonour."
+      ],
+      "added": [
+        "To wash, clean using water or another liquid.",
+        "(soutenu) To clear, vindicate, or purge someone or something of an affront, suspicion, or dishonour."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 3.9,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": false,
+        "restated": 1,
+        "hedged": 0,
+        "added": 2,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: laver\nWord Type: verb\n\nDefinitions:\na. To wash, clean using water or another liquid.\nb. (soutenu) To clear, vindicate, or purge someone or something of an affront, suspicion, or dishonour.\n\nExamples:\n1.\nN'oublie pas de laver ces verres délicats à la main pour éviter de les fêler.\n(Do not forget to wash these delicate glasses by hand to keep from cracking them.)\n2.\nL'ancien ministre entend bien laver son honneur devant les tribunaux.\n(The former minister fully intends to clear his name in court.)"
+    },
+    {
+      "language": "fr",
+      "word": "réglisse",
+      "expect": "none",
+      "definitions": [
+        "Licorice; the aromatic root of the licorice plant, or the black candy flavored with its extract.",
+        "Usage note: The noun is standardly feminine (de la réglisse, une réglisse), but masculine agreement is frequently heard in informal spoken French when referring to the candy or flavor."
+      ],
+      "added": [
+        "Licorice; the aromatic root of the licorice plant, or the black candy flavored with its extract.",
+        "Usage note: The noun is standardly feminine (de la réglisse, une réglisse), but masculine agreement is frequently heard in informal spoken French when referring to the candy or flavor."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 4.0,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": false,
+        "restated": 0,
+        "hedged": 0,
+        "added": 2,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: réglisse\nWord Type: noun\n\nDefinitions:\na. Licorice; the aromatic root of the licorice plant, or the black candy flavored with its extract.\nb. Usage note: The noun is standardly feminine (de la réglisse, une réglisse), but masculine agreement is frequently heard in informal spoken French when referring to the candy or flavor.\n\nExamples:\n1. Les enfants achetaient des rouleaux de réglisse noire à la boulangerie du quartier.\n(The children used to buy black licorice wheels at the neighborhood bakery.)\n2. Ce chef pâtissier parfume sa crème brûlée avec une infusion de réglisse sauvage.\n(This pastry chef flavors his crème brûlée with an infusion of wild licorice.)"
+    },
+    {
+      "language": "fr",
+      "word": "meurtre",
+      "expect": "none",
+      "definitions": [
+        "Murder; intentional homicide.",
+        "Usage note: In French criminal law, meurtre designates intentional homicide committed without premeditation, distinguishing it from assassinat, which involves premeditation."
+      ],
+      "added": [
+        "Murder; intentional homicide.",
+        "Usage note: In French criminal law, meurtre designates intentional homicide committed without premeditation, distinguishing it from assassinat, which involves premeditation."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 6.6,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": false,
+        "restated": 1,
+        "hedged": 0,
+        "added": 2,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: meurtre\nWord Type: noun\nDefinitions:\na. Murder; intentional homicide.\nb. Usage note: In French criminal law, meurtre designates intentional homicide committed without premeditation, distinguishing it from assassinat, which involves premeditation.\nExamples:\n1. L'enquête de police s'oriente désormais vers la piste d'un meurtre crapuleux.\n(The police investigation is now pointing toward the possibility of a robbery-homicide.)\n2. L'accusé a été condamné pour meurtre, les juges ayant écarté la préméditation requise pour retenir l'assassinat.\n(The defendant was convicted of murder, as the judges dismissed the premeditation required to uphold a charge of premeditated murder.)"
+    },
+    {
+      "language": "fr",
+      "word": "encombrant",
+      "expect": "none",
+      "definitions": [
+        "Bulky; taking up too much physical space and awkward to handle or store.",
+        "Burdensome, awkward, or inconvenient; said of a person, ally, or issue whose presence constitutes an unwanted liability.",
+        "Usage note: In the masculine plural noun form (\"les encombrants\"), it refers to bulky household waste collected separately from standard rubbish."
+      ],
+      "added": [
+        "Bulky; taking up too much physical space and awkward to handle or store.",
+        "Burdensome, awkward, or inconvenient; said of a person, ally, or issue whose presence constitutes an unwanted liability.",
+        "Usage note: In the masculine plural noun form (\"les encombrants\"), it refers to bulky household waste collected separately from standard rubbish."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 4.1,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": false,
+        "restated": 1,
+        "hedged": 0,
+        "added": 3,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: encombrant\nWord Type: adjective\n\nDefinitions:\na. Bulky; taking up too much physical space and awkward to handle or store.\nb. Burdensome, awkward, or inconvenient; said of a person, ally, or issue whose presence constitutes an unwanted liability.\nc. Usage note: In the masculine plural noun form (\"les encombrants\"), it refers to bulky household waste collected separately from standard rubbish.\n\nExamples:\n1. Ce buffet en chêne massif est bien trop encombrant pour notre nouvel appartement.\n(This solid oak sideboard is far too bulky for our new apartment.)\n2. Depuis ses déclarations polémiques, ce député est devenu un allié encombrant pour le parti.\n(Ever since his controversial remarks, this lawmaker has become a burdensome ally for the party.)\n3. La mairie organise le ramassage des encombrants le premier jeudi de chaque mois.\n(The town hall collects bulky waste on the first Thursday of every month.)"
+    },
+    {
+      "language": "de",
+      "word": "Kühlschrank",
+      "expect": "none",
+      "definitions": [
+        "Refrigerator, fridge.",
+        "Usage note: Common collocations include \"in den Kühlschrank stellen\" for placing items inside, \"im Kühlschrank lagern\" for storing them, and \"den Kühlschrank abtauen\" for defrosting."
+      ],
+      "added": [
+        "Refrigerator, fridge.",
+        "Usage note: Common collocations include \"in den Kühlschrank stellen\" for placing items inside, \"im Kühlschrank lagern\" for storing them, and \"den Kühlschrank abtauen\" for defrosting."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 2.7,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": false,
+        "restated": 1,
+        "hedged": 0,
+        "added": 2,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: Kühlschrank\nWord Type: noun\nDefinitions:\na. Refrigerator, fridge.\nb. Usage note: Common collocations include \"in den Kühlschrank stellen\" for placing items inside, \"im Kühlschrank lagern\" for storing them, and \"den Kühlschrank abtauen\" for defrosting.\nExamples:\n1.\nStell die geöffnete Milchpackung bitte sofort wieder in den Kühlschrank.\n(Please put the opened carton of milk back in the fridge immediately.)\n2.\nVor der Abreise sollten wir den Kühlschrank gründlich reinigen und abtauen.\n(Before leaving, we should thoroughly clean and defrost the fridge.)"
+    },
+    {
+      "language": "de",
+      "word": "zufrieden",
+      "expect": "none",
+      "definitions": [
+        "Content, satisfied, pleased.",
+        "Usage note: Predicatively constructed with \"mit\" plus dative to denote contentment with a specific condition, person, or outcome, distinct from the emotional high of \"glücklich\"."
+      ],
+      "added": [
+        "Content, satisfied, pleased.",
+        "Usage note: Predicatively constructed with \"mit\" plus dative to denote contentment with a specific condition, person, or outcome, distinct from the emotional high of \"glücklich\"."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 4.6,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": false,
+        "restated": 1,
+        "hedged": 0,
+        "added": 2,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: zufrieden\nWord Type: adjective\n\nDefinitions:\na. Content, satisfied, pleased.\nb. Usage note: Predicatively constructed with \"mit\" plus dative to denote contentment with a specific condition, person, or outcome, distinct from the emotional high of \"glücklich\".\n\nExamples:\n1. Der Vorstand zeigte sich mit den aktuellen Geschäftszahlen äußerst zufrieden.\n(The board of directors appeared extremely satisfied with the current financial results.)\n2. Obwohl nicht alle Wünsche erfüllt wurden, sind die Anwohner mit dem Kompromiss vollauf zufrieden.\n(Although not all demands were met, the local residents are completely satisfied with the compromise.)"
+    },
+    {
+      "language": "de",
+      "word": "Einladung",
+      "expect": "none",
+      "definitions": [
+        "Invitation; a spoken or written request to attend an event, visit, or be someone's guest.",
+        "Written invitation; an invitation card or formal document sent to invite someone."
+      ],
+      "added": [
+        "Invitation; a spoken or written request to attend an event, visit, or be someone's guest.",
+        "Written invitation; an invitation card or formal document sent to invite someone."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 3.7,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": false,
+        "restated": 2,
+        "hedged": 0,
+        "added": 2,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: Einladung\nWord Type: noun\nDefinitions:\na. Invitation; a spoken or written request to attend an event, visit, or be someone's guest.\nb. Written invitation; an invitation card or formal document sent to invite someone.\nExamples:\n1. Wir haben die freundliche Einladung zum Jubiläum des Instituts dankend angenommen.\n(We gratefully accepted the kind invitation to the institute's anniversary.)\n2. Die gedruckten Einladungen zur Hochzeit müssen bis Ende der Woche verschickt werden.\n(The printed wedding invitations must be sent out by the end of the week.)"
+    },
+    {
+      "language": "de",
+      "word": "sich beeilen",
+      "expect": "none",
+      "definitions": [
+        "To hurry; to move or act quickly in order to save time or avoid being late.",
+        "Usage note: Frequently constructed with the preposition \"mit\" plus dative or followed by an infinitive with \"zu\"."
+      ],
+      "added": [
+        "To hurry; to move or act quickly in order to save time or avoid being late.",
+        "Usage note: Frequently constructed with the preposition \"mit\" plus dative or followed by an infinitive with \"zu\"."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 3.8,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": false,
+        "restated": 1,
+        "hedged": 0,
+        "added": 2,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: sich beeilen\nWord Type: reflexive verb\nDefinitions:\na. To hurry; to move or act quickly in order to save time or avoid being late.\nb. Usage note: Frequently constructed with the preposition \"mit\" plus dative or followed by an infinitive with \"zu\".\nExamples:\n1. Wir müssen uns beeilen, wenn wir den letzten Zug noch erreichen wollen.\n(We need to hurry if we want to catch the last train.)\n2. Wenn du dich mit den Vorbereitungen beeilst, können wir pünktlich losfahren.\n(If you hurry up with the preparations, we can leave on time.)"
+    },
+    {
+      "language": "de",
+      "word": "berühmt",
+      "expect": "either",
+      "definitions": [
+        "Famous, renowned.",
+        "umgangssprachlich, in negations: Mediocre, not particularly good."
+      ],
+      "added": [
+        "Famous, renowned.",
+        "umgangssprachlich, in negations: Mediocre, not particularly good."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 3.5,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": false,
+        "restated": 1,
+        "hedged": 0,
+        "added": 2,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: berühmt\nWord Type: adjective\n\nDefinitions:\na. Famous, renowned.\nb. umgangssprachlich, in negations: Mediocre, not particularly good.\n\nExamples:\n1. Die Stadt ist berühmt für ihre historische Altstadt und zieht jedes Jahr Millionen von Touristen an.\n(The city is famous for its historic old town and attracts millions of tourists every year.)\n2. Seine Leistung in der gestrigen Prüfung war leider nicht gerade berühmt.\n(His performance in yesterday's exam was unfortunately not particularly impressive.)"
+    },
+    {
+      "language": "fr",
+      "word": "gratter",
+      "expect": "add",
+      "definitions": [
+        "To scratch or scrape a surface, skin, or lottery ticket.",
+        "Familier. To gain or claw back a small margin, such as extra points, minutes, or money.",
+        "Usage note: Frequently used in informal French to express an itch where standard written French prefers \"démanger\"."
+      ],
+      "added": [
+        "To scratch or scrape a surface, skin, or lottery ticket.",
+        "Familier. To gain or claw back a small margin, such as extra points, minutes, or money.",
+        "Usage note: Frequently used in informal French to express an itch where standard written French prefers \"démanger\"."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 5.1,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 1,
+        "hedged": 0,
+        "added": 3,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: gratter\nWord Type: verb\n\nDefinitions:\na. To scratch or scrape a surface, skin, or lottery ticket.\nb. Familier. To gain or claw back a small margin, such as extra points, minutes, or money.\nc. Usage note: Frequently used in informal French to express an itch where standard written French prefers \"démanger\".\n\nExamples:\n1. Il a passé dix minutes à gratter le pare-brise gelé avant de pouvoir prendre la route.\n(He spent ten minutes scraping the frozen windshield before he could hit the road.)\n2. En optimisant son trajet quotidien, elle a réussi à gratter un quart d'heure de sommeil.\n(By optimizing her daily commute, she managed to claw back an extra fifteen minutes of sleep.)\n3. Cette piqûre d'insecte me gratte affreusement depuis ce matin.\n(This insect bite has been itching terribly since this morning.)"
+    },
+    {
+      "language": "fr",
+      "word": "fusiller",
+      "expect": "add",
+      "definitions": [
+        "To execute by firing squad.",
+        "Figurative. To glare at someone with a hostile or piercing look."
+      ],
+      "added": [
+        "To execute by firing squad.",
+        "Figurative. To glare at someone with a hostile or piercing look."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 4.0,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 1,
+        "hedged": 0,
+        "added": 2,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: fusiller\nWord Type: verb\n\nDefinitions:\na. To execute by firing squad.\nb. Figurative. To glare at someone with a hostile or piercing look.\n\nExamples:\n1. Le tribunal militaire a condamné l'espion à être fusillé à l'aube.\n(The military tribunal sentenced the spy to be executed by firing squad at dawn.)\n2. Furieuse de son retard, elle l'a fusillé du regard dès qu'il est entré dans la pièce.\n(Furious about his lateness, she shot him a furious glare as soon as he entered the room.)"
+    },
+    {
+      "language": "fr",
+      "word": "interpeller",
+      "expect": "add",
+      "definitions": [
+        "To call out to, hail, or address someone abruptly; to challenge or formally question an official publicly.",
+        "To stop and question, apprehend, or take into custody.",
+        "To strike, give pause to, or provoke reflection or concern in someone."
+      ],
+      "added": [
+        "To call out to, hail, or address someone abruptly; to challenge or formally question an official publicly.",
+        "To stop and question, apprehend, or take into custody.",
+        "To strike, give pause to, or provoke reflection or concern in someone."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 4.4,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 1,
+        "hedged": 0,
+        "added": 3,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: interpeller\nWord Type: verb\n\nDefinitions:\na. To call out to, hail, or address someone abruptly; to challenge or formally question an official publicly.\nb. To stop and question, apprehend, or take into custody.\nc. To strike, give pause to, or provoke reflection or concern in someone.\n\nExamples:\n1. Un passant a interpellé le maire sur la place du marché pour dénoncer la hausse des taxes locales.\n(A passerby challenged the mayor in the market square to speak out against the rise in local taxes.)\n2. Les forces de l'ordre ont interpellé trois suspects quelques heures après le cambriolage.\n(Law enforcement officers apprehended three suspects a few hours after the burglary.)\n3. Cette hausse soudaine de l'abstention chez les jeunes interpelle les sociologues.\n(This sudden rise in voter abstention among young people gives sociologists pause.)"
+    },
+    {
+      "language": "fr",
+      "word": "racheter",
+      "expect": "add",
+      "definitions": [
+        "To buy back, buy again, or take over an asset, company, or contract.",
+        "To redeem, make up for, or offset a flaw, fault, or mistake.",
+        "Usage note: The pronominal construction \"se racheter\" specifically means to redeem oneself or make amends."
+      ],
+      "added": [
+        "To buy back, buy again, or take over an asset, company, or contract.",
+        "To redeem, make up for, or offset a flaw, fault, or mistake.",
+        "Usage note: The pronominal construction \"se racheter\" specifically means to redeem oneself or make amends."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 4.2,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 1,
+        "hedged": 0,
+        "added": 3,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: racheter\nWord Type: verb\n\nDefinitions:\na. To buy back, buy again, or take over an asset, company, or contract.\nb. To redeem, make up for, or offset a flaw, fault, or mistake.\nc. Usage note: The pronominal construction \"se racheter\" specifically means to redeem oneself or make amends.\n\nExamples:\n1. Le groupe a décidé de racheter son principal concurrent pour consolider sa position sur le marché européen.\n(The group decided to buy out its main competitor to strengthen its position in the European market.)\n2. La beauté des dialogues rachète les quelques faiblesses du scénario.\n(The beauty of the dialogue makes up for the script's few weaknesses.)\n3. Il a proposé de nous inviter à dîner pour se racheter de son retard d'hier.\n(He offered to treat us to dinner to make amends for being late yesterday.)"
+    },
+    {
+      "language": "fr",
+      "word": "travée",
+      "expect": "add",
+      "definitions": [
+        "Section or row of seats in a stadium, auditorium, or parliamentary chamber.",
+        "Bay or span, the structural unit or space between two columns, pillars, or bridge supports.",
+        "Usage note: In political journalism, the plural form \"les travées\" commonly designates the lawmakers or party factions seated in the assembly hall."
+      ],
+      "added": [
+        "Section or row of seats in a stadium, auditorium, or parliamentary chamber.",
+        "Bay or span, the structural unit or space between two columns, pillars, or bridge supports.",
+        "Usage note: In political journalism, the plural form \"les travées\" commonly designates the lawmakers or party factions seated in the assembly hall."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 4.9,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 1,
+        "hedged": 0,
+        "added": 3,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: travée\nWord Type: noun\n\nDefinitions:\na. Section or row of seats in a stadium, auditorium, or parliamentary chamber.\nb. Bay or span, the structural unit or space between two columns, pillars, or bridge supports.\nc. Usage note: In political journalism, the plural form \"les travées\" commonly designates the lawmakers or party factions seated in the assembly hall.\n\nExamples:\n1. Un silence pesant est soudain tombé sur les travées du stade avant le tir décisif.\n(A heavy silence suddenly fell over the stadium stands before the decisive shot.)\n2. La nef principale de cette église médiévale comporte cinq travées voûtées sur croisées d'ogives.\n(The main nave of this medieval church consists of five rib-vaulted bays.)\n3. Des murmures d'indignation ont aussitôt parcouru les travées de l'opposition.\n(Murmurs of indignation immediately rippled through the opposition benches.)"
+    },
+    {
+      "language": "de",
+      "word": "schaffen",
+      "expect": "add",
+      "definitions": [
+        "To accomplish, manage, or achieve a task or goal through effort.",
+        "To create, produce, or establish something original or enduring.",
+        "Usage note: The weak conjugation (schaffte, hat geschafft) denotes accomplishing, finishing, or managing, whereas the strong conjugation (schuf, hat geschaffen) is used for creative, intellectual, or institutional founding."
+      ],
+      "added": [
+        "To accomplish, manage, or achieve a task or goal through effort.",
+        "To create, produce, or establish something original or enduring.",
+        "Usage note: The weak conjugation (schaffte, hat geschafft) denotes accomplishing, finishing, or managing, whereas the strong conjugation (schuf, hat geschaffen) is used for creative, intellectual, or institutional founding."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 4.0,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 0,
+        "hedged": 0,
+        "added": 3,
+        "passed": true
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: schaffen\nWord Type: verb\n\nDefinitions:\na. To accomplish, manage, or achieve a task or goal through effort.\nb. To create, produce, or establish something original or enduring.\nc. Usage note: The weak conjugation (schaffte, hat geschafft) denotes accomplishing, finishing, or managing, whereas the strong conjugation (schuf, hat geschaffen) is used for creative, intellectual, or institutional founding.\n\nExamples:\n1. Trotz des dichten Feierabendverkehrs haben wir es pünktlich zum Flughafen geschafft.\n(Despite the heavy rush-hour traffic, we managed to get to the airport on time.)\n2. Die Bildhauerin schuf mit diesem Werk ein bleibendes Denkmal für die Opfer.\n(With this work, the sculptor created an enduring memorial to the victims.)\n3. Nach monatelangen Verhandlungen schuf die Kommission endlich die rechtlichen Voraussetzungen für das Abkommen.\n(After months of negotiations, the commission finally established the legal framework for the agreement.)"
+    },
+    {
+      "language": "de",
+      "word": "ausmachen",
+      "expect": "add",
+      "definitions": [
+        "Turn off or extinguish a device, light, or fire.",
+        "Constitute or account for a proportion, amount, or defining feature.",
+        "Matter or cause inconvenience to someone; used with a dative object in questions and negative statements."
+      ],
+      "added": [
+        "Turn off or extinguish a device, light, or fire.",
+        "Constitute or account for a proportion, amount, or defining feature.",
+        "Matter or cause inconvenience to someone; used with a dative object in questions and negative statements."
+      ],
+      "contract_issues": [],
+      "elapsed_seconds": 6.2,
+      "score": {
+        "parsed_ok": true,
+        "expected_ok": true,
+        "restated": 1,
+        "hedged": 0,
+        "added": 3,
+        "passed": false
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: ausmachen\nWord Type: separable verb\n\nDefinitions:\na. Turn off or extinguish a device, light, or fire.\nb. Constitute or account for a proportion, amount, or defining feature.\nc. Matter or cause inconvenience to someone; used with a dative object in questions and negative statements.\n\nExamples:\n1. Vergiss bitte nicht, das Licht auszumachen, bevor du das Büro verlässt.\n(Please do not forget to turn off the light before you leave the office.)\n2. Die Energiekosten machen inzwischen fast ein Drittel der gesamten Ausgaben aus.\n(Energy costs now account for almost a third of total expenses.)\n3. Würde es Ihnen etwas ausmachen, das Fenster für einen Moment zu öffnen?\n(Would you mind opening the window for a moment?)"
+    }
+  ]
+}

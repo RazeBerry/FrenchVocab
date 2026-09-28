@@ -203,14 +203,15 @@ export class CaptureView {
 
   /* The state a duplicate lands in, and the one the glossary opens for a word
      you already hold. `lookupText` is what a further look-up would be asked
-     about: the text as typed when a duplicate raised this, and otherwise the
-     stored headword. */
-  showCollected(existingEntry, lookupText = existingEntry.word) {
+     about: the text as typed when a duplicate raised this, the held headword
+     when a spelling correction found it, and otherwise the stored headword. */
+  showCollected(existingEntry, { lookupText = existingEntry.word, heldDraft, note = "" } = {}) {
     // A duplicate is raised by the text in the field, so blanking the field
-    // afterwards discards nothing. The glossary hands a word over while the
-    // field may still hold an unrelated draft; that draft comes back when
-    // this visit ends, whether by keeping the entry or by saving more senses.
-    this.heldDraft = lookupText === this.input.value.trim() ? "" : this.input.value;
+    // afterwards discards nothing, and the caller passes an empty draft. The
+    // glossary hands a word over while the field may still hold an unrelated
+    // draft; that draft comes back when this visit ends, whether by keeping
+    // the entry or by saving more senses.
+    this.heldDraft = heldDraft ?? (lookupText === this.input.value.trim() ? "" : this.input.value);
     this.mode = "collected";
     this.collectedEntry = existingEntry;
     this.pendingDuplicateText = lookupText;
@@ -222,12 +223,12 @@ export class CaptureView {
       countLabel(existingEntry.definitions?.length || 0, "sense"),
     );
     this.discard.hidden = false;
-    this.discard.textContent = "Add new senses";
+    this.discard.textContent = "Look up new senses";
     el("primary-label").textContent = "Keep what I have";
     this.primary.disabled = false;
     this.offerAlternative("Keep a separate variant instead", () => this.lookUp("variant"));
     this.showMessage(
-      "Looking up again asks the model for senses you may be missing. It takes a moment.",
+      `${note}${note ? " " : ""}Looking up again asks the model only for senses your entry lacks.`,
       { note: true },
     );
   }
@@ -273,7 +274,7 @@ export class CaptureView {
       this.discard.hidden = true;
       el("primary-label").textContent = "Keep what I have";
       this.showMessage(
-        `Nothing new — your entry already covers all ${countLabel(preview.definitions?.length || 0, "sense")} the model returned.`,
+        "Nothing new — the model found no sense your entry lacks.",
         { note: true },
       );
     } else {
@@ -374,7 +375,13 @@ export class CaptureView {
       }, { scope: "capture-ai", timeout: 130000 });
     } catch (error) {
       if (error.code === "duplicate_entry" && error.details?.existing_entry) {
-        this.showCollected(error.details.existing_entry, this.input.value.trim());
+        const entry = error.details.existing_entry;
+        const correctedFrom = error.details.corrected_from;
+        this.showCollected(entry, {
+          lookupText: correctedFrom ? entry.word : this.input.value.trim(),
+          heldDraft: "",
+          note: correctedFrom ? `Corrected to “${entry.word}”, which you already have.` : "",
+        });
       }
       else if (!ignoreCancelled(error)) this.showMessage(error.message);
     } finally {
@@ -383,7 +390,7 @@ export class CaptureView {
     }
     if (preview) this.showPreview(preview);
     else if (this.mode === "looking") {
-      if (returnTo) this.showCollected(returnTo, text);
+      if (returnTo) this.showCollected(returnTo, { lookupText: text, heldDraft: this.heldDraft });
       else this.showCapture({ preserveMessage: true });
     }
   }

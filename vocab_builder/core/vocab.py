@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from pathlib import Path
 from rich.console import Console
 from vocab_builder.anki_exporter import latex_to_anki_format as latex_to_anki_html
+from vocab_builder.ai_prompts import vocabulary_prompt
 from vocab_builder.ai_response_parser import ParsedAIResponse, parse_ai_response_text
 import time
 import threading
@@ -964,12 +965,15 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
         """Backward-compatible alias relying on the active language validator."""
         return self.is_valid_input(word)
 
-    def query_ai(self, word: str) -> str:
-        """Query AI for vocabulary definition (uses LLMCoordinator for streaming)."""
-        detected_type = self.detect_input_type(word)
+    def query_ai(self, word: str, held_entry: Optional[Dict[str, Any]] = None) -> str:
+        """Query AI for vocabulary definition (uses LLMCoordinator for streaming).
+
+        ``held_entry`` is the repository record of the entry a merge completes;
+        with it the model is asked only for the senses that entry lacks.
+        """
         config = getattr(self, "language_config", self.DEFAULT_LANGUAGE_CONFIG)
         prompt_template = getattr(config, "prompt_template", None) or self.DEFAULT_LANGUAGE_CONFIG.prompt_template
-        prompt = prompt_template.format(input_text=word, detected_type=detected_type)
+        prompt = vocabulary_prompt(prompt_template, word, self.detect_input_type(word), held_entry)
 
         def _on_exception(exc: Exception, label: str) -> bool:
             return self._handle_ai_exception(exc, label)
