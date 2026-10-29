@@ -215,7 +215,12 @@ pytest -k "anki"
 
 ### Provider and Credential System
 - `vocab_builder/core/providers/manager.py` owns provider metadata, setup wizard flows, and storage destinations.
-- Gemini defaults to the stable `gemini-3.7-flash` model. Its generation config
+- Gemini defaults to the stable `gemini-3.8-flash` model, selected on
+  2026-10-29 at the user's request for both local and VM use. The VM sets
+  `VOCABBUILDER_GEMINI_MODEL` in `/etc/vocabbuilder/mobile.env` so the mobile
+  service and legacy remote CLI agree even before a source deployment. The
+  Gemini 3.7 SDK and prompt-panel measurements below are historical and do
+  not measure 3.8. Its generation config
   uses thinking levels and omits deprecated sampling parameters (`temperature`,
   `top_p`, and `top_k`) that current Gemini models no longer support.
 - The Google Gen AI Python SDK is constrained to `>=2.25.0,<3.0.0`. Version
@@ -791,7 +796,7 @@ All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENC
 
 - `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`: Provider API credentials.
 - `VOCABBUILDER_CLAUDE_MODEL`: Override Claude model ID (default `claude-sonnet-4-6`).
-- `VOCABBUILDER_GEMINI_MODEL`: Override Gemini model ID (default `gemini-3.7-flash`).
+- `VOCABBUILDER_GEMINI_MODEL`: Override Gemini model ID (default `gemini-3.8-flash`).
 - `VOCABBUILDER_PROVIDER_TIMEOUT`: Provider request deadline in seconds (default `120`).
 - `VOCABBUILDER_PROVIDER_RETRY_COOLDOWN`: Minimum seconds between silent provider re-initialization attempts (default `30`).
 - `VOCABBUILDER_ALLOWED_TAILSCALE_USER`: Tailscale login accepted by the private mobile interface; requests are not identity-checked when unset.

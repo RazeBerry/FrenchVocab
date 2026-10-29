@@ -226,7 +226,7 @@ class LLMClient(ABC):
         return None
 
 class GeminiClient(LLMClient):
-    MODEL_NAME = "gemini-3.7-flash"
+    MODEL_NAME = "gemini-3.8-flash"
     _LEAKED_KEY_MESSAGE = (
         "Your Gemini API key has been revoked by Google (flagged as leaked). "
         "This usually means the key was exposed in a public place (e.g., GitHub). "

@@ -306,7 +306,7 @@ def test_gemini_surfaces_503_after_exactly_one_generation_call(monkeypatch, capl
             _consume_stream(client.stream("prompt"))
 
         assert primary_models.generate_calls == 1
-        assert primary_models.last_generate_kwargs["model"] == "gemini-3.7-flash"
+        assert primary_models.last_generate_kwargs["model"] == "gemini-3.8-flash"
         assert "category=transient" in caplog.text
         assert "prompt" not in caplog.text
     finally:
@@ -354,7 +354,7 @@ def test_model_labels_use_default_models_when_env_unset(monkeypatch):
         gemini = llm_client.GeminiClient()
         claude = llm_client.ClaudeClient(api_key="sk-ant-" + "x" * 40)
 
-        assert gemini.model_label() == "Google Gemini (gemini-3.7-flash)"
+        assert gemini.model_label() == "Google Gemini (gemini-3.8-flash)"
         assert claude.model_label() == "Anthropic Claude (claude-sonnet-4-6)"
     finally:
         _restore_google_stub(google_saved)
@@ -410,7 +410,7 @@ def test_model_override_whitespace_falls_back_to_defaults(monkeypatch):
         gemini = llm_client.GeminiClient()
         claude = llm_client.ClaudeClient(api_key="sk-ant-" + "x" * 40)
 
-        assert gemini.model_label() == "Google Gemini (gemini-3.7-flash)"
+        assert gemini.model_label() == "Google Gemini (gemini-3.8-flash)"
         assert claude.model_label() == "Anthropic Claude (claude-sonnet-4-6)"
     finally:
         _restore_google_stub(google_saved)
