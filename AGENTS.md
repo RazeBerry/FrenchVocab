@@ -267,6 +267,11 @@ pytest -k "anki"
   the provider in a heading and the model beneath it. Splitting a combined label
   with string surgery in the browser would put a server rule in the client.
 - Credential resolution is: environment variable first (including values loaded from `.env`), then keyring fallback, then interactive setup.
+- Gemini credential setup and reload accept both standard `AIza` keys and
+  current `AQ.` authorization keys. Prefix checks only identify the format;
+  provider validation determines whether a key is usable. Onboarding must
+  not promise a fixed free-tier allowance: limits belong to the Google project
+  and billing tier.
 - `.env` path resolution order is: `VOCABBUILDER_CONFIG_DIR/.env`, then writable project `.env`, then `~/.vocabbuilder/.env` (falls back to `~/.frenchvocab/.env` for legacy installs).
 - Plaintext `.env` fallback writes are atomic, best-effort permission-hardened, and do not retain a stale backup after a successful key rotation.
 - Keyring service name is `vocab_builder` (silently migrates from legacy `french_vocab_builder`).

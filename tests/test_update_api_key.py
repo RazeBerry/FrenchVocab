@@ -62,6 +62,36 @@ def make_manager(tmp_path: Path, ui: StubUI = None) -> tuple:
     return manager, ui
 
 
+@pytest.mark.parametrize("prefix", ["AIza", "AQ."])
+def test_noninteractive_gemini_key_rotation_survives_a_fresh_instance(
+    tmp_path, monkeypatch, prefix
+):
+    monkeypatch.setenv("VOCABBUILDER_CONFIG_DIR", str(tmp_path))
+    monkeypatch.setenv("VOCABBUILDER_SKIP_KEYRING", "1")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    key = prefix + "x" * 40
+    manager, _ = make_manager(tmp_path)
+    client = MagicMock()
+    client.verify_credentials.return_value = None
+
+    with patch.object(manager_module.ProviderFactory, "create", return_value=client) as create:
+        resolution, feedback = manager.configure_noninteractive(
+            manager.get_metadata("gemini"), key
+        )
+
+    assert feedback.valid
+    assert resolution.api_key == key
+    create.assert_called_once_with("gemini", key)
+    client.verify_credentials.assert_called_once_with(timeout=5.0)
+    assert (tmp_path / ".env").read_text().count(f"GEMINI_API_KEY={key}") == 1
+
+    monkeypatch.delenv("GEMINI_API_KEY")
+    fresh_manager, _ = make_manager(tmp_path)
+    restored = fresh_manager.resolve_provider_silently(fresh_manager.get_metadata("gemini"))
+    assert restored is not None
+    assert restored.api_key == key
+
+
 # =============================================================================
 # Test: Successful key update with keyring storage
 # =============================================================================

@@ -85,7 +85,7 @@ _PROVIDER_REGISTRY: Dict[str, ProviderMetadata] = {
         keyring_name="gemini_api_key",
         display_name="Google Gemini",
         doc_url="https://ai.google.dev/",
-        key_prefixes=("AIza",),
+        key_prefixes=("AIza", "AQ."),
         min_length=32,
     ),
     "claude": ProviderMetadata(
@@ -432,15 +432,15 @@ class ProviderManager:
         metadata = _get_provider_metadata("gemini")
 
         self.ui.panel(
-            "[bold]Step 1/3: Get Your Free API Key[/bold]\n\n"
-            "We'll use Google Gemini (free tier: 60 requests/minute).\n\n"
+            "[bold]Step 1/3: Get Your API Key[/bold]\n\n"
+            "We'll use Google Gemini. Models and usage limits depend on your project and tier.\n\n"
             "[cyan]What you need to do:[/cyan]\n"
             "1. Visit: [bold]https://ai.google.dev/[/bold]\n"
             "2. Click [bold]\"Get API Key\"[/bold] or [bold]\"API Keys\"[/bold]\n"
             "3. Sign in with your Google account\n"
             "4. Click [bold]\"Create API Key\"[/bold]\n"
-            "5. Copy the key (starts with [bold]AIza...[/bold])\n\n"
-            "✨ [dim]Tip: The key is free and takes ~1 minute to generate![/dim]",
+            "5. Copy the complete key\n\n"
+            "[dim]Then return here to enter it.[/dim]",
             title="🔑 API Key Needed",
             border_style="blue",
         )
