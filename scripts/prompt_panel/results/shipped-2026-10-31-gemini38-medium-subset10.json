@@ -1,0 +1,482 @@
+{
+  "prompts": "baseline",
+  "thinking": "medium",
+  "model": "gemini-3.8-flash",
+  "run_at": "2026-10-31",
+  "subset": "ten words whose pass/fail varied between low and medium in the September runs",
+  "summary": {
+    "passed": 5,
+    "count_ok": 7,
+    "notes_ok": 10,
+    "first_ok": 9,
+    "first_clean": 10,
+    "required_ok": 9,
+    "nothing_invented": 10,
+    "corrected_ok": 10,
+    "type_ok": 10,
+    "parsed_ok": 10,
+    "words": 10,
+    "hedged_definitions": 0,
+    "overlapping_pairs": 0,
+    "total_senses": 23,
+    "usage_notes": 2,
+    "mean_seconds": 14.4
+  },
+  "results": [
+    {
+      "language": "fr",
+      "word": "réglisse",
+      "corrected": "réglisse",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Licorice; confectionery made from root extract, or the sweet, aniseed flavoring itself.",
+        "Licorice; the perennial plant whose aromatic roots are used in confectionery and herbal medicine."
+      ],
+      "examples": [
+        [
+          "Ce vin rouge charpenté déploie des notes persistantes de mûre et de réglisse.",
+          "This full-bodied red wine displays lingering notes of blackberry and licorice."
+        ],
+        [
+          "La réglisse pousse spontanément dans les régions méditerranéennes au climat chaud et ensoleillé.",
+          "Licorice grows wild in Mediterranean regions with warm, sunny climates."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 15.9,
+      "thoughts_tokens": 1702,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: réglisse\nWord Type: noun\nDefinitions:\na. Licorice; confectionery made from root extract, or the sweet, aniseed flavoring itself.\nb. Licorice; the perennial plant whose aromatic roots are used in confectionery and herbal medicine.\nExamples:\n1. Ce vin rouge charpenté déploie des notes persistantes de mûre et de réglisse.\n(This full-bodied red wine displays lingering notes of blackberry and licorice.)\n2. La réglisse pousse spontanément dans les régions méditerranéennes au climat chaud et ensoleillé.\n(Licorice grows wild in Mediterranean regions with warm, sunny climates.)"
+    },
+    {
+      "language": "fr",
+      "word": "turpitude",
+      "corrected": "turpitude",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Extreme moral baseness (littéraire).",
+        "In the plural: sordid, disgraceful acts or scandals (soutenu)."
+      ],
+      "examples": [
+        [
+          "L'éditorialiste fustige la turpitude d'une classe dirigeante indifférente au sort des plus démunis.",
+          "The editorialist denounces the moral baseness of a ruling class indifferent to the plight of the destitute."
+        ],
+        [
+          "L'enquête parlementaire a mis au jour les turpitudes financières dissimulées par les dirigeants du groupe.",
+          "The parliamentary inquiry brought to light the sordid financial misdeeds concealed by the group's executives."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 14.8,
+      "thoughts_tokens": 1811,
+      "score": {
+        "count_ok": false,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": false,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: turpitude\nWord Type: noun\n\nDefinitions:\na. Extreme moral baseness (littéraire).\nb. In the plural: sordid, disgraceful acts or scandals (soutenu).\n\nExamples:\n1. L'éditorialiste fustige la turpitude d'une classe dirigeante indifférente au sort des plus démunis.\n(The editorialist denounces the moral baseness of a ruling class indifferent to the plight of the destitute.)\n2. L'enquête parlementaire a mis au jour les turpitudes financières dissimulées par les dirigeants du groupe.\n(The parliamentary inquiry brought to light the sordid financial misdeeds concealed by the group's executives.)"
+    },
+    {
+      "language": "fr",
+      "word": "travée",
+      "corrected": "travée",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Tier or bank of seating between two aisles in an auditorium, stadium, or parliament.",
+        "Span or bay between two structural supports in a bridge or vaulted building.",
+        "Usage note: In political journalism, the plural \"les travées\" designates the parliamentary benches or the lawmakers sitting there."
+      ],
+      "examples": [
+        [
+          "Des murmures d'indignation ont aussitôt parcouru les travées de la salle comble.",
+          "Murmurs of indignation immediately rippled through the tiers of the packed hall."
+        ],
+        [
+          "La travée centrale du viaduc a été conçue pour franchir le fleuve sans appui intermédiaire.",
+          "The central span of the viaduct was designed to cross the river without intermediate support."
+        ],
+        [
+          "Le projet de loi a suscité de vives tensions jusque dans les travées de la majorité.",
+          "The bill provoked sharp tensions even among the benches of the ruling majority."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 13.4,
+      "thoughts_tokens": 1302,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": false,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": false,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: travée\nWord Type: noun\nDefinitions:\na. Tier or bank of seating between two aisles in an auditorium, stadium, or parliament.\nb. Span or bay between two structural supports in a bridge or vaulted building.\nc. Usage note: In political journalism, the plural \"les travées\" designates the parliamentary benches or the lawmakers sitting there.\nExamples:\n1. Des murmures d'indignation ont aussitôt parcouru les travées de la salle comble.\n(Murmurs of indignation immediately rippled through the tiers of the packed hall.)\n2. La travée centrale du viaduc a été conçue pour franchir le fleuve sans appui intermédiaire.\n(The central span of the viaduct was designed to cross the river without intermediate support.)\n3. Le projet de loi a suscité de vives tensions jusque dans les travées de la majorité.\n(The bill provoked sharp tensions even among the benches of the ruling majority.)"
+    },
+    {
+      "language": "fr",
+      "word": "gratter",
+      "corrected": "gratter",
+      "word_type": [
+        "verb"
+      ],
+      "definitions": [
+        "To scratch or scrape.",
+        "Familier. To scrounge, squeeze out, or shave off a small margin of time, money, or advantage.",
+        "Usage note: Spoken French regularly uses \"gratter\" transitively or impersonally instead of \"démanger\" to express that something itches."
+      ],
+      "examples": [
+        [
+          "Il a passé vingt minutes à gratter le givre sur son pare-brise avant de pouvoir partir.",
+          "He spent twenty minutes scraping the frost off his windshield before he could leave."
+        ],
+        [
+          "En négociant fermement avec les fournisseurs, le directeur espère gratter deux ou trois pour cent de marge.",
+          "By negotiating firmly with suppliers, the director hopes to squeeze out two or three percent more margin."
+        ],
+        [
+          "Cette étiquette me gratte affreusement dans le cou depuis ce matin.",
+          "This label has been making my neck itch terribly all morning."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 13.7,
+      "thoughts_tokens": 1210,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: gratter\nWord Type: verb\n\nDefinitions:\na. To scratch or scrape.\nb. Familier. To scrounge, squeeze out, or shave off a small margin of time, money, or advantage.\nc. Usage note: Spoken French regularly uses \"gratter\" transitively or impersonally instead of \"démanger\" to express that something itches.\n\nExamples:\n1. Il a passé vingt minutes à gratter le givre sur son pare-brise avant de pouvoir partir.\n(He spent twenty minutes scraping the frost off his windshield before he could leave.)\n2. En négociant fermement avec les fournisseurs, le directeur espère gratter deux ou trois pour cent de marge.\n(By negotiating firmly with suppliers, the director hopes to squeeze out two or three percent more margin.)\n3. Cette étiquette me gratte affreusement dans le cou depuis ce matin.\n(This label has been making my neck itch terribly all morning.)"
+    },
+    {
+      "language": "fr",
+      "word": "brailler",
+      "corrected": "brailler",
+      "word_type": [
+        "verb"
+      ],
+      "definitions": [
+        "To bawl; to cry or shout loudly and abrasively (familier).",
+        "To belt out; to sing loudly and out of tune (familier)."
+      ],
+      "examples": [
+        [
+          "L'enfant n'a cessé de brailler pendant tout le vol, exaspérant les passagers.",
+          "The child did not stop bawling during the entire flight, exasperating the passengers."
+        ],
+        [
+          "En fin de soirée, ils se sont mis à brailler de vieux refrains sans se soucier du voisinage.",
+          "Late in the evening, they started belting out old tunes without a thought for the neighbors."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 15.6,
+      "thoughts_tokens": 1695,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: brailler\nWord Type: verb\nDefinitions:\na. To bawl; to cry or shout loudly and abrasively (familier).\nb. To belt out; to sing loudly and out of tune (familier).\nExamples:\n1.\nL'enfant n'a cessé de brailler pendant tout le vol, exaspérant les passagers.\n(The child did not stop bawling during the entire flight, exasperating the passengers.)\n2.\nEn fin de soirée, ils se sont mis à brailler de vieux refrains sans se soucier du voisinage.\n(Late in the evening, they started belting out old tunes without a thought for the neighbors.)"
+    },
+    {
+      "language": "de",
+      "word": "Haustier",
+      "corrected": "Haustier",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Pet.",
+        "Domestic animal, bred and kept by humans as distinct from a wild animal."
+      ],
+      "examples": [
+        [
+          "Viele Familien schafften sich während des Lockdowns ein Haustier an.",
+          "Many families got a pet during the lockdown."
+        ],
+        [
+          "Hunde und Rinder zählen zu den ältesten Haustieren der Menschheit.",
+          "Dogs and cattle are among humanity's oldest domestic animals."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 8.2,
+      "thoughts_tokens": 639,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: Haustier\nWord Type: noun\nDefinitions:\na. Pet.\nb. Domestic animal, bred and kept by humans as distinct from a wild animal.\nExamples:\n1. Viele Familien schafften sich während des Lockdowns ein Haustier an.\n(Many families got a pet during the lockdown.)\n2. Hunde und Rinder zählen zu den ältesten Haustieren der Menschheit.\n(Dogs and cattle are among humanity's oldest domestic animals.)"
+    },
+    {
+      "language": "de",
+      "word": "krass",
+      "corrected": "krass",
+      "word_type": [
+        "adjective"
+      ],
+      "definitions": [
+        "Stark, glaring; marked by an extreme and conspicuous contradiction, disparity, or error.",
+        "(umgangssprachlich) Crazy, intense, unbelievable; describing an event, situation, or performance that provokes strong shock, awe, or disbelief."
+      ],
+      "examples": [
+        [
+          "Zwischen den offiziellen Angaben und der tatsächlichen Lage besteht ein krasser Unterschied.",
+          "There is a stark difference between the official figures and the actual situation."
+        ],
+        [
+          "Es ist echt krass, wie schnell sich das Wetter hier in den Bergen verändern kann.",
+          "It is really crazy how fast the weather can change here in the mountains."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 21.6,
+      "thoughts_tokens": 2375,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: krass\nWord Type: adjective\nDefinitions:\na. Stark, glaring; marked by an extreme and conspicuous contradiction, disparity, or error.\nb. (umgangssprachlich) Crazy, intense, unbelievable; describing an event, situation, or performance that provokes strong shock, awe, or disbelief.\nExamples:\n1. Zwischen den offiziellen Angaben und der tatsächlichen Lage besteht ein krasser Unterschied.\n(There is a stark difference between the official figures and the actual situation.)\n2. Es ist echt krass, wie schnell sich das Wetter hier in den Bergen verändern kann.\n(It is really crazy how fast the weather can change here in the mountains.)"
+    },
+    {
+      "language": "de",
+      "word": "bescheiden",
+      "corrected": "bescheiden",
+      "word_type": [
+        "adjective"
+      ],
+      "definitions": [
+        "Modest and unassuming, making few demands or reluctant to emphasize one's own merits.",
+        "Small, meager, or limited in scale, quantity, or success.",
+        "(umgangssprachlich) Poor, unpleasant, or disappointing, often used as a polite euphemism for bad."
+      ],
+      "examples": [
+        [
+          "Trotz seines weltweiten Erfolgs als Schriftsteller ist er stets bescheiden geblieben.",
+          "Despite his global success as a writer, he has always remained modest."
+        ],
+        [
+          "Die Familie lebte jahrelang in äußerst bescheidenen Verhältnissen am Stadtrand.",
+          "For years, the family lived in extremely modest circumstances on the outskirts of town."
+        ],
+        [
+          "Die Stimmung auf der Feier war wegen der schlechten Organisation ziemlich bescheiden.",
+          "The mood at the party was pretty dismal due to the poor organization."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 8.8,
+      "thoughts_tokens": 686,
+      "score": {
+        "count_ok": false,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": false,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 3,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: bescheiden\nWord Type: adjective\nDefinitions:\na. Modest and unassuming, making few demands or reluctant to emphasize one's own merits.\nb. Small, meager, or limited in scale, quantity, or success.\nc. (umgangssprachlich) Poor, unpleasant, or disappointing, often used as a polite euphemism for bad.\nExamples:\n1. Trotz seines weltweiten Erfolgs als Schriftsteller ist er stets bescheiden geblieben.\n(Despite his global success as a writer, he has always remained modest.)\n2. Die Familie lebte jahrelang in äußerst bescheidenen Verhältnissen am Stadtrand.\n(For years, the family lived in extremely modest circumstances on the outskirts of town.)\n3. Die Stimmung auf der Feier war wegen der schlechten Organisation ziemlich bescheiden.\n(The mood at the party was pretty dismal due to the poor organization.)"
+    },
+    {
+      "language": "de",
+      "word": "rudern",
+      "corrected": "rudern",
+      "word_type": [
+        "verb"
+      ],
+      "definitions": [
+        "Row; propel a boat using oars.",
+        "Flail; swing the arms frantically to maintain balance or signal distress.",
+        "Flounder; scramble awkwardly to justify oneself when cornered (umgangssprachlich)."
+      ],
+      "examples": [
+        [
+          "Jeden Samstagmorgen rudert sie auf dem See, um für den Wettkampf zu trainieren.",
+          "Every Saturday morning she rows on the lake to train for the competition."
+        ],
+        [
+          "Er verlor auf der vereisten Treppe den Halt und ruderte wild mit den Armen.",
+          "He lost his footing on the icy steps and flailed wildly with his arms."
+        ],
+        [
+          "Von den Enthüllungen überrascht, begann der Minister in der Pressekonferenz hilflos zu rudern.",
+          "Caught off guard by the revelations, the minister began to flounder helplessly during the press conference."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 20.7,
+      "thoughts_tokens": 2189,
+      "score": {
+        "count_ok": false,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": false,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 3,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: rudern\nWord Type: verb\nDefinitions:\na. Row; propel a boat using oars.\nb. Flail; swing the arms frantically to maintain balance or signal distress.\nc. Flounder; scramble awkwardly to justify oneself when cornered (umgangssprachlich).\nExamples:\n1. Jeden Samstagmorgen rudert sie auf dem See, um für den Wettkampf zu trainieren.\n(Every Saturday morning she rows on the lake to train for the competition.)\n2. Er verlor auf der vereisten Treppe den Halt und ruderte wild mit den Armen.\n(He lost his footing on the icy steps and flailed wildly with his arms.)\n3. Von den Enthüllungen überrascht, begann der Minister in der Pressekonferenz hilflos zu rudern.\n(Caught off guard by the revelations, the minister began to flounder helplessly during the press conference.)"
+    },
+    {
+      "language": "de",
+      "word": "ausmachen",
+      "corrected": "ausmachen",
+      "word_type": [
+        "separable verb"
+      ],
+      "definitions": [
+        "Turn off, switch off, or extinguish an appliance, light, or fire.",
+        "Constitute, represent, or account for an amount, proportion, or defining characteristic.",
+        "Bother, trouble, or matter to someone, used primarily in questions and negative statements with a dative object."
+      ],
+      "examples": [
+        [
+          "Bitte mach das Licht aus, bevor du das Büro verlässt.",
+          "Please turn off the light before you leave the office."
+        ],
+        [
+          "Die erneuerbaren Energien machen inzwischen über die Hälfte des gesamten Stromverbrauchs aus.",
+          "Renewable energy now accounts for more than half of total electricity consumption."
+        ],
+        [
+          "Würde es Ihnen etwas ausmachen, das Fenster für einen Moment zu schließen?",
+          "Would you mind closing the window for a moment?"
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 11.8,
+      "thoughts_tokens": 1205,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": false,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": false,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 3,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: ausmachen\nWord Type: separable verb\nDefinitions:\na. Turn off, switch off, or extinguish an appliance, light, or fire.\nb. Constitute, represent, or account for an amount, proportion, or defining characteristic.\nc. Bother, trouble, or matter to someone, used primarily in questions and negative statements with a dative object.\nExamples:\n1. Bitte mach das Licht aus, bevor du das Büro verlässt.\n(Please turn off the light before you leave the office.)\n2. Die erneuerbaren Energien machen inzwischen über die Hälfte des gesamten Stromverbrauchs aus.\n(Renewable energy now accounts for more than half of total electricity consumption.)\n3. Würde es Ihnen etwas ausmachen, das Fenster für einen Moment zu schließen?\n(Would you mind closing the window for a moment?)"
+    }
+  ]
+}

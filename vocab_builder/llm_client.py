@@ -191,10 +191,10 @@ def classify_provider_error(provider_name: str, exc: Exception) -> Optional[Tupl
     return None
 
 
-# Every application request thinks at this level. Medium was chosen on
-# 2026-09-24 after the prompt panel measured it against low; the numbers are in
-# AGENTS.md and scripts/prompt_panel/results/.
-DEFAULT_THINKING_LEVEL = "medium"
+# Every application request thinks at this level. Low was chosen on 2026-10-31,
+# when medium had grown to 10-15 s a word on Gemini 3.8 Flash against 3.5 s at
+# low; the numbers are in AGENTS.md and scripts/prompt_panel/results/.
+DEFAULT_THINKING_LEVEL = "low"
 
 
 class LLMClient(ABC):

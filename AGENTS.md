@@ -247,12 +247,22 @@ pytest -k "anki"
   one made `VOCABBUILDER_CLAUDE_MODEL` unable to name a current model.
 - Vocabulary generation, directional translation, and automatic direction
   detection all think at `DEFAULT_THINKING_LEVEL` in `llm_client.py`, set to
-  medium on 2026-09-24 at the user's request. No workflow passes its own level,
-  so that constant is the one owner. The prompt panel measured the change: the
-  2026-09-03 prompt scored 35 of 43 at both low and medium, the 2026-09-24
-  prompt scored 37 at low and 39 at medium, and a panel call took about 4.4 s
-  instead of 2.2 s. Change the level only with a panel run saved in
-  `scripts/prompt_panel/results/`.
+  low on 2026-10-31 at the user's request, trading entry quality for speed.
+  No workflow passes its own level, so that constant is the one owner. Medium
+  (chosen 2026-09-24, when the 2026-09-24 prompt scored 39 of 43 against 37 at
+  low and a call took about 4.4 s instead of 2.2 s) had become 10-15 s a word:
+  on 2026-10-31 the same Gemini 3.7 request that took 3-5 s in September took
+  10-20 s, and 3.8 spent 800-1,500 hidden thinking tokens before its first
+  visible one while writing the entry itself took about 1 s. Low has no
+  thinking tokens and took a median 3.5 s. The cost is measured, not assumed:
+  ten flaky panel words at each level on 3.8
+  (`results/shipped-2026-10-31-gemini38-{low,medium}-subset10.json`) scored
+  7 to 5 for low on the panel, but the scorer passed low's "gratter" without
+  its itch sense and failed medium's correct "travée", and three blind Sonnet
+  reviewers preferred medium 17 to 6 with 7 ties. Low imported "backtrack"
+  into "rudern" from *zurückrudern* and dropped the itch sense of "gratter",
+  the defects the 2026-09-24 audit targeted. Change the level only with a
+  panel run saved in `scripts/prompt_panel/results/`.
 - Provider diagnostics record model, elapsed time, classified outcome, and
   exception type but never prompt text. A request taking at least 10 seconds and
   every failure emits a warning to the service journal so production latency can
