@@ -1,0 +1,7 @@
+# The one-sense prompt contract and its first panel
+
+Evidence, 2026-09-03. Never edited after landing; a correction is a new dated
+report that links this one. Moved verbatim from `AGENTS.md` by the 2026-10-31
+knowledge sweep.
+
+A vocabulary prompt is edited against the panel in `scripts/prompt_panel/`, never by taste: run the shipped prompt and the candidate, compare the saved results, and keep the rejected candidate's file. On 2026-09-03 the shipped prompts passed 9 of 20 words and produced 46 senses; the failures were slot-filling (three senses for "Kühlschrank"), invented senses ("a cold person"), and a non-word accepted as a headword. The candidate that shipped the same day passed 18 with 33 senses by making one sense the default, requiring an unforced example for any further sense, banning hedged definitions, and asking for the English equivalent before any paraphrase; `results/shipped-2026-09-03.json` is its run as shipped. Two residuals are recorded there: the model keeps a literal noun sense ahead of the idiom the word lives in ("collimateur"), and a non-word it believes in ("forthaaren") survives a stronger spelling rule. A prompt cannot supply attestation the model lacks; only a dictionary check could. The German prompt's old three-slot form and forced Present/Perfekt/Futur examples are the reason every stored German entry has three senses and 83% of its verb entries end in a future sentence; those entries predate the contract.

@@ -132,8 +132,8 @@ The first-time VM setup remains `scripts/deploy/install_mobile_server.sh`.
 For reviewed vocabulary corrections, use `scripts/apply_vocab_corrections.py`
 on the VM data root during a stopped-service maintenance window. Dry-run first,
 then apply, restart, export its reported surviving headwords as selected words,
-and manually delete the reported retired Anki notes. See `AGENTS.md` for the
-data and history invariants.
+and manually delete the reported retired Anki notes. See `docs/vocabulary.md`
+(Reviewed corrections) for the data and history invariants.
 
 - `/opt/vocabbuilder`: read-only installed application
 - `/opt/vocabbuilder/.venv`: Python runtime and mobile dependencies

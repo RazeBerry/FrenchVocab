@@ -9,6 +9,7 @@
 ## Repository knowledge
 
 - [ ] I evaluated whether this change affects durable repository knowledge.
-- [ ] `AGENTS.md` reflects any affected behavior, architecture, operations,
-      security, testing, or product-design rules, or no guide update is needed.
+- [ ] The owning contract under `docs/` reflects any affected behavior,
+      architecture, operations, security, testing, or product-design rules, or
+      no update is needed; measurements went into a dated `reports/` file.
 - [ ] I ran `python scripts/sync_agent_docs.py --check`.
