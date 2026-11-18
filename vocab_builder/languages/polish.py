@@ -3,7 +3,7 @@ from __future__ import annotations
 import unicodedata
 
 from vocab_builder.ai_prompts import POLISH_PROMPT_TEMPLATE
-from vocab_builder.models import normalize_word_key
+from vocab_builder.models import fold_word_text
 from .base import (
     LanguageConfig,
     TranslatorConfig,
@@ -23,29 +23,33 @@ from .anki_shared_styles import bilingual_card_templates, get_anki_css
 # Polish opens a quotation with „; the closing ” is already in the base set.
 _validate_polish_text = make_text_validator(frozenset({"„"}))
 
-# Each Polish letter keys as its base letter followed by a character that sorts
-# after every ASCII letter, so it files right after the plain letter's words
-# (kawa before kąt, zupa before źle before żaba) and under the plain letter's
-# rail, and so diacritics keep their identity (sad and sąd are two entries).
-_POLISH_LETTER_KEYS = str.maketrans(
-    {
-        "ą": "a{",
-        "ć": "c{",
-        "ę": "e{",
-        "ł": "l{",
-        "ń": "n{",
-        "ó": "o{",
-        "ś": "s{",
-        "ź": "z{",
-        "ż": "z|",
-    }
-)
+# Every character keys as two: its folded base letter, then a rank digit. A
+# Polish letter ranks above its base (z, then ź, then ż), so it files right
+# after the plain letter's words (kawa before kąt, los before łoś) and under the
+# plain letter's rail, and diacritics keep their identity (sad and sąd are two
+# entries). Bases and ranks alternate, so a key decodes uniquely and no literal
+# character can imitate a Polish letter.
+_POLISH_LETTER_KEYS = {
+    "ą": "a1",
+    "ć": "c1",
+    "ę": "e1",
+    "ł": "l1",
+    "ń": "n1",
+    "ó": "o1",
+    "ś": "s1",
+    "ź": "z1",
+    "ż": "z2",
+}
 
 
 def polish_headword_key(word: str) -> str:
     """Return the Polish headword key (docs/vocabulary.md)."""
-    composed = unicodedata.normalize("NFC", word).lower()
-    return normalize_word_key(composed.translate(_POLISH_LETTER_KEYS))
+    composed = unicodedata.normalize("NFC", word).strip().lower()
+    return "".join(
+        _POLISH_LETTER_KEYS.get(char)
+        or "".join(base + "0" for base in fold_word_text(char))
+        for char in composed
+    )
 
 
 POLISH_ENG_TO_PL_PROMPT = """You are a senior English-to-Polish translator experienced in literary and specialist nonfiction.

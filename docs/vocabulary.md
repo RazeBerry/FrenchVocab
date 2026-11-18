@@ -30,12 +30,17 @@ in `reports/` and is linked from the rule it supports.
   the key's first character is the glossary rail letter. The key is opaque: it
   is never displayed or parsed. French, German and English use
   `normalize_word_key` (lowercase, expand ß, umlauts, æ and œ, strip accents).
-  Polish uses `polish_headword_key`: it composes (NFC) and lowercases, then
-  keys each of ą ć ę ł ń ó ś ź ż as its base letter plus a character that sorts
-  after every letter, so diacritics carry identity (`sąd` and `sad` are two
-  entries), each Polish letter files after all of its base letter's words
-  (`kawa` before `kąt`, `zupa` before `źle` before `żaba`), and `Ł`, `Ś`, `Ż`
-  take the L, S and Z rail letters.
+  Polish uses `polish_headword_key`: it composes (NFC), strips and lowercases,
+  then writes each character as base-and-rank pairs. A Polish letter is one
+  pair, its base letter and rank 1 (ą ć ę ł ń ó ś ź) or 2 (ż); any other
+  character is folded as `normalize_word_key` folds it, and each resulting
+  character is a pair with rank 0. Because bases and ranks alternate, the key
+  decodes uniquely, so no literal input (`Sa{d`) can imitate a Polish letter
+  (`Sąd`) and diacritics carry identity (`sąd` and `sad` are two entries).
+  Keys compare letter by letter, the base first and the rank breaking a tie:
+  `kawa` before `kąt`, `los` before `łoś`, `zupa` before `źle` before `żaba`,
+  and `A‑klasa` (non-breaking hyphen) before `Ącki`. `Ł`, `Ś` and `Ż` take
+  the L, S and Z rail letters.
 - Merge text equality, the translation-pair key and the Anki tracker key
   (lowercased headword) are separate rules and do not use the headword key.
 

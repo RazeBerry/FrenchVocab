@@ -22,13 +22,18 @@ def _apply_replacements(word: str) -> str:
     return word
 
 
-def normalize_word_key(word: str) -> str:
-    """Lowercase + strip accents, used for stable keys."""
-    word = _apply_replacements(word.lower().strip())
+def fold_word_text(text: str) -> str:
+    """Lowercase, expand ligatures and digraphs, and strip accents; keep spacing."""
+    text = _apply_replacements(text.lower())
     return ''.join(
-        c for c in unicodedata.normalize('NFD', word)
+        c for c in unicodedata.normalize('NFD', text)
         if unicodedata.category(c) != 'Mn'
     )
+
+
+def normalize_word_key(word: str) -> str:
+    """Lowercase + strip accents, used for stable keys."""
+    return fold_word_text(word.strip())
 
 
 @dataclass
