@@ -20,7 +20,6 @@ from .latex_templates import (
 )
 from .anki_shared_styles import (
     bilingual_card_templates,
-    compute_template_hash,
     get_anki_css,
 )
 
@@ -69,13 +68,6 @@ German source:
 
 GERMAN_CARD_TEMPLATES = bilingual_card_templates("German")
 GERMAN_CARD_CSS = get_anki_css("de")
-GERMAN_CARD_VERSION = compute_template_hash(
-    [
-        {"name": tpl.name, "qfmt": tpl.question_format, "afmt": tpl.answer_format}
-        for tpl in GERMAN_CARD_TEMPLATES
-    ],
-    GERMAN_CARD_CSS,
-)
 
 GERMAN_AUTO_TRANSLATOR_PROMPT = """
 You are an expert bilingual assistant for English and German.
@@ -153,7 +145,6 @@ GERMAN_CONFIG = LanguageConfig(
         field_names=("German", "Type", "English", "Example"),
         card_templates=GERMAN_CARD_TEMPLATES,
         card_css=GERMAN_CARD_CSS,
-        version_id=GERMAN_CARD_VERSION,
     ),
     headword_key=normalize_word_key,
     composition=composition_config(

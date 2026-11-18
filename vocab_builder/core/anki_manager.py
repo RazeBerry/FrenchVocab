@@ -42,7 +42,6 @@ from vocab_builder.compat import get_env
 from vocab_builder.core.file_safety import atomic_write_text, create_backup_snapshot, file_lock
 from vocab_builder.core.anki_identity import identity_path, load_identity
 from vocab_builder.core.history_logger import default_history_base_dir
-from vocab_builder.languages.anki_shared_styles import compute_template_hash
 
 if TYPE_CHECKING:
     from vocab_builder.languages.base import LanguageConfig
@@ -382,20 +381,6 @@ class AnkiExportManager:
             seen.add(key)
             paths.append(path)
         return tuple(paths)
-
-    def _resolve_template_version(self) -> str:
-        """Return a stable identifier for the current Anki template."""
-        anki_config = self._language_config.anki
-        template_version = getattr(anki_config, "version_id", None)
-        if template_version:
-            return str(template_version)
-        return compute_template_hash(
-            [
-                {"name": tpl.name, "qfmt": tpl.question_format, "afmt": tpl.answer_format}
-                for tpl in anki_config.card_templates
-            ],
-            anki_config.card_css or "",
-        )
 
     def _resolve_include_all(
         self,
@@ -1164,7 +1149,7 @@ class AnkiExportManager:
                 identity_path(self._exported_words_file, self._language_config.code)
             ),
         )
-        template_version = self._resolve_template_version()
+        template_version = anki_config.version_id
 
         exporter = AnkiExporter(deck_title, anki_config)
         word_entries = self._vocab_repo.word_entries

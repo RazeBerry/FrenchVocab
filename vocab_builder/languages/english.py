@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Dict
 
 from vocab_builder.models import normalize_word_key
-from .anki_shared_styles import compute_template_hash, get_anki_css
+from .anki_shared_styles import get_anki_css
 from .base import (
     AnkiCardTemplate,
     AnkiConfig,
@@ -178,13 +178,6 @@ ENGLISH_CARD_TEMPLATES = (
     ),
 )
 ENGLISH_CARD_CSS = get_anki_css("en")
-ENGLISH_CARD_VERSION = compute_template_hash(
-    [
-        {"name": template.name, "qfmt": template.question_format, "afmt": template.answer_format}
-        for template in ENGLISH_CARD_TEMPLATES
-    ],
-    ENGLISH_CARD_CSS,
-)
 
 ENGLISH_CONFIG = LanguageConfig(
     code="en",
@@ -211,7 +204,6 @@ ENGLISH_CONFIG = LanguageConfig(
         field_names=("Word", "Type", "Definitions", "Examples"),
         card_templates=ENGLISH_CARD_TEMPLATES,
         card_css=ENGLISH_CARD_CSS,
-        version_id=ENGLISH_CARD_VERSION,
     ),
     headword_key=normalize_word_key,
     composition=CompositionConfig(

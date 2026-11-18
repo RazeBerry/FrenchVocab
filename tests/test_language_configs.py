@@ -6,7 +6,6 @@ import pytest
 from vocab_builder.core import VocabBuilder
 from vocab_builder.cli.bootstrap import build_app
 from vocab_builder.languages import available_language_codes, get_language_config
-from vocab_builder.languages.anki_shared_styles import compute_template_hash
 from vocab_builder.languages.anki_shared_styles import get_anki_css
 
 ALL_LANGUAGES = available_language_codes()
@@ -131,28 +130,19 @@ def test_bilingual_templates_include_translation_placeholders(language_code):
     assert r"\item[]\relax" in cfg.target_to_eng.initial_tex_content
 
 
-def test_language_configs_include_template_versions():
-    for code in ALL_LANGUAGES:
-        cfg = get_language_config(code)
-        templates = [
-            {"name": tpl.name, "qfmt": tpl.question_format, "afmt": tpl.answer_format}
-            for tpl in cfg.anki.card_templates
-        ]
-        expected_hash = compute_template_hash(templates, cfg.anki.card_css)
-        assert cfg.anki.version_id == expected_hash
-
-
 @pytest.mark.parametrize(
     ("language_code", "version_id"),
     [
         ("fr", "1a83c00381b2c370be0cab4c825208e55441f125"),
         ("de", "8cd0d3749bb9216417e7d496fa8d5c95572bb028"),
+        ("en", "581598fe59699ec25a59a33490d7a0c0e9b94db1"),
     ],
 )
-def test_existing_bilingual_decks_keep_their_template_version(language_code, version_id):
+def test_existing_decks_keep_their_template_version(language_code, version_id):
     """An exported deck records this hash, and a different one rebuilds the
     whole deck on the next export (core/anki_manager.py). These are the
-    versions shipped before the card was built from its field name."""
+    versions shipped before the card was built from its field name and before
+    the hash moved onto ``AnkiConfig``."""
     assert get_language_config(language_code).anki.version_id == version_id
 
 

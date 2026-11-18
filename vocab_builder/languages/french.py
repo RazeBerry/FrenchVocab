@@ -20,7 +20,6 @@ from .base import (
 )
 from .anki_shared_styles import (
     bilingual_card_templates,
-    compute_template_hash,
     get_anki_css,
 )
 
@@ -79,13 +78,6 @@ French source:
 
 FRENCH_CARD_TEMPLATES = bilingual_card_templates("French")
 FRENCH_CARD_CSS = get_anki_css("fr")
-FRENCH_CARD_VERSION = compute_template_hash(
-    [
-        {"name": tpl.name, "qfmt": tpl.question_format, "afmt": tpl.answer_format}
-        for tpl in FRENCH_CARD_TEMPLATES
-    ],
-    FRENCH_CARD_CSS,
-)
 
 FRENCH_AUTO_TRANSLATOR_PROMPT = """
 You are an expert bilingual assistant for English and French.
@@ -163,7 +155,6 @@ FRENCH_CONFIG = LanguageConfig(
         field_names=("French", "Type", "English", "Example"),
         card_templates=FRENCH_CARD_TEMPLATES,
         card_css=FRENCH_CARD_CSS,
-        version_id=FRENCH_CARD_VERSION,
     ),
     headword_key=normalize_word_key,
     composition=composition_config(

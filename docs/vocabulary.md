@@ -70,7 +70,8 @@ in `reports/` and is linked from the rule it supports.
 4. Provide the Anki config and optional auto-translator prompt tokens. A bilingual
    language builds its card with `bilingual_card_templates(<headword field>)` from
    `anki_shared_styles.py`. The export tracker records the card's template hash,
-   so changing an existing language's card or CSS makes its next export include
+   `AnkiConfig.version_id`, which the config derives from its card templates and
+   CSS; changing an existing language's card or CSS makes its next export include
    every note.
 5. A bilingual language takes composition grading from
    `composition_config(<display name>, <learner>)` in `base.py`; `<learner>`

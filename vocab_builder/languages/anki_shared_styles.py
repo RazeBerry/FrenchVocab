@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from string import Template
-from typing import Callable, Sequence
+from typing import Callable
 
 from .base import AnkiCardTemplate
 
@@ -171,19 +169,6 @@ def get_anki_css(language_code: str = "default") -> str:
     return BASE_ANKI_CARD_CSS
 
 
-def compute_template_hash(card_templates: Sequence[dict[str, str]], css: str) -> str:
-    """Return a stable hash representing the template structure and styling."""
-    payload = {
-        "templates": [
-            {"name": tpl.get("name"), "qfmt": tpl.get("qfmt"), "afmt": tpl.get("afmt")}
-            for tpl in card_templates
-        ],
-        "css": css,
-    }
-    digest = hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8"))
-    return digest.hexdigest()
-
-
 # The bilingual recognition card. ``$headword`` is the Anki field holding the
 # target-language headword; Anki's double braces escape HTML, and the exporter
 # supplies plain-text lists for the definition and example fields.
@@ -236,5 +221,4 @@ __all__ = [
     "BASE_ANKI_CARD_CSS",
     "bilingual_card_templates",
     "get_anki_css",
-    "compute_template_hash",
 ]

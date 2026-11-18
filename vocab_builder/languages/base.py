@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from string import Template
 from typing import Callable, FrozenSet, Literal, Mapping, Sequence, Tuple
@@ -246,8 +248,27 @@ class AnkiConfig:
     field_names: Sequence[str]
     card_templates: Sequence[AnkiCardTemplate]
     card_css: str = ""
-    version_id: str | None = None
     guid_headword_aliases: Mapping[str, str] = field(default_factory=dict)
+
+    @property
+    def version_id(self) -> str:
+        """Hash of the card templates and CSS.
+
+        An exported deck records it, and a different value makes the next
+        export include every note (core/anki_manager.py).
+        """
+        payload = {
+            "templates": [
+                {
+                    "name": template.name,
+                    "qfmt": template.question_format,
+                    "afmt": template.answer_format,
+                }
+                for template in self.card_templates
+            ],
+            "css": self.card_css,
+        }
+        return hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
