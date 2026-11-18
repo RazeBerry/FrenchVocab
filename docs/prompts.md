@@ -32,7 +32,9 @@ in `reports/` and is linked from the rule it supports.
   candidate stays byte-identical to its shipped literal
   (`tests/test_prompt_panel.py`).
   The scorer tokenizes Polish letters as letters and ignores the aspect
-  labels. Evidence: `reports/prompt_panel/2026-11-18_polish_first_measurement.md`.
+  labels. A Polish row's `partner_any` names the label that must close sense
+  a ("Imperfective: iść"); a partner named anywhere else fails it, while
+  `required_any` stays a substring of any definition. Evidence: `reports/prompt_panel/2026-11-18_polish_first_measurement.md`.
 
 ## Generation contract
 - French and German word and expression generation share one measured

@@ -65,6 +65,17 @@ def is_usage_note(definition: str) -> bool:
     return definition.strip().lower().startswith("usage note")
 
 
+# The Polish sense rule ends sense a with "Perfective: <infinitive>." or
+# "Imperfective: <infinitive>.", naming the partner of the other aspect.
+PARTNER_LABEL = re.compile(r"(?<![^\W\d_])((?:im)?perfective:\s*[^.]+?)\.?\s*$")
+
+
+def labelled_partner(sense: str) -> str:
+    """Return the lowercased "<aspect>: <infinitive>" label ending ``sense``, or ""."""
+    match = PARTNER_LABEL.search(sense.lower())
+    return " ".join(match.group(1).split()) if match else ""
+
+
 def score(spec: dict[str, Any], parsed: Any, corrected: str, hedges: list[str]) -> dict[str, Any]:
     definitions = [str(d) for d in parsed.definitions]
     lowered = [d.lower() for d in definitions]
@@ -83,9 +94,14 @@ def score(spec: dict[str, Any], parsed: Any, corrected: str, hedges: list[str]) 
         "notes_ok": notes <= 1 and not (lowered and is_usage_note(lowered[0])),
         "first_ok": any(k in first for k in spec.get("first_any", [])),
         "first_clean": not any(k in first for k in spec.get("first_reject", [])),
+        # required_any is a substring anywhere; partner_any is the exact label
+        # that must close sense a, so a partner named only in a note fails.
         "required_ok": (
             not spec.get("required_any")
             or any(k in everything for k in spec["required_any"])
+        ) and (
+            not spec.get("partner_any")
+            or labelled_partner(first) in {p.lower() for p in spec["partner_any"]}
         ),
         "nothing_invented": not any(k in sense_text for k in spec.get("must_not", [])),
         "corrected_ok": (

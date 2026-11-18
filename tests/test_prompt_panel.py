@@ -73,6 +73,9 @@ def test_score_matches_polish_lemma_type_and_partner_with_diacritics():
         ("Correctly Spelt Word: pójść", "Correctly Spelt Word: iść", "corrected_ok"),
         ("Word Type: perfective verb", "Word Type: imperfective verb", "type_ok"),
         ("Imperfective: iść.", "Imperfective: chodzić.", "required_ok"),
+        # The label names the other aspect, so a perfective headword's partner
+        # is labelled imperfective.
+        ("Imperfective: iść.", "Perfective: iść.", "required_ok"),
     ],
 )
 def test_score_fails_the_wrong_polish_lemma_type_or_partner(old, new, check):
@@ -81,6 +84,27 @@ def test_score_fails_the_wrong_polish_lemma_type_or_partner(old, new, check):
     result = run_panel.score(SPECS["poszedł"], parse_ai_response_text(raw), corrected, PANEL["hedges"])
     assert not result[check]
     assert not result["passed"]
+
+
+def test_score_fails_a_partner_named_only_in_a_usage_note():
+    # The contract puts the partner at the end of sense a; a note that names
+    # it elsewhere is not the labelled partner.
+    raw = POSZEDL.replace("a. To go on foot. Imperfective: iść.", "a. To go on foot.").replace(
+        "b. Usage note: The past tense", "b. Usage note: The imperfective is iść. The past tense"
+    )
+    result = run_panel.score(SPECS["poszedł"], parse_ai_response_text(raw), "pójść", PANEL["hedges"])
+    assert not result["required_ok"]
+    assert not result["passed"]
+
+
+def test_score_passes_an_imperfective_headword_labelling_its_perfective_partner():
+    raw = (
+        POSZEDL.replace("Correctly Spelt Word: pójść", "Correctly Spelt Word: pisać")
+        .replace("Word Type: perfective verb", "Word Type: imperfective verb")
+        .replace("a. To go on foot. Imperfective: iść.", "a. To write. Perfective: napisać.")
+    )
+    result = run_panel.score(SPECS["pisać"], parse_ai_response_text(raw), "pisać", PANEL["hedges"])
+    assert result["required_ok"]
 
 
 def test_content_words_keep_polish_letters_and_skip_aspect_labels():
