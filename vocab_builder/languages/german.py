@@ -12,13 +12,11 @@ from .base import (
     composition_config,
     make_text_validator,
 )
-from .german_tex import (
-    GERMAN_INITIAL_TEX_CONTENT,
-    GERMAN_FINAL_TEX_CONTENT,
-    INITIAL_ENG_DE_TEX_CONTENT,
-    FINAL_ENG_DE_TEX_CONTENT,
-    INITIAL_DE_ENG_TEX_CONTENT,
-    FINAL_DE_ENG_TEX_CONTENT,
+from .latex_templates import (
+    TRANSLATION_DOCUMENT_END,
+    VOCAB_DOCUMENT_END,
+    translation_document,
+    vocab_document,
 )
 from .anki_shared_styles import (
     bilingual_card_templates,
@@ -115,13 +113,12 @@ GERMAN_CONFIG = LanguageConfig(
     vocab_filename="GermanVocab.tex",
     eng_to_target_filename="EnglishToGerman.tex",
     target_to_eng_filename="GermanToEnglish.tex",
-    latex_babel_languages=("ngerman", "english"),
     ui_strings=_UI_STRINGS,
     input_validator=_validate_german_text,
     eng_to_target=TranslatorConfig(
         default_filename="EnglishToGerman.tex",
-        initial_tex_content=INITIAL_ENG_DE_TEX_CONTENT,
-        final_tex_content=FINAL_ENG_DE_TEX_CONTENT,
+        initial_tex_content=translation_document("engde", "EN", "DE"),
+        final_tex_content=TRANSLATION_DOCUMENT_END,
         prompt_template=GERMAN_ENG_TO_DE_PROMPT,
         prompt_variable="english_text",
         source_label="English",
@@ -132,8 +129,8 @@ GERMAN_CONFIG = LanguageConfig(
     ),
     target_to_eng=TranslatorConfig(
         default_filename="GermanToEnglish.tex",
-        initial_tex_content=INITIAL_DE_ENG_TEX_CONTENT,
-        final_tex_content=FINAL_DE_ENG_TEX_CONTENT,
+        initial_tex_content=translation_document("deeng", "DE", "EN"),
+        final_tex_content=TRANSLATION_DOCUMENT_END,
         prompt_template=GERMAN_DE_TO_ENG_PROMPT,
         prompt_variable="german_text",
         source_label="German",
@@ -143,9 +140,9 @@ GERMAN_CONFIG = LanguageConfig(
         latex_commands=("deeng", "freeng"),
     ),
     vocab=VocabTemplate(
-        initial_content=GERMAN_INITIAL_TEX_CONTENT,
+        initial_content=vocab_document("ngerman,english", "Beispiele"),
         sample_entry="",
-        final_content=GERMAN_FINAL_TEX_CONTENT,
+        final_content=VOCAB_DOCUMENT_END,
         entry_command="\\entry",
     ),
     anki=AnkiConfig(

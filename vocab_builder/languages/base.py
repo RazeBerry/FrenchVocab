@@ -260,7 +260,6 @@ class LanguageConfig:
     vocab_filename: str
     eng_to_target_filename: str | None
     target_to_eng_filename: str | None
-    latex_babel_languages: Sequence[str]
     ui_strings: Mapping[str, str]
     input_validator: InputValidator
     eng_to_target: TranslatorConfig | None

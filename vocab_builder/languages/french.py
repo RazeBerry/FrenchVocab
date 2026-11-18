@@ -5,18 +5,10 @@ from typing import Dict
 from vocab_builder.ai_prompts import AI_PROMPT_TEMPLATE
 from vocab_builder.models import normalize_word_key
 from .latex_templates import (
-    # Main vocabulary templates
-    INITIAL_TEX_CONTENT,
-    SAMPLE_ENTRY,
-    FINAL_TEX_CONTENT,
-    # English → French templates
-    INITIAL_ENG_FR_TEX_CONTENT,
-    FINAL_ENG_FR_TEX_CONTENT,
-    AI_TRANSLATION_PROMPT_TEMPLATE,
-    # French → English templates
-    INITIAL_FR_ENG_TEX_CONTENT,
-    FINAL_FR_ENG_TEX_CONTENT,
-    FR_TO_ENG_TRANSLATION_PROMPT_TEMPLATE,
+    TRANSLATION_DOCUMENT_END,
+    VOCAB_DOCUMENT_END,
+    translation_document,
+    vocab_document,
 )
 from .base import (
     LanguageConfig,
@@ -41,6 +33,49 @@ _UI_STRINGS: Dict[str, str] = {
     "menu.eng_to_target": "Translate English -> French",
     "menu.target_to_eng": "Translate French -> English",
 }
+
+# A new French file starts with this entry.
+_SAMPLE_ENTRY = r"""\entry{agaçante}{Unknown}
+      {
+        \item Annoying, irritating
+    \item Exasperating, vexing
+    \item Teasing, provocative (in a mildly frustrating way)
+      }
+      {
+        \item Cette musique répétitive est vraiment agaçante. \\ (This repetitive music is really annoying.)
+    \item Son attitude agaçante finit par lasser tout le monde. \\ (Her irritating attitude ends up tiring everyone out.)
+    \item Elle a un sourire agaçant qui me met mal à l'aise. \\ (She has a vexing smile that makes me uncomfortable.)
+      }"""
+
+FRENCH_ENG_TO_FR_PROMPT = """You are a senior English-to-French translator experienced in literary and specialist nonfiction.
+
+Translate the source accurately and idiomatically. Infer its domain, audience, tone, formality, and era, and reproduce them in French. Preserve meaning, agency, logical relations, quantifiers, modality, stance, voice, imagery, ambiguity, rhythm, and historical distance. Do not add, omit, summarize, intensify, soften, or modernize the source.
+
+Translate idioms and wordplay by function when a natural French solution exists. Preserve cultural references, institutions, terminology, and proper names unless an established French equivalent genuinely exists. Infer tu/vous only from evidence in the source; when the relationship is ambiguous, prefer wording that does not invent one.
+
+Preserve paragraphs, verse lines, dialogue attribution, headings, placeholders, inline code, markup, mathematical notation, and other structural elements. Apply normal French punctuation, quotation marks, and spacing. Correct only unmistakable mechanical OCR artifacts; never silently alter names, facts, historical spelling, dialect, or deliberate nonstandard usage.
+
+Return the translation only, without a heading, quotation wrapper, notes, alternatives, or commentary.
+
+English source:
+<source_text>
+{english_text}
+</source_text>"""
+
+FRENCH_FR_TO_ENG_PROMPT = """You are a senior French-to-English translator experienced in literature and specialist nonfiction.
+
+Translate the source accurately and idiomatically. Preserve meaning, agency, logical relations, quantifiers, modality, stance, register, historical distance, voice, imagery, ambiguity, repetitions, and rhetorical force. Do not add, omit, summarize, intensify, soften, or modernize the source.
+
+Write natural English without mechanically smoothing deliberate syntactic pressure or changing rhetorical tense. Translate idioms by function and use established English equivalents for specialist and cultural terms. Preserve the French term or proper name when no natural established equivalent exists.
+
+Preserve paragraphs, verse lines, speaker labels, stage directions, headings, placeholders, inline code, markup, mathematical notation, and other structural elements. Apply normal English punctuation and typography. Correct only unmistakable mechanical OCR artifacts; never silently alter names, facts, historical spelling, dialect, or deliberate nonstandard usage.
+
+Return the translation only, without a heading, quotation wrapper, notes, alternatives, or commentary.
+
+French source:
+<source_text>
+{french_text}
+</source_text>"""
 
 FRENCH_CARD_TEMPLATES = bilingual_card_templates("French")
 FRENCH_CARD_CSS = get_anki_css("fr")
@@ -88,14 +123,13 @@ FRENCH_CONFIG = LanguageConfig(
     vocab_filename="FrenchVocab.tex",
     eng_to_target_filename="EnglishToFrench.tex",
     target_to_eng_filename="FrenchToEnglish.tex",
-    latex_babel_languages=("french", "english"),
     ui_strings=_UI_STRINGS,
     input_validator=_validate_french_text,
     eng_to_target=TranslatorConfig(
         default_filename="EnglishToFrench.tex",
-        initial_tex_content=INITIAL_ENG_FR_TEX_CONTENT,
-        final_tex_content=FINAL_ENG_FR_TEX_CONTENT,
-        prompt_template=AI_TRANSLATION_PROMPT_TEMPLATE,
+        initial_tex_content=translation_document("engfre", "EN", "FR"),
+        final_tex_content=TRANSLATION_DOCUMENT_END,
+        prompt_template=FRENCH_ENG_TO_FR_PROMPT,
         prompt_variable="english_text",
         source_label="English",
         target_label="French",
@@ -105,9 +139,9 @@ FRENCH_CONFIG = LanguageConfig(
     ),
     target_to_eng=TranslatorConfig(
         default_filename="FrenchToEnglish.tex",
-        initial_tex_content=INITIAL_FR_ENG_TEX_CONTENT,
-        final_tex_content=FINAL_FR_ENG_TEX_CONTENT,
-        prompt_template=FR_TO_ENG_TRANSLATION_PROMPT_TEMPLATE,
+        initial_tex_content=translation_document("freeng", "FR", "EN"),
+        final_tex_content=TRANSLATION_DOCUMENT_END,
+        prompt_template=FRENCH_FR_TO_ENG_PROMPT,
         prompt_variable="french_text",
         source_label="French",
         target_label="English",
@@ -116,9 +150,9 @@ FRENCH_CONFIG = LanguageConfig(
         latex_commands=("freeng",),
     ),
     vocab=VocabTemplate(
-        initial_content=INITIAL_TEX_CONTENT,
-        sample_entry=SAMPLE_ENTRY,
-        final_content=FINAL_TEX_CONTENT,
+        initial_content=vocab_document("french,english", "Examples"),
+        sample_entry=_SAMPLE_ENTRY,
+        final_content=VOCAB_DOCUMENT_END,
         entry_command="\\entry",
     ),
     anki=AnkiConfig(

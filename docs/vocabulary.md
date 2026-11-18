@@ -63,7 +63,10 @@ in `reports/` and is linked from the rule it supports.
 ## Adding a new language
 1. Create `vocab_builder/languages/<lang>.py` with a `LanguageConfig` (copy `french.py` or `german.py`); `learning_mode` selects bilingual versus monolingual behavior.
 2. Register it through `vocab_builder/languages/__init__.py`.
-3. Add language-specific vocab and translator templates (new `*_tex.py` module if needed); translator config and filename fields are optional (`None`) for monolingual languages.
+3. Build the vocab and translator documents with `vocab_document(<babel>, <examples heading>)`
+   and `translation_document(<macro>, <first label>, <second label>)` from `latex_templates.py`;
+   they are written once, when a file is created, and never rewrite an existing file. Translator
+   config and filename fields are optional (`None`) for monolingual languages.
 4. Provide the Anki config and optional auto-translator prompt tokens. A bilingual
    language builds its card with `bilingual_card_templates(<headword field>)` from
    `anki_shared_styles.py`. The export tracker records the card's template hash,

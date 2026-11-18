@@ -12,7 +12,7 @@ from .base import (
     VocabTemplate,
     make_text_validator,
 )
-from .english_tex import ENGLISH_FINAL_TEX_CONTENT, ENGLISH_INITIAL_TEX_CONTENT
+from .latex_templates import VOCAB_DOCUMENT_END, vocab_document
 
 _validate_english_text = make_text_validator()
 
@@ -193,15 +193,14 @@ ENGLISH_CONFIG = LanguageConfig(
     vocab_filename="EnglishVocab.tex",
     eng_to_target_filename=None,
     target_to_eng_filename=None,
-    latex_babel_languages=("english",),
     ui_strings=_UI_STRINGS,
     input_validator=_validate_english_text,
     eng_to_target=None,
     target_to_eng=None,
     vocab=VocabTemplate(
-        initial_content=ENGLISH_INITIAL_TEX_CONTENT,
+        initial_content=vocab_document("english", "Examples"),
         sample_entry="",
-        final_content=ENGLISH_FINAL_TEX_CONTENT,
+        final_content=VOCAB_DOCUMENT_END,
         entry_command="\\entry",
     ),
     anki=AnkiConfig(

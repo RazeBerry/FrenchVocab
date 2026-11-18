@@ -69,7 +69,6 @@ def _language_config(prompt_text: str) -> LanguageConfig:
         vocab_filename="vocab.tex",
         eng_to_target_filename="eng.tex",
         target_to_eng_filename="fr.tex",
-        latex_babel_languages=("french", "english"),
         ui_strings={},
         input_validator=lambda text, allow: True,
         eng_to_target=translator_cfg,

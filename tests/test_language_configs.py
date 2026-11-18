@@ -60,8 +60,6 @@ def test_german_translator_config_has_dedicated_macros():
     assert cfg.target_to_eng.prompt_variable == "german_text"
     assert "engde" in cfg.eng_to_target.latex_commands
     assert "deeng" in cfg.target_to_eng.latex_commands
-    assert "English to German" in cfg.eng_to_target.initial_tex_content
-    assert "German to English" in cfg.target_to_eng.initial_tex_content
 
 
 @pytest.mark.parametrize("language_code", TRANSLATION_LANGUAGES)
@@ -104,6 +102,23 @@ def test_spawned_empty_latex_templates_include_placeholder_item(language_code):
     cfg = get_language_config(language_code)
 
     assert r"\item[]\relax" in cfg.vocab.initial_content
+
+
+@pytest.mark.parametrize(
+    ("language_code", "babel", "examples_heading"),
+    [
+        ("fr", "french,english", "Examples"),
+        ("de", "ngerman,english", "Beispiele"),
+        ("en", "english", "Examples"),
+    ],
+)
+def test_vocab_document_loads_the_languages_babel_and_heading(
+    language_code, babel, examples_heading
+):
+    initial = get_language_config(language_code).vocab.initial_content
+
+    assert f"\\usepackage[{babel}]{{babel}}" in initial
+    assert f"\\color{{headword}}{examples_heading}}}\\par" in initial
 
 
 @pytest.mark.parametrize("language_code", TRANSLATION_LANGUAGES)
