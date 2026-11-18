@@ -661,6 +661,7 @@ class MobileVocabService:
         if not existing:
             return None, [], []
         existing_entry = entry_for_json(existing)
+        key = self.builder.language_config.headword_key
         existing_examples = [
             (str(item.get("source", "")), str(item.get("target", "")))
             for item in existing_entry["examples"]
@@ -670,8 +671,9 @@ class MobileVocabService:
             VocabRepository.new_definitions_for_merge(
                 existing_entry["definitions"],
                 definitions,
+                key=key,
             ),
-            VocabRepository.new_examples_for_merge(existing_examples, examples),
+            VocabRepository.new_examples_for_merge(existing_examples, examples, key=key),
         )
 
     def _unique_variant(self, base_word: str) -> str:

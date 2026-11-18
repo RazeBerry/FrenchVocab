@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, List, Tuple
 
-from vocab_builder.models import normalize_word_key
-
 from .file_safety import file_lock
-from .vocab_repository import EntryNotFoundError
+from .vocab_repository import EntryNotFoundError, VocabRepository
 
 
 class VocabMergeMixin:
@@ -61,10 +58,10 @@ class VocabMergeMixin:
             return self._parse_examples_string(examples_raw)
         return []
 
-    @staticmethod
-    def _norm_text_for_merge(text: str) -> str:
-        normalized = re.sub(r"\s+", " ", text).strip().lower()
-        return normalize_word_key(normalized)
+    def _norm_text_for_merge(self, text: str) -> str:
+        return VocabRepository.normalize_text_for_merge(
+            text, key=self.language_config.headword_key
+        )
 
     def _norm_pair_for_merge(self, pair: Tuple[str, str]) -> Tuple[str, str]:
         return (self._norm_text_for_merge(pair[0]), self._norm_text_for_merge(pair[1]))

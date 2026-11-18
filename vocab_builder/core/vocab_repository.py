@@ -23,7 +23,7 @@ from vocab_builder.latex_repository import (
     parse_all_entries,
     unescape_latex,
 )
-from vocab_builder.models import WordEntry, normalize_word_key
+from vocab_builder.models import WordEntry
 from vocab_builder.languages import LanguageConfig, get_language_config
 from vocab_builder.ui_helper import UIHelper
 
@@ -724,20 +724,25 @@ class VocabRepository:
         return []
 
     @staticmethod
-    def normalize_text_for_merge(s: str) -> str:
-        """Return the canonical text key used by repository merges."""
+    def normalize_text_for_merge(s: str, *, key: Callable[[str], str]) -> str:
+        """Return the canonical text key used by repository merges.
+
+        ``key`` is the collection language's headword key (docs/vocabulary.md).
+        """
         text = re.sub(r"\s+", " ", s).strip().lower()
-        return normalize_word_key(text)
+        return key(text)
 
     @classmethod
     def normalize_example_for_merge(
         cls,
         example: Tuple[str, str],
+        *,
+        key: Callable[[str], str],
     ) -> Tuple[str, str]:
         """Return the canonical pair key used by repository merges."""
         return (
-            cls.normalize_text_for_merge(example[0]),
-            cls.normalize_text_for_merge(example[1]),
+            cls.normalize_text_for_merge(example[0], key=key),
+            cls.normalize_text_for_merge(example[1], key=key),
         )
 
     @classmethod
@@ -745,12 +750,14 @@ class VocabRepository:
         cls,
         defs_existing: Sequence[str],
         new_defs: Sequence[str],
+        *,
+        key: Callable[[str], str],
     ) -> List[str]:
         """Return genuinely new definitions in candidate order."""
-        seen = {cls.normalize_text_for_merge(value) for value in defs_existing}
+        seen = {cls.normalize_text_for_merge(value, key=key) for value in defs_existing}
         additions: List[str] = []
         for definition in new_defs:
-            normalized = cls.normalize_text_for_merge(definition)
+            normalized = cls.normalize_text_for_merge(definition, key=key)
             if normalized and normalized not in seen:
                 seen.add(normalized)
                 additions.append(definition)
@@ -761,38 +768,35 @@ class VocabRepository:
         cls,
         exs_existing: Sequence[Tuple[str, str]],
         new_examples: Sequence[Tuple[str, str]],
+        *,
+        key: Callable[[str], str],
     ) -> List[Tuple[str, str]]:
         """Return genuinely new examples in candidate order."""
-        seen = {cls.normalize_example_for_merge(value) for value in exs_existing}
+        seen = {cls.normalize_example_for_merge(value, key=key) for value in exs_existing}
         additions: List[Tuple[str, str]] = []
         for example in new_examples:
-            normalized = cls.normalize_example_for_merge(example)
+            normalized = cls.normalize_example_for_merge(example, key=key)
             if normalized not in seen:
                 seen.add(normalized)
                 additions.append(example)
         return additions
 
-    @staticmethod
-    def _norm_text_for_merge(s: str) -> str:
-        """Backward-compatible private alias for the public merge normalizer."""
-        return VocabRepository.normalize_text_for_merge(s)
-
-    @classmethod
-    def _dedup_merge_definitions(cls, defs_existing: List[str], new_defs: List[str]) -> List[str]:
-        merged_map = {cls._norm_text_for_merge(d): d for d in defs_existing}
-        for d in cls.new_definitions_for_merge(defs_existing, new_defs):
-            merged_map[cls._norm_text_for_merge(d)] = d
+    def _dedup_merge_definitions(self, defs_existing: List[str], new_defs: List[str]) -> List[str]:
+        key = self.language_config.headword_key
+        merged_map = {self.normalize_text_for_merge(d, key=key): d for d in defs_existing}
+        for d in self.new_definitions_for_merge(defs_existing, new_defs, key=key):
+            merged_map[self.normalize_text_for_merge(d, key=key)] = d
         return list(merged_map.values())
 
-    @classmethod
     def _dedup_merge_examples(
-        cls,
+        self,
         exs_existing: List[Tuple[str, str]],
         new_examples: List[Tuple[str, str]],
     ) -> List[Tuple[str, str]]:
-        merged_map = {cls.normalize_example_for_merge(p): p for p in exs_existing}
-        for p in cls.new_examples_for_merge(exs_existing, new_examples):
-            merged_map[cls.normalize_example_for_merge(p)] = p
+        key = self.language_config.headword_key
+        merged_map = {self.normalize_example_for_merge(p, key=key): p for p in exs_existing}
+        for p in self.new_examples_for_merge(exs_existing, new_examples, key=key):
+            merged_map[self.normalize_example_for_merge(p, key=key)] = p
         return list(merged_map.values())
 
     def _replace_entry_block(self, word_capitalized: str, latex_block: str) -> bool:

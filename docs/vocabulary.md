@@ -41,8 +41,22 @@ in `reports/` and is linked from the rule it supports.
   `kawa` before `kąt`, `los` before `łoś`, `zupa` before `źle` before `żaba`,
   and `A‑klasa` (non-breaking hyphen) before `Ącki`. `Ł`, `Ś` and `Ż` take
   the L, S and Z rail letters.
-- Merge text equality, the translation-pair key and the Anki tracker key
-  (lowercased headword) are separate rules and do not use the headword key.
+- Merge text equality calls the collection language's headword key on the
+  lowercased, whitespace-collapsed text: French, German and English fold
+  accents and expand ß, while a held Polish `Compare sad.` does not absorb a
+  proposed `Compare sąd.`.
+- The translation-pair key lowercases, drops punctuation except the
+  apostrophe, collapses whitespace and strips combining marks, except that a
+  marked letter keeps its marks when the source language's headword key tells
+  it from its unmarked base and `normalize_word_key` does not (`fold_marks`).
+  The source language is English for the English-to-target direction and the
+  collection's language for the other. French, German and English keep no
+  marks, and ß is not expanded, so `Maße` and `Masse` are two pairs while
+  `Bär` and `Bar` are one. Polish keeps its letters, so `sąd` and `sad` are
+  two pairs. A translation preview journals the key it computed, and its
+  save rechecks that key under the file lock.
+- The Anki tracker key (lowercased headword) is a separate rule and does not
+  use the headword key.
 
 ## Capture workflow
 - `word_entry_workflow.py` orchestrates end-to-end word capture and save behavior, including explicit saved/routed/skipped outcomes so failed routing or merge paths never masquerade as successful saves.

@@ -33,6 +33,7 @@ from vocab_builder import ai_prompts  # noqa: E402
 from vocab_builder.ai_response_parser import parse_ai_response_text  # noqa: E402
 from vocab_builder.core.text_utils import detect_input_type  # noqa: E402
 from vocab_builder.core.vocab_repository import VocabRepository  # noqa: E402
+from vocab_builder.languages import get_language_config  # noqa: E402
 from vocab_builder.llm_client import DEFAULT_THINKING_LEVEL  # noqa: E402
 
 
@@ -57,8 +58,15 @@ def restates(added: str, held: list[str]) -> bool:
     )
 
 
+def _headword_key(case: dict[str, Any]):
+    """The merge compares text with the collection language's own key."""
+    return get_language_config(case["language"]).headword_key
+
+
 def score(case: dict[str, Any], parsed: Any, hedges: list[str]) -> dict[str, Any]:
-    added = VocabRepository.new_definitions_for_merge(case["held"], [str(d) for d in parsed.definitions])
+    added = VocabRepository.new_definitions_for_merge(
+        case["held"], [str(d) for d in parsed.definitions], key=_headword_key(case)
+    )
     lowered = [a.lower() for a in added]
     restated = [a for a in added if restates(a, case["held"])]
     hedged = [a for a in lowered if any(h in a for h in hedges)]
@@ -116,7 +124,9 @@ def run(mode: str, out: Path, thinking: str) -> None:
             "word": case["word"],
             "expect": case["expect"],
             "definitions": parsed.definitions,
-            "added": VocabRepository.new_definitions_for_merge(case["held"], parsed.definitions),
+            "added": VocabRepository.new_definitions_for_merge(
+                case["held"], parsed.definitions, key=_headword_key(case)
+            ),
             "contract_issues": parsed.contract_issues,
             "elapsed_seconds": round(elapsed, 1),
             "score": score(case, parsed, hedges),

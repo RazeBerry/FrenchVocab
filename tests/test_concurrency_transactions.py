@@ -133,6 +133,7 @@ def _translator_worker(path_text: str, target: str, ready, start, result) -> Non
         Console(),
         None,
         config,
+        source_key=get_language_config("en").headword_key,
         latex_file_path=Path(path_text),
     )
     translator.ui = _QuietUI()
@@ -323,7 +324,13 @@ def test_translator_rechecks_duplicate_after_taking_commit_lock(tmp_path, monkey
     assert all(result.get(timeout=2) for _ in processes)
     config = get_language_config("fr").eng_to_target
     assert config is not None
-    reloaded = TranslatorCLI(Console(), None, config, latex_file_path=path)
+    reloaded = TranslatorCLI(
+        Console(),
+        None,
+        config,
+        source_key=get_language_config("en").headword_key,
+        latex_file_path=path,
+    )
     assert len(reloaded.pairs) == 1
 
 

@@ -28,6 +28,7 @@ def _translator(tmp_path: Path, client: _StubClient | None = None) -> Translator
         console=Console(),
         client=client or _StubClient(),
         config=get_language_config("fr").eng_to_target,
+        source_key=get_language_config("en").headword_key,
         latex_file_path=tmp_path / "translations.tex",
     )
 
@@ -127,6 +128,7 @@ def test_translator_refuses_to_recreate_a_file_its_backups_prove_existed(tmp_pat
             console=Console(),
             client=_StubClient(),
             config=get_language_config("fr").eng_to_target,
+            source_key=get_language_config("en").headword_key,
             latex_file_path=path,
         )
 

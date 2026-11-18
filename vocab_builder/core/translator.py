@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 import string
-import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
@@ -20,6 +19,7 @@ from vocab_builder.languages import TranslatorConfig
 from vocab_builder.llm_client import LLMClient
 from vocab_builder.ui_helper import UIHelper, read_line
 from vocab_builder.core.history_logger import TranslationLogger
+from vocab_builder.core.text_utils import fold_marks
 from vocab_builder.core.file_safety import atomic_write_text, file_lock, refuse_to_recreate_lost_file
 from vocab_builder.latex_repository import escape_latex, parse_balanced_group, unescape_latex
 
@@ -50,6 +50,8 @@ class TranslatorCLI:
         console: Console,
         client: Optional[LLMClient],
         config: TranslatorConfig,
+        *,
+        source_key: Callable[[str], str],
         latex_file_path: Optional[Path] = None,
         direction: str = "eng_to_target",
         logger: Optional[TranslationLogger] = None,
@@ -60,6 +62,9 @@ class TranslatorCLI:
         self.ui = UIHelper(console)
         self.client = client
         self.config = config
+        # The source language's headword key decides which marked letters
+        # keep their identity in the pair key.
+        self.source_key = source_key
         self.direction = direction
         self.logger = logger
         self.usage_callback = usage_callback
@@ -293,16 +298,14 @@ class TranslatorCLI:
     # ------------------------------------------------------------------
     # Helper utilities
     # ------------------------------------------------------------------
-    @staticmethod
-    def normalize_text(text: str) -> str:
+    def normalize_text(self, text: str) -> str:
+        """Return the translation-pair key of ``text`` (docs/vocabulary.md)."""
         if not text:
             return ""
         text = text.lower().strip()
         remove = string.punctuation.replace("'", "")
         text = text.translate(str.maketrans("", "", remove))
-        text = "".join(
-            char for char in unicodedata.normalize("NFD", text) if unicodedata.category(char) != "Mn"
-        )
+        text = fold_marks(text, self.source_key)
         text = re.sub(r"\s+", " ", text).strip()
         return text
 

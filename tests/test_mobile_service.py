@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import importlib
 import itertools
 from importlib.resources import files
@@ -1538,7 +1538,235 @@ def test_polish_auto_translation_routes_and_saves_both_directions(tmp_path, monk
     assert r"\pleng{Kot śpi.}{The cat is asleep.}" in (
         tmp_path / "PolishToEnglish.tex"
     ).read_text(encoding="utf-8")
-    assert r"\engpl{" in (tmp_path / "EnglishToPolish.tex").read_text(encoding="utf-8")
+    assert r'\engpl{He said "yes".}{Powiedział „tak”.}' in (
+        tmp_path / "EnglishToPolish.tex"
+    ).read_text(encoding="utf-8")
+
+
+def translate_all(service, steps):
+    """Preview and save each (direction, text, AI reply) through the translation
+    routes; return the (preview, save) response bodies."""
+    app = create_app(service)
+
+    async def exercise_app():
+        results = []
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            for direction, text, reply in steps:
+                service.builder.client.response = reply
+                preview = await client.post(
+                    "/api/translations/preview", json={"direction": direction, "text": text}
+                )
+                assert preview.status_code == 200, preview.text
+                saved = await client.post(
+                    "/api/translations/save", json={"token": preview.json()["token"]}
+                )
+                results.append((preview.json(), saved.json()))
+        return results
+
+    import asyncio
+
+    return asyncio.run(exercise_app())
+
+
+def post_api(app, path: str, payload: dict):
+    """Issue one private POST against the ASGI app."""
+
+    async def exercise_app():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.post(path, json=payload)
+
+    import asyncio
+
+    return asyncio.run(exercise_app())
+
+
+def stored_pairs(tmp_path, monkeypatch, language: str, direction: str) -> list[dict]:
+    """Read the pairs back through a freshly started service."""
+    restarted = build_service(tmp_path, monkeypatch, language=language)
+    return get_api(
+        create_app(restarted), f"/api/translations/pairs?direction={direction}"
+    ).json()["items"]
+
+
+@pytest.mark.parametrize("direction", ["target_to_eng", "auto"])
+def test_polish_translation_memory_keeps_sad_and_sad_with_ogonek_apart(
+    tmp_path, monkeypatch, direction
+):
+    """"sąd" (court) is not the saved "sad" (orchard), in either direction
+    mode; "SĄD" is still the saved "sąd"."""
+    service = polish_service(tmp_path, monkeypatch)
+
+    def reply(translation: str) -> str:
+        if direction == "auto":
+            return f"Direction: polish_to_english\nTranslation:\n{translation}\n\nNotes:\nnone"
+        return translation
+
+    orchard, court, capitals = translate_all(
+        service,
+        [
+            (direction, "sad", reply("Orchard.")),
+            (direction, "sąd", reply("Court.")),
+            (direction, "SĄD", reply("Tribunal.")),
+        ],
+    )
+
+    assert orchard[1]["status"] == "saved"
+    assert court[0]["existing_entry"] is None
+    assert court[0]["target_text"] == "Court."
+    assert court[1]["status"] == "saved"
+    assert capitals[0]["existing_entry"] == {"source": "sąd", "target": "Court."}
+    assert capitals[1]["status"] == "duplicate"
+    assert sorted(
+        (pair["source"], pair["target"])
+        for pair in stored_pairs(tmp_path, monkeypatch, "pl", "target_to_eng")
+    ) == [("sad", "Orchard."), ("sąd", "Court.")]
+
+
+def test_german_translation_memory_folds_as_before(tmp_path, monkeypatch):
+    """Control: "Maße" stays apart from "Masse" (ß is not expanded) and "Bar"
+    still finds "Bär" (umlauts fold), as before Polish letters kept marks."""
+    service = build_service(tmp_path, monkeypatch, language="de")
+    service._token_factory = (f"preview-token-{n}" for n in itertools.count()).__next__
+
+    masse, masze, baer, bar = translate_all(
+        service,
+        [
+            ("target_to_eng", "Masse", "Mass."),
+            ("target_to_eng", "Maße", "Measurements."),
+            ("target_to_eng", "Bär", "Bear."),
+            ("target_to_eng", "Bar", "Bar."),
+        ],
+    )
+
+    assert masze[0]["existing_entry"] is None
+    assert [masse[1]["status"], masze[1]["status"], baer[1]["status"]] == ["saved"] * 3
+    assert bar[0]["existing_entry"] == {"source": "Bär", "target": "Bear."}
+    assert bar[1]["status"] == "duplicate"
+    assert sorted(
+        (pair["source"], pair["target"])
+        for pair in stored_pairs(tmp_path, monkeypatch, "de", "target_to_eng")
+    ) == [("Bär", "Bear."), ("Masse", "Mass."), ("Maße", "Measurements.")]
+
+
+def journal_accent_stripped_preview(service, token: str, target: str, existing) -> None:
+    """Journal a "sąd" preview as the accent-stripping release wrote it."""
+    service._translation_previews[token] = {
+        "token": token,
+        "direction": "target_to_eng",
+        "source_text": "sąd",
+        "target_text": target,
+        "normalized_key": "sad",  # the accent-stripped pair key of "sąd"
+        "suspicious": False,
+        "dropped_fragment": None,
+        "existing_entry": existing,
+        "notes": None,
+        "source_label": "Polish",
+        "target_label": "English",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    service._persist_state()
+
+
+def test_translation_preview_journaled_before_polish_marks_kept_saves_safely(
+    tmp_path, monkeypatch
+):
+    """A Polish preview journaled by the accent-stripping release carries the
+    stripped key. After the restart its save rechecks that key: a fresh draft
+    saves its own pair, and a draft that borrowed "sad"'s target stays a
+    duplicate and writes nothing."""
+    pairs_file = tmp_path / "PolishToEnglish.tex"
+    journal_accent_stripped_preview(
+        polish_service(tmp_path, monkeypatch), "journaled-fresh", "Court.", None
+    )
+
+    fresh = post_api(
+        create_app(polish_service(tmp_path, monkeypatch)),
+        "/api/translations/save",
+        {"token": "journaled-fresh"},
+    )
+    service = polish_service(tmp_path, monkeypatch)
+    translate_all(service, [("target_to_eng", "sad", "Orchard.")])
+    journal_accent_stripped_preview(
+        service,
+        "journaled-borrowed",
+        "Orchard.",
+        {"source": "sad", "target": "Orchard."},
+    )
+    before_borrowed = pairs_file.read_bytes()
+    borrowed = post_api(
+        create_app(polish_service(tmp_path, monkeypatch)),
+        "/api/translations/save",
+        {"token": "journaled-borrowed"},
+    )
+
+    assert fresh.json()["status"] == "saved"
+    assert borrowed.json()["status"] == "duplicate"
+    assert pairs_file.read_bytes() == before_borrowed
+    assert sorted(
+        (pair["source"], pair["target"])
+        for pair in stored_pairs(tmp_path, monkeypatch, "pl", "target_to_eng")
+    ) == [("sad", "Orchard."), ("sąd", "Court.")]
+
+
+def merge_response(word: str, word_type: str, definition: str, example: tuple[str, str]) -> str:
+    return f"""Spelling Check: OK
+Correctly Spelt Word: {word}
+Word Type: {word_type}
+Definitions:
+a. {definition}
+Examples:
+1. {example[0]}
+({example[1]})
+"""
+
+
+def test_polish_merge_counts_sad_with_ogonek_as_new_text(tmp_path, monkeypatch):
+    """A proposed "Compare sąd." is new beside a held "Compare sad."."""
+    service = polish_service(tmp_path, monkeypatch)
+    held_example = ("Idę na sad.", "I am going to the orchard.")
+    service.builder.client.response = merge_response(
+        "wyrok", "masculine noun", "Compare sad.", held_example
+    )
+    service.save(service.preview("wyrok").token)
+    proposed_example = ("Idę na sąd.", "I am going to the orchard.")
+    service.builder.client.response = merge_response(
+        "wyrok", "masculine noun", "Compare sąd.", proposed_example
+    )
+
+    preview = service.preview("wyrok", duplicate_action="merge")
+    receipt = service.save(preview.token)
+    entry = service.builder.word_entries[service.builder.check_duplicate("wyrok")]
+
+    assert preview.new_definitions == ["Compare sąd."]
+    assert preview.new_examples == [proposed_example]
+    assert receipt["action"] == "merged"
+    assert (receipt["added_definitions"], receipt["added_examples"]) == (1, 1)
+    assert entry["definitions_list"] == ["Compare sad.", "Compare sąd."]
+    assert entry["examples_list"] == [held_example, proposed_example]
+
+
+def test_french_merge_still_folds_accents(tmp_path, monkeypatch):
+    """Control: a proposed "Sur la côte." repeats a held "Sur la cote."."""
+    service = build_service(tmp_path, monkeypatch)
+    service._token_factory = (f"preview-token-{n}" for n in itertools.count()).__next__
+    service.builder.client.response = merge_response(
+        "rivage", "noun", "Sur la cote.", ("Sur la cote.", "On the coast.")
+    )
+    service.save(service.preview("rivage").token)
+    service.builder.client.response = merge_response(
+        "rivage", "noun", "Sur la côte.", ("Sur la côte.", "On the coast.")
+    )
+    latex_file = tmp_path / "FrenchVocab.tex"
+    before = latex_file.read_bytes()
+
+    preview = service.preview("rivage", duplicate_action="merge")
+
+    assert preview.new_definitions == []
+    assert preview.new_examples == []
+    assert service.save(preview.token)["action"] == "unchanged"
+    assert latex_file.read_bytes() == before
 
 
 def test_polish_composition_debt_matches_verdicts_by_the_polish_key(tmp_path, monkeypatch):

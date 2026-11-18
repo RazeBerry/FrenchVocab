@@ -11,6 +11,7 @@ def _de_translator(tmp_path: Path) -> TranslatorCLI:
         console=Console(),
         client=None,
         config=get_language_config("de").eng_to_target,
+        source_key=get_language_config("en").headword_key,
         latex_file_path=tmp_path / "translations.tex",
     )
 
@@ -20,6 +21,7 @@ def _de_to_en_translator(tmp_path: Path) -> TranslatorCLI:
         console=Console(),
         client=None,
         config=get_language_config("de").target_to_eng,
+        source_key=get_language_config("de").headword_key,
         latex_file_path=tmp_path / "translations.tex",
     )
 
