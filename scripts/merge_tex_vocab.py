@@ -1,75 +1,53 @@
 #!/usr/bin/env python3
-"""
-merge_tex_vocab.py — Merge two LaTeX vocabulary lists without duplicates
-and spit them back *alphabetically*.
+"""Merge two LaTeX vocabulary files of one language without duplicates.
 
-Changes vs. v1
---------------
-* _split_tex():  now grabs **the first itemize that carries the
-                 ‘leftmargin’ option**, so it skips the one hidden
-                 inside the \entry definition.
-* _deduplicate(): after removing duplicates, it sorts the blocks
-                  case‑ & accent‑insensitively before returning them.
+The first file is kept as it stands, preamble included. Each entry of the
+second file whose headword the merged text does not already hold is inserted
+at its alphabetical position. Entries are read with the repository's balanced
+parser, and identity and order come from the collection language's headword
+key, so Polish keeps `Sad` and `Sąd` apart while French merges `Côte` and
+`cote`. The result is written to a new file next to the first; neither input
+is modified.
+
+    python scripts/merge_tex_vocab.py --language pl first.tex second.tex
 """
+
 from __future__ import annotations
+
 import argparse
 import datetime as _dt
-import pathlib as _pl
-import re
 import sys
-import unicodedata as _ud
+from pathlib import Path
+from typing import Sequence
 
-# ----------------------------------------------------------------------
-# Regexes
-# ----------------------------------------------------------------------
-# The vocabulary list we want always starts with \begin{itemize}[leftmargin=
-_OUTER_ITEMIZE_RE = re.compile(
-    r"\\begin{itemize}\[[^\]]*leftmargin[^\]]*\]", re.IGNORECASE
-)
-_ENTRY_RE = re.compile(
-    r"""
-    \\entry
-    \{(?P<word>[^{}]+?)\}
-    \s*\{[^{}]*?\}
-    \s*\{[^{}]*?\}
-    \s*\{[^{}]*?\}
-    """,
-    re.DOTALL | re.VERBOSE,
-)
+from vocab_builder.core.vocab_repository import choose_insert_position
+from vocab_builder.languages import LanguageConfig, get_language_config
+from vocab_builder.latex_repository import iter_entry_groups, unescape_latex
 
-# ----------------------------------------------------------------------
-def _strip_accents(text: str) -> str:
-    return "".join(ch for ch in _ud.normalize("NFKD", text) if not _ud.combining(ch))
 
-def _key(word: str) -> str:
-    return _strip_accents(word).casefold()
+def merge_text(first: str, second: str, config: LanguageConfig) -> tuple[str, int, int]:
+    """Return (merged text, entries added, entries skipped as already held)."""
+    entry_cmd = config.vocab.entry_command
+    key = config.headword_key
+    held = {
+        key(unescape_latex(groups[0].strip()))
+        for groups, _, _ in iter_entry_groups(first, entry_cmd, num_groups=1)
+    }
+    merged = first
+    added = skipped = 0
+    for groups, start, end in iter_entry_groups(second, entry_cmd, num_groups=4):
+        word = unescape_latex(groups[0].strip())
+        if key(word) in held:
+            skipped += 1
+            continue
+        position = choose_insert_position(merged, entry_cmd, word, key=key)
+        merged = merged[:position] + second[start:end] + "\n\n" + merged[position:]
+        held.add(key(word))
+        added += 1
+    return merged, added, skipped
 
-def _split_tex(tex: str) -> tuple[str, str, str]:
-    """Return (preamble, body‑inside‑itemize, postamble)."""
-    m = _OUTER_ITEMIZE_RE.search(tex)
-    if not m:
-        raise ValueError("Could not find the main \\begin{itemize}[leftmargin=*] block.")
-    start = m.start()
-    end = tex.find(r"\end{itemize}", m.end())
-    if end == -1:
-        raise ValueError("Missing \\end{itemize} matching the vocabulary block.")
-    end += len(r"\end{itemize}")
-    return tex[:start], tex[start:end], tex[end:]
 
-def _extract_entries(body: str) -> list[str]:
-    return [m.group(0) for m in _ENTRY_RE.finditer(body)]
-
-def _deduplicate_and_sort(entries: list[str]) -> list[str]:
-    seen: dict[str, str] = {}
-    for block in entries:
-        word = _ENTRY_RE.match(block).group("word")  # type: ignore[arg-type]
-        k = _key(word)
-        if k not in seen:
-            seen[k] = block
-    # Sort by the same normalization so É and E sit together, etc.
-    return [seen[k] for k in sorted(seen, key=lambda k: _key(k))]
-
-def _unique_output_path(path: _pl.Path) -> _pl.Path:
+def _unique_output_path(path: Path) -> Path:
     stem = f"{path.stem}_merged_{_dt.datetime.now():%Y%m%d_%H%M%S_%f}"
     candidate = path.with_stem(stem)
     counter = 1
@@ -78,38 +56,28 @@ def _unique_output_path(path: _pl.Path) -> _pl.Path:
         counter += 1
     return candidate
 
-def _merge(path1: _pl.Path, path2: _pl.Path) -> _pl.Path:
-    tex1, tex2 = path1.read_text(), path2.read_text()
-    pre1, body1, post1 = _split_tex(tex1)
-    _,   body2, _      = _split_tex(tex2)
 
-    merged_entries = _deduplicate_and_sort(
-        _extract_entries(body1) + _extract_entries(body2)
-    )
-
-    # Re‑use the outer \begin{itemize[… line from file #1
-    header_line = _OUTER_ITEMIZE_RE.search(body1).group(0)  # type: ignore[union-attr]
-    body = "\n".join(
-        [header_line, *merged_entries, r"\end{itemize}", ""]
-    )
-
-    out = _unique_output_path(path1)
-    with out.open("x", encoding="utf-8") as handle:
-        handle.write(pre1 + body + post1)
-    return out
-
-# ----------------------------------------------------------------------
-def main(argv: list[str] | None = None) -> None:
-    p = argparse.ArgumentParser(description="Merge two LaTeX vocab files uniquely.")
-    p.add_argument("file1", type=_pl.Path)
-    p.add_argument("file2", type=_pl.Path)
-    args = p.parse_args(argv)
+def main(argv: Sequence[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Merge two LaTeX vocabulary files of one language.")
+    parser.add_argument("--language", required=True, help="Language code or alias, e.g. fr, de, en or pl.")
+    parser.add_argument("file1", type=Path, help="The file kept as it stands, preamble included.")
+    parser.add_argument("file2", type=Path, help="The file whose missing entries are added.")
+    args = parser.parse_args(argv)
     try:
-        dst = _merge(args.file1, args.file2)
-        print(f"[SUCCESS] Merged file written to: {dst}")
-    except Exception as e:
-        print(f"[ERROR] {e}", file=sys.stderr)
+        config = get_language_config(args.language)
+        merged, added, skipped = merge_text(
+            args.file1.read_text(encoding="utf-8"),
+            args.file2.read_text(encoding="utf-8"),
+            config,
+        )
+        out = _unique_output_path(args.file1)
+        with out.open("x", encoding="utf-8") as handle:
+            handle.write(merged)
+    except (OSError, ValueError) as error:
+        print(f"[ERROR] {error}", file=sys.stderr)
         sys.exit(1)
+    print(f"[SUCCESS] Added {added}, skipped {skipped} already held; merged file written to: {out}")
+
 
 if __name__ == "__main__":
     main()

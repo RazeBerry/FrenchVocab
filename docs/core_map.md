@@ -22,7 +22,7 @@ invariants; if a rule is written here, move it to its owner.
 - `vocab_builder/compat.py` provides backward-compatible helpers for env vars, config paths, and keyring migration.
 - `vocab_builder/diagnostics/` contains ESC latency tracing tools.
 - `FrenchVocab.py` is a deprecated shim that delegates to `vocab_builder.cli.main`.
-- `scripts/` contains utility and demo scripts, including `scripts/bulk_add.py` for operator-reviewed structured JSON vocabulary batches.
+- `scripts/` contains utility and demo scripts, including `scripts/bulk_add.py` for operator-reviewed structured JSON vocabulary batches and `scripts/merge_tex_vocab.py`, which merges a second vocabulary file of one `--language` into a copy of the first under the Headword key rules in `docs/vocabulary.md`.
 - `vocab_builder/cli/main.py` parses CLI args (`--language`, `--provider`, `--latex-file`, `--verbose`, `--esc-debug`, `--esc-debug-log`, `--eager-llm`).
 - `vocab_builder/cli/bootstrap.py` builds language-specific `VocabBuilder` instances and language selection flow.
 - `vocab_builder/core/menu_loop.py` drives menu orchestration; `vocab_builder/cli/menu.py` remains a compatibility shim.
