@@ -12,12 +12,14 @@ __all__ = ["main"]
 
 
 def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
+    from vocab_builder.languages import available_language_codes
+
     parser = argparse.ArgumentParser(description="VocabBuilder CLI")
     parser.add_argument(
         "--language",
         "-l",
         type=str.lower,
-        help="Language code to launch immediately (e.g., 'fr', 'de', 'en').",
+        help=f"Language code to launch immediately ({', '.join(available_language_codes())}).",
     )
     parser.add_argument(
         "--provider",

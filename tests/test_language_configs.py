@@ -9,8 +9,13 @@ from vocab_builder.languages import available_language_codes, get_language_confi
 from vocab_builder.languages.anki_shared_styles import compute_template_hash
 from vocab_builder.languages.anki_shared_styles import get_anki_css
 
+ALL_LANGUAGES = available_language_codes()
+TRANSLATION_LANGUAGES = [
+    code for code in ALL_LANGUAGES if get_language_config(code).supports_translation
+]
 
-@pytest.mark.parametrize("language_code", ["fr", "de", "en"])
+
+@pytest.mark.parametrize("language_code", ALL_LANGUAGES)
 def test_builder_initializes_for_language(language_code, monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -35,7 +40,7 @@ def test_available_language_codes_include_bundled_languages():
     assert {"fr", "de", "en"}.issubset(codes)
 
 
-@pytest.mark.parametrize("language_code", ["fr", "de", "en"])
+@pytest.mark.parametrize("language_code", ALL_LANGUAGES)
 def test_build_app_sets_language(monkeypatch, language_code, tmp_path):
     monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
     latex_path = tmp_path / f"{language_code}_cli.tex"
@@ -59,7 +64,7 @@ def test_german_translator_config_has_dedicated_macros():
     assert "German to English" in cfg.target_to_eng.initial_tex_content
 
 
-@pytest.mark.parametrize("language_code", ["fr", "de"])
+@pytest.mark.parametrize("language_code", TRANSLATION_LANGUAGES)
 def test_directional_translation_prompts_use_fidelity_contract(language_code):
     cfg = get_language_config(language_code)
 
@@ -74,7 +79,7 @@ def test_directional_translation_prompts_use_fidelity_contract(language_code):
         assert "contemporary" not in prompt
 
 
-@pytest.mark.parametrize("language_code", ["fr", "de"])
+@pytest.mark.parametrize("language_code", TRANSLATION_LANGUAGES)
 def test_auto_translation_prompts_can_decline_ambiguous_direction(language_code):
     prompt = get_language_config(language_code).auto_prompt_template
 
@@ -94,14 +99,14 @@ def test_german_translation_prompts_use_correct_quotes_and_nonmechanical_tense()
     assert "do not apply a fixed Perfekt-to-simple-past" in cfg.target_to_eng.prompt_template
 
 
-@pytest.mark.parametrize("language_code", ["fr", "de", "en"])
+@pytest.mark.parametrize("language_code", ALL_LANGUAGES)
 def test_spawned_empty_latex_templates_include_placeholder_item(language_code):
     cfg = get_language_config(language_code)
 
     assert r"\item[]\relax" in cfg.vocab.initial_content
 
 
-@pytest.mark.parametrize("language_code", ["fr", "de"])
+@pytest.mark.parametrize("language_code", TRANSLATION_LANGUAGES)
 def test_bilingual_templates_include_translation_placeholders(language_code):
     cfg = get_language_config(language_code)
 
@@ -112,7 +117,7 @@ def test_bilingual_templates_include_translation_placeholders(language_code):
 
 
 def test_language_configs_include_template_versions():
-    for code in ["fr", "de", "en"]:
+    for code in ALL_LANGUAGES:
         cfg = get_language_config(code)
         templates = [
             {"name": tpl.name, "qfmt": tpl.question_format, "afmt": tpl.answer_format}
@@ -122,7 +127,7 @@ def test_language_configs_include_template_versions():
         assert cfg.anki.version_id == expected_hash
 
 
-@pytest.mark.parametrize("language_code", ["fr", "de", "en"])
+@pytest.mark.parametrize("language_code", ALL_LANGUAGES)
 def test_language_configs_use_shared_css(language_code):
     cfg = get_language_config(language_code)
     assert cfg.anki.card_css == get_anki_css(language_code)

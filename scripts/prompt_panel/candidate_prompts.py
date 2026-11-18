@@ -202,4 +202,7 @@ and the "Examples:" label with nothing under it, then stop. Never write "none"
 or any other placeholder line.
 """
 
-__all__ = ["FRENCH", "GERMAN", "MERGE"]
+# The candidate template for each panel language, keyed by language code.
+TEMPLATES = {"fr": FRENCH, "de": GERMAN}
+
+__all__ = ["FRENCH", "GERMAN", "MERGE", "TEMPLATES"]

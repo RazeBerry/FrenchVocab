@@ -42,14 +42,14 @@ STOP = set(
 
 def load_templates(name: str) -> dict[str, str]:
     if name == "baseline":
-        from vocab_builder.ai_prompts import AI_PROMPT_TEMPLATE, GERMAN_PROMPT_TEMPLATE
+        from vocab_builder.languages import available_language_codes, get_language_config
 
-        return {"fr": AI_PROMPT_TEMPLATE, "de": GERMAN_PROMPT_TEMPLATE}
+        return {code: get_language_config(code).prompt_template for code in available_language_codes()}
     if name == "candidate":
         sys.path.insert(0, str(HERE))
         import candidate_prompts  # type: ignore
 
-        return {"fr": candidate_prompts.FRENCH, "de": candidate_prompts.GERMAN}
+        return candidate_prompts.TEMPLATES
     raise SystemExit(f"unknown prompt set: {name}")
 
 

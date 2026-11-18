@@ -9,7 +9,7 @@ from typing import Optional, Sequence
 
 from rich.console import Console
 
-from vocab_builder.languages import get_language_config
+from vocab_builder.languages import available_language_codes, get_language_config
 from vocab_builder.ui_helper import UIHelper
 
 
@@ -27,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--language",
-        choices=("fr", "de", "en"),
+        choices=available_language_codes(),
         help="Expose one collection; retained for single-language deployments.",
     )
     parser.add_argument("--default-language", default="fr")

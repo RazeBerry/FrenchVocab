@@ -6,7 +6,7 @@ from vocab_builder.core import VocabBuilder
 from vocab_builder.core import composition as composition_module
 from vocab_builder.core.llm_coordinator import InitState
 from vocab_builder.core.session_ui import show_main_menu
-from vocab_builder.languages import get_language_config
+from vocab_builder.languages import available_language_codes, get_language_config
 
 
 class _FakeLLMClient:
@@ -333,7 +333,7 @@ def test_composition_reverse_escape_cancels_before_grading(tmp_path, monkeypatch
 
 
 def test_reverse_grading_prompts_configured_for_all_languages():
-    for language in ("fr", "de", "en"):
+    for language in available_language_codes():
         template = get_language_config(language).composition.reverse_grading_prompt_template
 
         assert "{source_english}" in template

@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from vocab_builder.core.vocab_corrections import CorrectionError, run_corrections
-from vocab_builder.languages import get_language_config
+from vocab_builder.languages import available_language_codes, get_language_config
 
 
 def _disk_preflight(data_dir: Path, language: str) -> None:
@@ -39,7 +39,7 @@ def _disk_preflight(data_dir: Path, language: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--language", required=True, choices=("fr", "de", "en"))
+    parser.add_argument("--language", required=True, choices=available_language_codes())
     parser.add_argument("--data-dir", required=True, type=Path)
     parser.add_argument("--patch", required=True, type=Path)
     parser.add_argument("--apply", action="store_true")

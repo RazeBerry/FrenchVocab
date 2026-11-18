@@ -19,6 +19,7 @@ from vocab_builder.core.llm_coordinator import LLMCoordinator
 from vocab_builder.core.vocab import VocabBuilder
 from vocab_builder.mobile.app import create_app
 from vocab_builder.mobile.catalog import MobileVocabCatalog
+from vocab_builder.languages import available_language_codes, get_language_config
 from vocab_builder.models import WordEntry
 from vocab_builder.mobile.service import (
     AIUnavailableError,
@@ -81,14 +82,7 @@ def build_service(
     monkeypatch.setenv("VOCABBUILDER_CONFIG_DIR", str(tmp_path / "config"))
     monkeypatch.setenv("VOCABBUILDER_HISTORY_DIR", str(tmp_path / "history"))
     builder = VocabBuilder(
-        latex_file=str(
-            tmp_path
-            / {
-                "fr": "FrenchVocab.tex",
-                "de": "GermanVocab.tex",
-                "en": "EnglishVocab.tex",
-            }[language]
-        ),
+        latex_file=str(tmp_path / get_language_config(language).vocab_filename),
         provider="gemini",
         language=language,
         client=FakeClient(),
@@ -1219,7 +1213,7 @@ def test_anki_export_builds_a_downloadable_deck_for_every_language(tmp_path, mon
 
     services = {
         code: build_service(tmp_path / code, monkeypatch, language=code)
-        for code in ("en", "fr", "de")
+        for code in available_language_codes()
     }
     seeds = {
         "en": ("serendipity", "noun", "Finding something good without looking for it."),

@@ -15,7 +15,7 @@ from vocab_builder.core.anki_identity import identity_path, identity_text, load_
 from vocab_builder.core.file_safety import atomic_copy_file, atomic_write_text, file_lock
 from vocab_builder.core.history_logger import TranslationLogger
 from vocab_builder.core.vocab_repository import VocabRepository, choose_insert_position
-from vocab_builder.languages import get_language_config
+from vocab_builder.languages import available_language_codes, get_language_config
 from vocab_builder.latex_repository import LatexRepository, find_entry_bounds, parse_all_entries
 from vocab_builder.models import WordEntry, normalize_word_key
 
@@ -381,8 +381,9 @@ def run_corrections(
     *, language: str, data_dir: Path, patch_path: Path, apply: bool = False,
 ) -> dict[str, Any]:
     """Validate a reviewed patch and optionally commit it under one catalog lock."""
-    if language not in {"fr", "de", "en"}:
-        raise CorrectionError("language must be fr, de, or en")
+    codes = available_language_codes()
+    if language not in codes:
+        raise CorrectionError(f"language must be one of: {', '.join(codes)}")
     data_dir = Path(data_dir)
     patch_bytes = Path(patch_path).read_bytes()
     try:
