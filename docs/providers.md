@@ -6,13 +6,16 @@ in `reports/` and is linked from the rule it supports.
 ## Providers
 - `llm_coordinator.py` manages provider initialization lifecycle, degraded mode, and usage metrics, and uses generation-guarded background init so stale workers cannot overwrite newer provider changes.
 - `vocab_builder/core/providers/manager.py` owns provider metadata, setup wizard flows, and storage destinations.
-- Gemini defaults to `gemini-3.8-flash` for local and VM use. The VM sets
+- Gemini defaults to `gemini-4-hydrogen` (Gemini 4 Hydrogen, the Flash-tier
+  successor to `gemini-3.8-flash`) for local and VM use. The VM sets
   `VOCABBUILDER_GEMINI_MODEL` in `/etc/vocabbuilder/mobile.env` so the mobile
-  service and legacy remote CLI agree even before a source deployment. Its
-  generation config uses thinking levels and omits deprecated sampling
-  parameters (`temperature`, `top_p`, and `top_k`) that current Gemini models no
-  longer support. Panel results dated before 2026-10-31 measure Gemini 3.7
-  (`reports/providers/2026-10-29_gemini_3.8_default.md`).
+  service and legacy remote CLI agree even before a source deployment; that
+  value must change with this default. Its generation config uses thinking
+  levels and omits deprecated sampling parameters (`temperature`, `top_p`, and
+  `top_k`) that current Gemini models no longer support. Each saved panel
+  result names the model it measured in its `model` field; the model switches
+  are in `reports/providers/2026-10-29_gemini_3.8_default.md` and
+  `reports/providers/2026-11-18_gemini_4_hydrogen_default.md`.
 - The Google Gen AI Python SDK is constrained to `>=2.25.0,<3.0.0`. The floor
   is the version the panel measured
   (`reports/providers/2026-09-28_genai_2.25_floor.md`); the upper bound follows

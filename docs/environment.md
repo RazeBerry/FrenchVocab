@@ -7,7 +7,7 @@ in `reports/` and is linked from the rule it supports.
 All variables use the `VOCABBUILDER_*` prefix. Legacy `FRENCHVOCAB_*` and `FRENCH_VOCAB_*` names are still recognized via `vocab_builder/compat.py` with deprecation warnings.
 - `GEMINI_API_KEY` / `ANTHROPIC_API_KEY`: Provider API credentials.
 - `VOCABBUILDER_CLAUDE_MODEL`: Override Claude model ID (default `claude-sonnet-4-6`).
-- `VOCABBUILDER_GEMINI_MODEL`: Override Gemini model ID (default `gemini-3.8-flash`).
+- `VOCABBUILDER_GEMINI_MODEL`: Override Gemini model ID (default `gemini-4-hydrogen`).
 - `VOCABBUILDER_PROVIDER_TIMEOUT`: Provider request deadline in seconds (default `120`).
 - `VOCABBUILDER_PROVIDER_RETRY_COOLDOWN`: Minimum seconds between silent provider re-initialization attempts (default `30`).
 - `VOCABBUILDER_ALLOWED_TAILSCALE_USER`: Tailscale login accepted by the private mobile interface; requests are not identity-checked when unset.
