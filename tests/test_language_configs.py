@@ -127,6 +127,33 @@ def test_language_configs_include_template_versions():
         assert cfg.anki.version_id == expected_hash
 
 
+@pytest.mark.parametrize(
+    ("language_code", "version_id"),
+    [
+        ("fr", "1a83c00381b2c370be0cab4c825208e55441f125"),
+        ("de", "8cd0d3749bb9216417e7d496fa8d5c95572bb028"),
+    ],
+)
+def test_existing_bilingual_decks_keep_their_template_version(language_code, version_id):
+    """An exported deck records this hash, and a different one rebuilds the
+    whole deck on the next export (core/anki_manager.py). These are the
+    versions shipped before the card was built from its field name."""
+    assert get_language_config(language_code).anki.version_id == version_id
+
+
+@pytest.mark.parametrize(
+    "language_code",
+    [code for code in ALL_LANGUAGES if get_language_config(code).learning_mode == "bilingual"],
+)
+def test_bilingual_card_shows_the_headword_field(language_code):
+    anki = get_language_config(language_code).anki
+    headword = "{{" + anki.field_names[0] + "}}"
+
+    for template in anki.card_templates:
+        assert headword in template.question_format
+        assert headword in template.answer_format
+
+
 @pytest.mark.parametrize("language_code", ALL_LANGUAGES)
 def test_language_configs_use_shared_css(language_code):
     cfg = get_language_config(language_code)

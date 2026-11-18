@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+from string import Template
 from typing import Callable, Sequence
+
+from .base import AnkiCardTemplate
 
 BASE_ANKI_CARD_CSS = """
 .card {
@@ -181,4 +184,57 @@ def compute_template_hash(card_templates: Sequence[dict[str, str]], css: str) ->
     return digest.hexdigest()
 
 
-__all__ = ["BASE_ANKI_CARD_CSS", "get_anki_css", "compute_template_hash"]
+# The bilingual recognition card. ``$headword`` is the Anki field holding the
+# target-language headword; Anki's double braces escape HTML, and the exporter
+# supplies plain-text lists for the definition and example fields.
+_BILINGUAL_FRONT = Template("""
+<div class="entry-card entry-card--front">
+  <div class="entry-header">
+    <div class="entry-word">{{$headword}}</div>
+    {{#Type}}<div class="entry-pos">{{Type}}</div>{{/Type}}
+  </div>
+</div>
+""".strip())
+
+_BILINGUAL_BACK = Template("""
+<div class="entry-card entry-card--back">
+  <div class="entry-header">
+    <div class="entry-word">{{$headword}}</div>
+    {{#Type}}<div class="entry-pos">{{Type}}</div>{{/Type}}
+  </div>
+  {{#English}}
+  <div class="entry-section">
+    <div class="entry-section-title">Definitions</div>
+    <div class="entry-content">{{English}}</div>
+  </div>
+  {{/English}}
+  {{#Example}}
+  <div class="entry-section">
+    <div class="entry-section-title">Examples</div>
+    <div class="entry-content">{{Example}}</div>
+  </div>
+  {{/Example}}
+</div>
+""".strip())
+
+
+def bilingual_card_templates(headword_field: str) -> tuple[AnkiCardTemplate, ...]:
+    """Return the bilingual card whose headword lives in ``headword_field``.
+
+    The note fields are ``(headword_field, "Type", "English", "Example")``.
+    """
+    return (
+        AnkiCardTemplate(
+            name="Card 1",
+            question_format=_BILINGUAL_FRONT.substitute(headword=headword_field),
+            answer_format=_BILINGUAL_BACK.substitute(headword=headword_field),
+        ),
+    )
+
+
+__all__ = [
+    "BASE_ANKI_CARD_CSS",
+    "bilingual_card_templates",
+    "get_anki_css",
+    "compute_template_hash",
+]

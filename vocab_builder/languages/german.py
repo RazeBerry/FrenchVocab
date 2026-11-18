@@ -10,7 +10,6 @@ from .base import (
     TranslatorConfig,
     VocabTemplate,
     AnkiConfig,
-    AnkiCardTemplate,
     make_text_validator,
 )
 from .german_tex import (
@@ -21,7 +20,11 @@ from .german_tex import (
     INITIAL_DE_ENG_TEX_CONTENT,
     FINAL_DE_ENG_TEX_CONTENT,
 )
-from .anki_shared_styles import get_anki_css, compute_template_hash
+from .anki_shared_styles import (
+    bilingual_card_templates,
+    compute_template_hash,
+    get_anki_css,
+)
 
 # German has additional quote characters: „ (opening) and “ (closing)
 _validate_german_text = make_text_validator(frozenset({"„", "“"}))
@@ -66,44 +69,7 @@ German source:
 {german_text}
 </source_text>"""
 
-_CARD_FRONT_TEMPLATE = """
-<div class="entry-card entry-card--front">
-  <div class="entry-header">
-    <div class="entry-word">{{German}}</div>
-    {{#Type}}<div class="entry-pos">{{Type}}</div>{{/Type}}
-  </div>
-</div>
-""".strip()
-
-# Use double braces so Anki escapes HTML; exporter supplies sanitized text.
-_CARD_BACK_TEMPLATE = """
-<div class="entry-card entry-card--back">
-  <div class="entry-header">
-    <div class="entry-word">{{German}}</div>
-    {{#Type}}<div class="entry-pos">{{Type}}</div>{{/Type}}
-  </div>
-  {{#English}}
-  <div class="entry-section">
-    <div class="entry-section-title">Definitions</div>
-    <div class="entry-content">{{English}}</div>
-  </div>
-  {{/English}}
-  {{#Example}}
-  <div class="entry-section">
-    <div class="entry-section-title">Examples</div>
-    <div class="entry-content">{{Example}}</div>
-  </div>
-  {{/Example}}
-</div>
-""".strip()
-
-GERMAN_CARD_TEMPLATES = (
-    AnkiCardTemplate(
-        name="Card 1",
-        question_format=_CARD_FRONT_TEMPLATE,
-        answer_format=_CARD_BACK_TEMPLATE,
-    ),
-)
+GERMAN_CARD_TEMPLATES = bilingual_card_templates("German")
 GERMAN_CARD_CSS = get_anki_css("de")
 GERMAN_CARD_VERSION = compute_template_hash(
     [

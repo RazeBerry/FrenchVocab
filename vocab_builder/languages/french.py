@@ -24,10 +24,13 @@ from .base import (
     TranslatorConfig,
     VocabTemplate,
     AnkiConfig,
-    AnkiCardTemplate,
     make_text_validator,
 )
-from .anki_shared_styles import get_anki_css, compute_template_hash
+from .anki_shared_styles import (
+    bilingual_card_templates,
+    compute_template_hash,
+    get_anki_css,
+)
 
 # French uses the base character set (no extra characters needed)
 _validate_french_text = make_text_validator()
@@ -39,44 +42,7 @@ _UI_STRINGS: Dict[str, str] = {
     "menu.target_to_eng": "Translate French -> English",
 }
 
-_CARD_FRONT_TEMPLATE = """
-<div class="entry-card entry-card--front">
-  <div class="entry-header">
-    <div class="entry-word">{{French}}</div>
-    {{#Type}}<div class="entry-pos">{{Type}}</div>{{/Type}}
-  </div>
-</div>
-""".strip()
-
-# Use double braces so Anki escapes HTML; the exporter now emits plain text lists.
-_CARD_BACK_TEMPLATE = """
-<div class="entry-card entry-card--back">
-  <div class="entry-header">
-    <div class="entry-word">{{French}}</div>
-    {{#Type}}<div class="entry-pos">{{Type}}</div>{{/Type}}
-  </div>
-  {{#English}}
-  <div class="entry-section">
-    <div class="entry-section-title">Definitions</div>
-    <div class="entry-content">{{English}}</div>
-  </div>
-  {{/English}}
-  {{#Example}}
-  <div class="entry-section">
-    <div class="entry-section-title">Examples</div>
-    <div class="entry-content">{{Example}}</div>
-  </div>
-  {{/Example}}
-</div>
-""".strip()
-
-FRENCH_CARD_TEMPLATES = (
-    AnkiCardTemplate(
-        name="Card 1",
-        question_format=_CARD_FRONT_TEMPLATE,
-        answer_format=_CARD_BACK_TEMPLATE,
-    ),
-)
+FRENCH_CARD_TEMPLATES = bilingual_card_templates("French")
 FRENCH_CARD_CSS = get_anki_css("fr")
 FRENCH_CARD_VERSION = compute_template_hash(
     [
