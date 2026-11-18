@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from vocab_builder.core.anki_identity import identity_path, identity_text, load_identity, save_identity
+from vocab_builder.core.anki_identity import (
+    identity_path, identity_text, load_identity, reserve_seeds, save_identity,
+)
 from vocab_builder.core.file_safety import atomic_copy_file, atomic_write_text, file_lock
 from vocab_builder.core.history_logger import TranslationLogger
 from vocab_builder.core.vocab_repository import VocabRepository, choose_insert_position
@@ -152,13 +154,10 @@ def _tracker_payload(data: bytes) -> dict[str, Any]:
 
 
 def _seed(key: str, aliases: dict[str, str]) -> str:
-    seen: set[str] = set()
-    while key in aliases:
-        if key in seen:
-            raise CorrectionError("Anki identity aliases contain a cycle")
-        seen.add(key)
-        key = aliases[key]
-    return key
+    # One hop, as AnkiExporter derives the GUID: an alias value is a seed, not
+    # a key to follow, even when a reintroduced spelling aliases it in turn
+    # ("sąd" -> "sad" beside "sad" -> "sad#2").
+    return aliases.get(key, key)
 
 
 def _guid(seed: str, namespace: str) -> str:
@@ -178,6 +177,9 @@ def _render(
     headword_key: Callable[[str], str],
 ) -> tuple[str, dict[str, Any], dict[str, str], list[dict[str, Any]], list[dict[str, str]]]:
     original = _index(content, entry_cmd)
+    # A live headword spelled like another note's kept seed needs its own seed
+    # before any row reads or retires either identity.
+    aliases = reserve_seeds(aliases, original)
     # The app finds duplicates by the language's headword key, so a corrected
     # headword whose key matches another live entry is still a collision.
     duplicate_keys: dict[str, set[str]] = {}
@@ -202,7 +204,7 @@ def _render(
     next_tracker = dict(tracker)
     order = list(tracker["entry_order"])
     words = set(tracker["words"])
-    next_aliases = {key: _seed(key, aliases) for key in aliases}
+    next_aliases = dict(aliases)
     diffs: list[dict[str, Any]] = []
     retired: list[dict[str, str]] = []
     for row in corrections:

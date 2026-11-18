@@ -18,6 +18,13 @@ in `reports/` and is linked from the rule it supports.
   An export loads it under the catalog lock and supplies it to `AnkiExporter`;
   a selected-words export updates the existing Anki note when its GUID stays
   the same. Anki never deletes notes omitted from a package.
+- A seed is looked up in one hop (`aliases.get(key, key)`), and an alias
+  reserves its seed: the renamed note still owns that GUID in Anki. A live
+  headword whose own lowercased spelling is another alias's seed (`Sad`
+  corrected to `Sąd`, then a new `Sad` added) gets the fresh seed `sad#<n>`,
+  smallest n not in use, written to the identity file by
+  `anki_identity.reserve_seeds` at the first export or correction that sees
+  it, so it survives the older note's retirement. No other seed changes.
 - The tracker records, for every exported word, a fingerprint of the note
   fields Anki received (headword, type, definitions, examples). Pending means
   never exported *or* exported with different fields, so a merge, a

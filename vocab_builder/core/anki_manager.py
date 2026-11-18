@@ -40,7 +40,7 @@ from vocab_builder.anki_exporter import (
 )
 from vocab_builder.compat import get_env
 from vocab_builder.core.file_safety import atomic_write_text, create_backup_snapshot, file_lock
-from vocab_builder.core.anki_identity import identity_path, load_identity
+from vocab_builder.core.anki_identity import identity_path, load_reserved_identity
 from vocab_builder.core.history_logger import default_history_base_dir
 
 if TYPE_CHECKING:
@@ -1143,19 +1143,20 @@ class AnkiExportManager:
 
         self._sync_anki_exporter_genanki_module()
 
+        word_entries = self._vocab_repo.word_entries
+        if not word_entries:
+            self._ui.warning("There are no vocabulary entries to export.")
+            return
         anki_config = replace(
             self._language_config.anki,
-            guid_headword_aliases=load_identity(
-                identity_path(self._exported_words_file, self._language_config.code)
+            guid_headword_aliases=load_reserved_identity(
+                identity_path(self._exported_words_file, self._language_config.code),
+                (self._entry_order_key(entry["word"]) for entry in word_entries.values()),
             ),
         )
         template_version = anki_config.version_id
 
         exporter = AnkiExporter(deck_title, anki_config)
-        word_entries = self._vocab_repo.word_entries
-        if not word_entries:
-            self._ui.warning("There are no vocabulary entries to export.")
-            return
         latex_words = set(word_entries.keys())
         all_exported_words = set(self._exported_words)
         include_all, auto_due_to_version = self._resolve_include_all(

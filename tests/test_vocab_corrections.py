@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from dataclasses import replace
 import hashlib
+import importlib
 import json
+import sqlite3
+import sys
+import zipfile
 import multiprocessing
 import os
 from pathlib import Path
@@ -12,11 +16,13 @@ import pytest
 
 from vocab_builder.anki_exporter import AnkiExportEntry, AnkiExporter
 import vocab_builder.anki_exporter as anki_module
+from vocab_builder.core import VocabBuilder
 from vocab_builder.core.anki_identity import identity_path, load_identity, save_identity
 from vocab_builder.core.vocab_corrections import CorrectionError, run_corrections
 from vocab_builder.core.vocab_repository import VocabRepository
 from vocab_builder.languages import get_language_config
 from vocab_builder.latex_repository import LatexRepository, find_entry_bounds
+from vocab_builder.models import WordEntry
 
 
 def entry(word: str, definition: str = "A cat", word_type: str = "noun") -> dict:
@@ -159,8 +165,8 @@ def test_case_only_rename_adds_no_alias(tmp_path):
     assert load_identity(paths["identity"]) == {}
 
 
-def _note_guid(word: str, aliases: dict[str, str]) -> str:
-    config = get_language_config("fr").anki
+def _note_guid(word: str, aliases: dict[str, str], language: str = "fr") -> str:
+    config = get_language_config(language).anki
     exporter = AnkiExporter("Test", replace(config, guid_headword_aliases=aliases))
     original = anki_module.genanki
     anki_module.genanki = SimpleNamespace(Note=lambda **kwargs: SimpleNamespace(**kwargs))
@@ -198,7 +204,9 @@ def test_collision_and_shared_seed_refuse(tmp_path):
     patch = patch_for(paths, [correction(entry("Chat"), entry("Chien"))])
     with pytest.raises(CorrectionError, match="collides"):
         run(paths, patch, apply=True)
-    save_identity(paths["identity"], {"chien": "chat"})
+    # A live "chat" beside an alias to "chat" is a reintroduced spelling and
+    # gets its own seed; two aliases naming one seed have no such repair.
+    save_identity(paths["identity"], {"chien": "chat", "ânerie": "chat"})
     patch = patch_for(paths, [correction(entry("Chat"), entry("Chat", "A feline"))])
     with pytest.raises(CorrectionError, match="share an Anki GUID"):
         run(paths, patch)
@@ -230,6 +238,74 @@ def test_polish_correction_keeps_diacritics_as_identity(tmp_path):
 
     assert report["status"] == "applied"
     assert parsed_words(paths) == ["Sad", "Sąd", "Zupa"]
+
+def _exported_guids(paths: dict, name: str) -> dict[str, str]:
+    """Export the whole collection through the real builder and genanki."""
+    builder = VocabBuilder(
+        str(paths["vocab"]), provider="gemini", verbose=False, language=paths["language"],
+    )
+    package = paths["root"] / f"{name}.apkg"
+    builder.export_to_anki(include_exported_words=True, output_path=package)
+    with zipfile.ZipFile(package) as archive:
+        database = paths["root"] / f"{name}.sqlite"
+        database.write_bytes(archive.read("collection.anki2"))
+    with sqlite3.connect(database) as connection:
+        rows = connection.execute("SELECT flds, guid FROM notes").fetchall()
+    return {fields.split("\x1f")[0]: guid for fields, guid in rows}
+
+
+def test_reintroduced_spelling_gets_its_own_anki_note(tmp_path, monkeypatch):
+    """"Sad" entered for "court" is corrected to "Sąd" and keeps its note.
+    A genuine "Sad" (orchard) added later must not take that note's GUID,
+    and keeps the fresh one after the court entry is retired."""
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
+    stub_genanki = sys.modules.pop("genanki")
+    try:
+        real_genanki = importlib.import_module("genanki")
+    finally:
+        sys.modules["genanki"] = stub_genanki
+    monkeypatch.setitem(sys.modules, "genanki", real_genanki)
+    monkeypatch.setattr(anki_module, "genanki", real_genanki)
+
+    paths = fixture(tmp_path, words=("Kot", "Sad"), language="pl")
+    court_guid = _exported_guids(paths, "first")["Sad"]
+
+    patch = patch_for(paths, [correction(entry("Sad"), entry("Sąd", "A court"))], "pl-a")
+    run(paths, patch, apply=True)
+    orchard = WordEntry(word="Sad", type="masculine noun", definitions=["An orchard"], examples=[])
+    builder = VocabBuilder(str(paths["vocab"]), provider="gemini", verbose=False, language="pl")
+    assert builder.add_vocab_entries([orchard], on_duplicate="error").count("added") == 1
+
+    guids = _exported_guids(paths, "second")
+    assert guids["Sąd"] == court_guid
+    assert guids["Sad"] != court_guid
+    assert load_identity(paths["identity"]) == {"sąd": "sad", "sad": "sad#2"}
+
+    patch = patch_for(paths, [correction(
+        entry("Kot"), entry("Kot", "A cat"), retire=[entry("Sąd", "A court")], keep="Kot",
+    )], "pl-b")
+    report = run(paths, patch, apply=True)
+    assert report["retired_anki_identities"] == [{"headword": "Sąd", "guid": court_guid}]
+    assert _exported_guids(paths, "third")["Sad"] == guids["Sad"]
+
+
+def test_correction_reserves_a_reintroduced_spelling_before_export(tmp_path):
+    """A correction can run before any export has seen a reintroduced "Sad".
+    It reserves that word's seed first, skipping "sad#2", which the renamed
+    earlier reintroduction "Sadek" still holds, and retiring "Sąd" reports the
+    court note's GUID, not the orchard's."""
+    paths = fixture(tmp_path, words=("Kot", "Sad", "Sadek", "Sąd"), language="pl")
+    save_identity(paths["identity"], {"sąd": "sad", "sadek": "sad#2"})
+    court_guid = _note_guid("Sąd", load_identity(paths["identity"]), "pl")
+
+    patch = patch_for(paths, [correction(
+        entry("Kot"), entry("Kot", "A cat"), retire=[entry("Sąd")], keep="Kot",
+    )], "pl-c")
+    report = run(paths, patch, apply=True)
+
+    assert load_identity(paths["identity"]) == {"sadek": "sad#2", "sad": "sad#3"}
+    assert report["retired_anki_identities"] == [{"headword": "Sąd", "guid": court_guid}]
+
 
 def test_correct_history_once_and_acquisition_unchanged(tmp_path):
     paths = fixture(tmp_path)
