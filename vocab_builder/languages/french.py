@@ -19,11 +19,11 @@ from .latex_templates import (
     FR_TO_ENG_TRANSLATION_PROMPT_TEMPLATE,
 )
 from .base import (
-    CompositionConfig,
     LanguageConfig,
     TranslatorConfig,
     VocabTemplate,
     AnkiConfig,
+    composition_config,
     make_text_validator,
 )
 from .anki_shared_styles import (
@@ -80,85 +80,6 @@ Input data:
 </source_text>
 """.strip()
 
-FRENCH_COMPOSITION_GRADING_PROMPT = """
-You are a rigorous but warm French composition coach for an advanced learner aiming at DALF C2 register awareness.
-
-Grade one short French composition. The learner was asked to use the target words below. Judge whether each target word is used idiomatically in context, not merely present. Give reasons for every correction and one stronger alternative phrasing. Keep the feedback concise and practical.
-
-Target words:
-{target_words}
-
-Vocabulary details from the learner's own list:
-{word_details}
-
-Learner attempt:
-{user_text}
-
-Respond in plain text with exactly these section headers. Do not add any other headers.
-
-Corrected Text:
-<full corrected French attempt>
-
-English Gloss:
-<natural English gloss of the corrected French attempt>
-
-Corrections:
-1. "<learner wording>" -> "<corrected wording>"
-   Why: <brief reason>
-   Alternative: <stronger idiomatic phrasing>
-
-Word Verdicts:
-- <target word>: <correct|incorrect|not_used>
-
-Unknown Word Candidates:
-- <French word not already in the target list>: <English gloss>
-
-Register: <consistent|mixed|too informal|too formal, with a short note if needed>
-
-If there are no corrections or unknown candidates, write "none" in that section. Preserve a coach-with-reasons voice.
-""".strip()
-
-FRENCH_REVERSE_COMPOSITION_GRADING_PROMPT = """
-You are a rigorous but warm French composition coach for an advanced learner aiming at DALF C2 register awareness.
-
-Grade one short French reverse-translation attempt. The learner saw an English sentence from their own vocabulary example and translated it into French. Compare the attempt with the stored French reference, but accept exact matches and idiomatic equivalent variants; the stored reference is not the only acceptable answer. Judge whether the sampled target word is produced idiomatically in context, including natural inflected or closely equivalent forms. Give reasons for every correction and one stronger alternative phrasing. Keep the feedback concise and practical.
-
-Target word:
-{target_word}
-
-Vocabulary details from the learner's own list:
-{word_details}
-
-English source shown to the learner:
-{source_english}
-
-Stored French reference:
-{reference_target}
-
-Learner attempt:
-{user_text}
-
-Respond in plain text with exactly these section headers. Do not add any other headers.
-
-Corrected Text:
-<full corrected French attempt>
-
-Corrections:
-1. "<learner wording>" -> "<corrected wording>"
-   Why: <brief reason>
-   Alternative: <stronger idiomatic phrasing>
-
-Word Verdicts:
-- <target word>: <correct|incorrect|not_used>
-
-Unknown Word Candidates:
-- <French word not already in the target list>: <English gloss>
-
-Register: <consistent|mixed|too informal|too formal, with a short note if needed>
-
-If there are no corrections or unknown candidates, write "none" in that section. Preserve a coach-with-reasons voice.
-""".strip()
-
 
 FRENCH_CONFIG = LanguageConfig(
     code="fr",
@@ -211,10 +132,8 @@ FRENCH_CONFIG = LanguageConfig(
         version_id=FRENCH_CARD_VERSION,
     ),
     headword_key=normalize_word_key,
-    composition=CompositionConfig(
-        grading_prompt_template=FRENCH_COMPOSITION_GRADING_PROMPT,
-        reverse_grading_prompt_template=FRENCH_REVERSE_COMPOSITION_GRADING_PROMPT,
-        ui_title="French Composition Practice",
+    composition=composition_config(
+        "French", "an advanced learner aiming at DALF C2 register awareness"
     ),
     aliases=("fr-fr", "france"),
     auto_prompt_template=FRENCH_AUTO_TRANSLATOR_PROMPT,

@@ -154,6 +154,24 @@ def test_bilingual_card_shows_the_headword_field(language_code):
         assert headword in template.answer_format
 
 
+@pytest.mark.parametrize(
+    ("language_code", "learner"),
+    [
+        ("fr", "an advanced learner aiming at DALF C2 register awareness"),
+        ("de", "an advanced learner aiming at Goethe C2 register awareness"),
+    ],
+)
+def test_composition_coach_grades_at_the_learners_level(language_code, learner):
+    cfg = get_language_config(language_code)
+    persona = (
+        f"You are a rigorous but warm {cfg.display_name} composition coach for {learner}.\n"
+    )
+
+    assert cfg.composition.grading_prompt_template.startswith(persona)
+    assert cfg.composition.reverse_grading_prompt_template.startswith(persona)
+    assert cfg.composition.ui_title == f"{cfg.display_name} Composition Practice"
+
+
 @pytest.mark.parametrize("language_code", ALL_LANGUAGES)
 def test_language_configs_use_shared_css(language_code):
     cfg = get_language_config(language_code)

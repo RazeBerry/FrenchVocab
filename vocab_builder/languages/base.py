@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from string import Template
 from typing import Callable, FrozenSet, Literal, Mapping, Sequence, Tuple
 
 InputValidator = Callable[[str, bool], bool]
@@ -119,6 +120,106 @@ class CompositionConfig:
     max_sentences: int = 4
 
 
+# Composition grading for a bilingual language. ``$language`` names the target
+# language and ``$learner`` completes "composition coach for <learner>"; the
+# brace placeholders are filled per attempt by the composition coach.
+_COMPOSITION_GRADING_PROMPT = Template("""
+You are a rigorous but warm $language composition coach for $learner.
+
+Grade one short $language composition. The learner was asked to use the target words below. Judge whether each target word is used idiomatically in context, not merely present. Give reasons for every correction and one stronger alternative phrasing. Keep the feedback concise and practical.
+
+Target words:
+{target_words}
+
+Vocabulary details from the learner's own list:
+{word_details}
+
+Learner attempt:
+{user_text}
+
+Respond in plain text with exactly these section headers. Do not add any other headers.
+
+Corrected Text:
+<full corrected $language attempt>
+
+English Gloss:
+<natural English gloss of the corrected $language attempt>
+
+Corrections:
+1. "<learner wording>" -> "<corrected wording>"
+   Why: <brief reason>
+   Alternative: <stronger idiomatic phrasing>
+
+Word Verdicts:
+- <target word>: <correct|incorrect|not_used>
+
+Unknown Word Candidates:
+- <$language word not already in the target list>: <English gloss>
+
+Register: <consistent|mixed|too informal|too formal, with a short note if needed>
+
+If there are no corrections or unknown candidates, write "none" in that section. Preserve a coach-with-reasons voice.
+""".strip())
+
+_REVERSE_COMPOSITION_GRADING_PROMPT = Template("""
+You are a rigorous but warm $language composition coach for $learner.
+
+Grade one short $language reverse-translation attempt. The learner saw an English sentence from their own vocabulary example and translated it into $language. Compare the attempt with the stored $language reference, but accept exact matches and idiomatic equivalent variants; the stored reference is not the only acceptable answer. Judge whether the sampled target word is produced idiomatically in context, including natural inflected or closely equivalent forms. Give reasons for every correction and one stronger alternative phrasing. Keep the feedback concise and practical.
+
+Target word:
+{target_word}
+
+Vocabulary details from the learner's own list:
+{word_details}
+
+English source shown to the learner:
+{source_english}
+
+Stored $language reference:
+{reference_target}
+
+Learner attempt:
+{user_text}
+
+Respond in plain text with exactly these section headers. Do not add any other headers.
+
+Corrected Text:
+<full corrected $language attempt>
+
+Corrections:
+1. "<learner wording>" -> "<corrected wording>"
+   Why: <brief reason>
+   Alternative: <stronger idiomatic phrasing>
+
+Word Verdicts:
+- <target word>: <correct|incorrect|not_used>
+
+Unknown Word Candidates:
+- <$language word not already in the target list>: <English gloss>
+
+Register: <consistent|mixed|too informal|too formal, with a short note if needed>
+
+If there are no corrections or unknown candidates, write "none" in that section. Preserve a coach-with-reasons voice.
+""".strip())
+
+
+def composition_config(language: str, learner: str) -> CompositionConfig:
+    """Return composition grading for a bilingual language.
+
+    ``language`` is the display name ("French"). ``learner`` states the
+    learner's level and goal, for example "an advanced learner aiming at DALF
+    C2 register awareness".
+    """
+    return CompositionConfig(
+        grading_prompt_template=_COMPOSITION_GRADING_PROMPT.substitute(
+            language=language, learner=learner
+        ),
+        reverse_grading_prompt_template=_REVERSE_COMPOSITION_GRADING_PROMPT.substitute(
+            language=language, learner=learner
+        ),
+        ui_title=f"{language} Composition Practice",
+    )
+
 @dataclass(frozen=True)
 class VocabTemplate:
     """Configuration for the core vocabulary LaTeX document."""
@@ -189,6 +290,7 @@ class LanguageConfig:
 __all__ = [
     "LanguageConfig",
     "CompositionConfig",
+    "composition_config",
     "TranslatorConfig",
     "VocabTemplate",
     "AnkiConfig",

@@ -69,3 +69,6 @@ in `reports/` and is linked from the rule it supports.
    `anki_shared_styles.py`. The export tracker records the card's template hash,
    so changing an existing language's card or CSS makes its next export include
    every note.
+5. A bilingual language takes composition grading from
+   `composition_config(<display name>, <learner>)` in `base.py`; `<learner>`
+   states the level the coach grades for. French and German grade at C2.
