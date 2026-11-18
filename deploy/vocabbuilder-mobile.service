@@ -15,7 +15,7 @@ Environment=VOCABBUILDER_ANKI_EXPORT_DIR=/var/lib/vocabbuilder/exports
 Environment=VOCABBUILDER_SKIP_KEYRING=1
 Environment=VOCABBUILDER_PROVIDER=gemini
 EnvironmentFile=/etc/vocabbuilder/mobile.env
-ExecStart=/opt/vocabbuilder/.venv/bin/vocabbuilder-mobile --host 127.0.0.1 --port 8080 --languages fr,de,en --default-language fr --provider ${VOCABBUILDER_PROVIDER} --config-dir /var/lib/vocabbuilder
+ExecStart=/opt/vocabbuilder/.venv/bin/vocabbuilder-mobile --host 127.0.0.1 --port 8080 --languages fr,de,en,pl --default-language fr --provider ${VOCABBUILDER_PROVIDER} --config-dir /var/lib/vocabbuilder
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=20

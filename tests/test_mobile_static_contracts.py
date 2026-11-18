@@ -17,6 +17,8 @@ from xml.etree import ElementTree
 
 import pytest
 
+from vocab_builder.languages import available_language_codes
+
 STATIC = Path(__file__).resolve().parents[1] / "vocab_builder" / "mobile" / "static"
 
 
@@ -721,6 +723,49 @@ def _rule(styles: str, selector: str) -> str:
     )
     assert match, f"no rule found for {selector}"
     return match.group("body")
+
+
+def _hex_token(block: str, name: str) -> str:
+    match = re.search(rf"{re.escape(name)}:\s*(#[0-9a-f]{{6}});", block)
+    assert match, f"{name} is not a hex token in this theme"
+    return match.group(1)
+
+
+def _contrast(first: str, second: str) -> float:
+    def luminance(color: str) -> float:
+        channels = [int(color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+        r, g, b = (
+            c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels
+        )
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    high, low = sorted((luminance(first), luminance(second)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+@pytest.mark.parametrize("code", available_language_codes())
+def test_every_registered_language_owns_its_hue_in_both_themes(styles, code):
+    """`:root` names one collection's hue as the default, so a collection the
+    stylesheet forgot does not break: it silently wears that collection's hue
+    in every accent, its own pill included. Iterating the registry makes the
+    next language fail here instead. Each hue also meets the standard the
+    others were tuned to, 4.5:1 against the page, the card and the label it
+    carries on a filled control, in both themes."""
+    light = _rule(styles, ":root")
+    dark = _rule(styles, ':root[data-theme="dark"]')
+    for theme in (light, dark):
+        hue = _hex_token(theme, f"--hue-{code}")
+        for ground in ("--bg", "--card", "--on-hue"):
+            assert _contrast(hue, _hex_token(theme, ground)) >= 4.5, (code, ground)
+    assert f"--lang-hue: var(--hue-{code})" in _rule(styles, f'.lang[data-lang="{code}"]')
+
+    default = re.search(r"--hue: var\(--hue-(\w+)\);", light)
+    assert default and default.group(1) in available_language_codes()
+    if code == default.group(1):
+        return
+    selected = _rule(styles, f':root[data-language="{code}"]')
+    assert f"--hue: var(--hue-{code})" in selected and "--hue-wash:" in selected
+    assert "--hue-wash:" in _rule(styles, f':root[data-theme="dark"][data-language="{code}"]')
 
 
 def test_type_chips_keep_exactly_the_rows_their_count_promised(library_view):

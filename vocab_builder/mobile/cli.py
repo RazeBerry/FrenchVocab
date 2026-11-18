@@ -22,8 +22,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument(
         "--languages",
-        default="fr,de,en",
-        help="Comma-separated language collections to expose (default: fr,de,en).",
+        default="fr,de,en,pl",
+        help="Comma-separated language collections to expose (default: fr,de,en,pl).",
     )
     parser.add_argument(
         "--language",

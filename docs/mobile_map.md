@@ -13,6 +13,7 @@ invariants; if a rule is written here, move it to its owner.
 | Change the glossary (Library view) | `docs/mobile_glossary.md` |
 | Write, retry or replay a phone save | `docs/persistence.md` |
 | Deploy or reach the phone | `docs/MOBILE.md`, `docs/operations.md` |
+| Read why a header, hue or badge measurement is what it is | `reports/mobile/` |
 
 ## Where the code lives
 - `vocab_builder/mobile/` contains the optional FastAPI web interface, headless mobile use-case adapters, durable request state, and its no-build static front end.

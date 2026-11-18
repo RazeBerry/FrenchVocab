@@ -13,8 +13,8 @@ Mac browser / Rich CLI ─┘
 ## Everyday use
 
 - On iPhone, connect Tailscale and open the private HTTPS address. Select
-  French, German, or English from the header. Safari's **Share → Add to Home
-  Screen** makes it behave like a small standalone app.
+  French, German, English, or Polish from the header. Safari's **Share → Add
+  to Home Screen** makes it behave like a small standalone app.
 - Capture has the same AI preview, spelling correction, duplicate rejection,
   explicit merge/variant choices, sentence routing, atomic save, history, and
   Anki ordering as the CLI. Translate, Library, Practice, and Tools expose the

@@ -27,6 +27,7 @@
   --hue-fr: #1f3a6e;
   --hue-de: #8a5a20;
   --hue-en: #6b2b4f;
+  --hue-pl: #115664;
   --hue: var(--hue-fr);
   --on-hue: #fdfdfb;
   --hue-wash: rgba(31, 58, 110, 0.09);
@@ -81,6 +82,7 @@
 
 :root[data-language="de"] { --hue: var(--hue-de); --hue-wash: rgba(138, 90, 32, 0.1); }
 :root[data-language="en"] { --hue: var(--hue-en); --hue-wash: rgba(107, 43, 79, 0.09); }
+:root[data-language="pl"] { --hue: var(--hue-pl); --hue-wash: rgba(17, 86, 100, 0.09); }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -96,10 +98,11 @@
   --line-strong: rgba(236, 231, 222, 0.24);
 
   /* --hue is indirection: redefining the per-language values here is enough,
-     because var() resolves against whatever --hue-fr/de/en cascade to. */
+     because var() resolves against whatever --hue-fr/de/en/pl cascade to. */
   --hue-fr: #7ea3dc;
   --hue-de: #d9a05a;
   --hue-en: #cf87ab;
+  --hue-pl: #7ac1d2;
   --on-hue: #17130f;
   --hue-wash: rgba(126, 163, 220, 0.14);
 
@@ -113,6 +116,7 @@
 
 :root[data-theme="dark"][data-language="de"] { --hue-wash: rgba(217, 160, 90, 0.15); }
 :root[data-theme="dark"][data-language="en"] { --hue-wash: rgba(207, 135, 171, 0.15); }
+:root[data-theme="dark"][data-language="pl"] { --hue-wash: rgba(122, 193, 210, 0.15); }
 
 * { box-sizing: border-box; }
 
@@ -194,14 +198,18 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 /* ---------------- top bar: colour carries the language ---------------- */
+/* The count is the one item that gives way: at 320px, beside four
+   collections, it stacks its number over its noun. The switch, the theme
+   toggle and the connection dot keep their widths, since shrinking them only
+   narrowed their tap targets. */
 .bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   padding: 6px 2px 14px;
 }
 
-.langs { display: flex; align-items: center; gap: 2px; }
+.langs { display: flex; flex: none; align-items: center; gap: 2px; }
 
 /* Each collection is named by its code, set in its own hue, so the switch
    reads without a tap; the pressed one fills with the hue. Three bare dots
@@ -221,6 +229,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .lang[data-lang="fr"] { --lang-hue: var(--hue-fr); }
 .lang[data-lang="de"] { --lang-hue: var(--hue-de); }
 .lang[data-lang="en"] { --lang-hue: var(--hue-en); }
+.lang[data-lang="pl"] { --lang-hue: var(--hue-pl); }
 .lang-code {
   display: grid;
   place-items: center;
@@ -259,6 +268,7 @@ button { -webkit-tap-highlight-color: transparent; }
    rather than introducing a second icon vocabulary. */
 .theme {
   display: grid;
+  flex: none;
   place-items: center;
   width: 34px;
   min-height: var(--tap);
@@ -281,6 +291,7 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .conn {
   display: grid;
+  flex: none;
   place-items: center;
   width: 30px;
   min-height: var(--tap);

@@ -131,6 +131,28 @@ def test_mobile_service_keeps_one_request_state_worker() -> None:
     assert "--workers" not in unit
 
 
+def test_mobile_service_serves_every_registered_collection() -> None:
+    """The unit names its collections explicitly, so a language added to the
+    registry would otherwise be served everywhere except the phone. Its
+    arguments go through the real parser."""
+    import shlex
+
+    from vocab_builder.languages import available_language_codes
+    from vocab_builder.mobile.cli import build_parser
+
+    unit = (ROOT / "deploy" / "vocabbuilder-mobile.service").read_text(
+        encoding="utf-8"
+    )
+    exec_start = next(
+        line.split("=", 1)[1] for line in unit.splitlines() if line.startswith("ExecStart=")
+    )
+    arguments = shlex.split(exec_start.replace("${VOCABBUILDER_PROVIDER}", "gemini"))[1:]
+    args = build_parser().parse_args(arguments)
+
+    assert sorted(args.languages.split(",")) == available_language_codes()
+    assert args.default_language == "fr"
+
+
 def test_deployment_keeps_rotatable_credentials_out_of_systemd_environment() -> None:
     installer = (ROOT / "scripts" / "deploy" / "install_mobile_server.sh").read_text(
         encoding="utf-8"

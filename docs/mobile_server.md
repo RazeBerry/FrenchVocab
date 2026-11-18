@@ -8,8 +8,8 @@ in `reports/` and is linked from the rule it supports.
 # Private mobile/web interface (requires the [mobile] extra)
 pip install -e ".[mobile]"
 vocabbuilder-mobile --help
-vocabbuilder-mobile --languages fr,de,en --default-language fr
-vocabbuilder-mobile --languages fr,de,en --allowed-tailscale-user you@example.com
+vocabbuilder-mobile --languages fr,de,en,pl --default-language fr
+vocabbuilder-mobile --languages fr,de,en,pl --allowed-tailscale-user you@example.com
 vocabbuilder-mobile --language fr --latex-file ./FrenchVocab.tex
 ```
 

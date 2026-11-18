@@ -1417,6 +1417,29 @@ def test_polish_saves_insert_in_polish_alphabetical_order(tmp_path, monkeypatch)
     assert polish_headwords(tmp_path) == POLISH_ORDER
 
 
+def test_polish_glossary_files_each_polish_letter_under_its_base_letter(
+    tmp_path, monkeypatch
+):
+    """The rail stays A-Z: the Polish key files Ć, Ł, Ó, Ś, Ź and Ż under
+    their base letters, after the plain words, and nothing falls to "#"."""
+    service = polish_service(tmp_path, monkeypatch)
+    seed_entries(
+        service,
+        [
+            (word, "masculine noun", "Gloss.")
+            for word in ("Łoś", "Lot", "Ćma", "Cud", "Ósemka", "Śnieg", "Żaba", "Źle", "Zupa")
+        ],
+    )
+
+    payload = get_api(create_app(service), "/api/library/index?language=pl").json()
+
+    assert [(item["word"], item["letter"]) for item in payload["items"]] == [
+        ("Cud", "C"), ("Ćma", "C"), ("Lot", "L"), ("Łoś", "L"), ("Ósemka", "O"),
+        ("Śnieg", "S"), ("Zupa", "Z"), ("Źle", "Z"), ("Żaba", "Z"),
+    ]
+    assert payload["letters"] == {"C": 2, "L": 2, "O": 1, "S": 1, "Z": 3}
+
+
 def test_polish_entry_round_trips_through_save_and_reload(tmp_path, monkeypatch):
     """Polish letters, „…” quotes and the aspect partner survive the LaTeX file."""
     service = polish_service(tmp_path, monkeypatch)

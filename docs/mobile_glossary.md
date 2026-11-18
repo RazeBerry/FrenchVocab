@@ -119,9 +119,15 @@ in `reports/` and is linked from the rule it supports.
   server's ligature table in JavaScript fixed the symptom by duplicating the
   rule. The static contract test now fails if `entry-list.js` normalizes a
   word to find its letter.
-- `TYPE_ABBREVIATIONS` is matched longest-first so `separable verb` does not collapse to `v.` and `adjective/noun` does not collapse to `n.`. The French collection alone holds 19 distinct type strings, inconsistently cased, so matching lowercases first; unrecognised values fall back to a truncation rather than being dropped.
+- `TYPE_ABBREVIATIONS` is a prefix match on the lowercased type, tried in row order, so a row shadows every later row whose key it prefixes and a longer key must come first. No key prefixes another, so `separable verb` and `masculine noun` reach their own rows rather than `v.` or `n.`, and `adjective/noun` takes `adj.`. The French collection alone holds 19 distinct type strings, inconsistently cased, so matching lowercases first; unrecognised values fall back to a truncation rather than being dropped.
 - The glossary abbreviates `preposition`, `numeral`, `interjection`,
   `determiner`, `particle`, and `reflexive verb` as `prep.`, `num.`,
   `interj.`, `det.`, `part.`, and `v. refl.`; keep the reflexive form ahead of
   the bare `verb` prefix.
+- Polish types carry gender and aspect, and the badge keeps them: `masculine
+  noun`, `feminine noun`, `neuter noun` and `plural noun` read `m.`, `f.`,
+  `n.` and `pl.`; `imperfective verb`, `perfective verb` and `biaspectual
+  verb` read `v. impf.`, `v. pf.` and `v. bi.`. Without rows they truncated
+  to `masc.`, `impe.` and `bias.`. The widest, `V. IMPF.`, is narrower than
+  `V. PRON.`, so the 3.5rem badge track still holds every badge.
 - `Unknown` is the parser's placeholder for a missing part of speech, not a part of speech. `knownType` strips it before either the badge or the full-type heading is built, so the badge is simply absent — it used to render as `UNKN.` on real entries.

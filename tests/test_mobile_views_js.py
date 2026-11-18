@@ -520,3 +520,28 @@ out.stored = store["vocabbuilder-capture-draft-fr"];
 """)
 
     assert out == {"value": "brouillon", "stored": "brouillon"}
+
+
+def test_polish_types_get_their_own_badges_and_shared_rows_still_fire():
+    """The table matches with startsWith in row order, so a row that prefixes a
+    later one would steal its types. Every Polish type renders its own badge
+    through the real row renderer, in any case, and the shared rows still win
+    for the shared types."""
+    out = _run("""
+const { renderEntries } = await import(`${STATIC}/entry-list.js`);
+const types = [
+  "masculine noun", "Feminine noun", "NEUTER NOUN", "plural noun",
+  "imperfective verb", "perfective verb", "biaspectual verb",
+  "noun", "verb", "pronoun", "preposition", "separable verb",
+];
+const container = document.createElement("div");
+const rows = renderEntries(container, types.map((word_type, index) => (
+  { word: `word${index}`, word_type, gloss: "Gloss." }
+)));
+out.badges = rows.map((row) => row.children.find((child) => child.className === "index-type")?.textContent);
+""")
+
+    assert out["badges"] == [
+        "m.", "f.", "n.", "pl.", "v. impf.", "v. pf.", "v. bi.",
+        "n.", "v.", "pron.", "prep.", "v. sep.",
+    ]

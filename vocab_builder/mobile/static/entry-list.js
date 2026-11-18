@@ -11,7 +11,11 @@ const CALENDAR_DAY = new Intl.DateTimeFormat(undefined, {
    inside abbreviateType allocated them again for every word in every render. */
 const TYPE_ABBREVIATIONS = [
   ["separable verb", "v. sep."], ["pronominal verb", "v. pron."],
-  ["reflexive verb", "v. refl."], ["preposition", "prep."],
+  ["reflexive verb", "v. refl."],
+  ["masculine noun", "m."], ["feminine noun", "f."], ["neuter noun", "n."],
+  ["plural noun", "pl."], ["imperfective verb", "v. impf."],
+  ["perfective verb", "v. pf."], ["biaspectual verb", "v. bi."],
+  ["preposition", "prep."],
   ["interjection", "interj."], ["determiner", "det."], ["particle", "part."],
   ["numeral", "num."],
   ["conjunction", "conj."], ["expression", "expr."],
