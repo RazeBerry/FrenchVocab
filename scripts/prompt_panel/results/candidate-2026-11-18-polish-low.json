@@ -1,0 +1,441 @@
+{
+  "prompts": "candidate",
+  "thinking": "low",
+  "model": "gemini-4-hydrogen",
+  "run_at": "2026-11-18T11:31:14+00:00",
+  "summary": {
+    "passed": 10,
+    "count_ok": 10,
+    "notes_ok": 10,
+    "first_ok": 10,
+    "first_clean": 10,
+    "required_ok": 10,
+    "nothing_invented": 10,
+    "corrected_ok": 10,
+    "type_ok": 10,
+    "parsed_ok": 10,
+    "words": 10,
+    "hedged_definitions": 0,
+    "overlapping_pairs": 0,
+    "total_senses": 10,
+    "usage_notes": 9,
+    "mean_seconds": 5.5
+  },
+  "results": [
+    {
+      "language": "pl",
+      "word": "zolw",
+      "corrected": "żółw",
+      "word_type": [
+        "masculine noun"
+      ],
+      "definitions": [
+        "Turtle or tortoise.",
+        "Usage note: As a masculine animate noun, its accusative singular is \"żółwia\" (e.g., \"mam żółwia\")."
+      ],
+      "examples": [
+        [
+          "Mały żółw idzie bardzo wolno.",
+          "The little turtle is walking very slowly."
+        ],
+        [
+          "Moja siostra ma w domu żółwia.",
+          "My sister has a turtle at home."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 5.7,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: Misspelled (missing Polish diacritics); the attested lemma is \"żółw\".\nCorrectly Spelt Word: żółw\nWord Type: masculine noun\nDefinitions:\na. Turtle or tortoise.\nb. Usage note: As a masculine animate noun, its accusative singular is \"żółwia\" (e.g., \"mam żółwia\").\nExamples:\n1. Mały żółw idzie bardzo wolno.\n(The little turtle is walking very slowly.)\n2. Moja siostra ma w domu żółwia.\n(My sister has a turtle at home.)"
+    },
+    {
+      "language": "pl",
+      "word": "sad",
+      "corrected": "sad",
+      "word_type": [
+        "masculine noun"
+      ],
+      "definitions": [
+        "Orchard; a piece of land where fruit trees are grown."
+      ],
+      "examples": [
+        [
+          "Dziadek ma duży sad za domem.",
+          "Grandpa has a big orchard behind the house."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 5.4,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: sad\nWord Type: masculine noun\nDefinitions:\na. Orchard; a piece of land where fruit trees are grown.\nExamples:\n1. Dziadek ma duży sad za domem.\n(Grandpa has a big orchard behind the house.)"
+    },
+    {
+      "language": "pl",
+      "word": "mężczyzną",
+      "corrected": "mężczyzna",
+      "word_type": [
+        "masculine noun"
+      ],
+      "definitions": [
+        "Man; an adult male human being.",
+        "Usage note: Even though \"mężczyzna\" ends in -a, it is grammatically masculine and takes masculine adjectives (e.g., \"dobry mężczyzna\")."
+      ],
+      "examples": [
+        [
+          "Ten mężczyzna czyta książkę.",
+          "This man is reading a book."
+        ],
+        [
+          "Dobry mężczyzna zawsze pomaga innym.",
+          "A good man always helps others."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 9.8,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: mężczyzna\nWord Type: masculine noun\nDefinitions:\na. Man; an adult male human being.\nb. Usage note: Even though \"mężczyzna\" ends in -a, it is grammatically masculine and takes masculine adjectives (e.g., \"dobry mężczyzna\").\nExamples:\n1. Ten mężczyzna czyta książkę.\n(This man is reading a book.)\n2. Dobry mężczyzna zawsze pomaga innym.\n(A good man always helps others.)"
+    },
+    {
+      "language": "pl",
+      "word": "mieście",
+      "corrected": "miasto",
+      "word_type": [
+        "neuter noun"
+      ],
+      "definitions": [
+        "City or town.",
+        "Usage note: The locative form is \"mieście\", used after \"w\" (in): \"w mieście\" (in the city)."
+      ],
+      "examples": [
+        [
+          "Warszawa to duże miasto.",
+          "Warsaw is a big city."
+        ],
+        [
+          "Mieszkam w mieście.",
+          "I live in the city."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 3.6,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: miasto\nWord Type: neuter noun\nDefinitions:\na. City or town.\nb. Usage note: The locative form is \"mieście\", used after \"w\" (in): \"w mieście\" (in the city).\nExamples:\n1. Warszawa to duże miasto.\n(Warsaw is a big city.)\n2. Mieszkam w mieście.\n(I live in the city.)"
+    },
+    {
+      "language": "pl",
+      "word": "ręce",
+      "corrected": "ręka",
+      "word_type": [
+        "feminine noun"
+      ],
+      "definitions": [
+        "Hand or arm.",
+        "Usage note: The plural is irregular: ręce (hands), rąk (of hands)."
+      ],
+      "examples": [
+        [
+          "Boli mnie prawa ręka.",
+          "My right hand hurts."
+        ],
+        [
+          "Umyj ręce przed obiadem.",
+          "Wash your hands before dinner."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 3.9,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: ręka\nWord Type: feminine noun\nDefinitions:\na. Hand or arm.\nb. Usage note: The plural is irregular: ręce (hands), rąk (of hands).\nExamples:\n1. Boli mnie prawa ręka.\n(My right hand hurts.)\n2. Umyj ręce przed obiadem.\n(Wash your hands before dinner.)"
+    },
+    {
+      "language": "pl",
+      "word": "poszedł",
+      "corrected": "pójść",
+      "word_type": [
+        "perfective verb"
+      ],
+      "definitions": [
+        "To go on foot. Imperfective: iść.",
+        "Usage note: The past tense is irregular, for example poszedł (he went) and poszła (she went)."
+      ],
+      "examples": [
+        [
+          "Marek poszedł do sklepu.",
+          "Marek went to the store."
+        ],
+        [
+          "Anna poszła do pracy.",
+          "Anna went to work."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 5.0,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: pójść\nWord Type: perfective verb\nDefinitions:\na. To go on foot. Imperfective: iść.\nb. Usage note: The past tense is irregular, for example poszedł (he went) and poszła (she went).\nExamples:\n1. Marek poszedł do sklepu.\n(Marek went to the store.)\n2. Anna poszła do pracy.\n(Anna went to work.)"
+    },
+    {
+      "language": "pl",
+      "word": "pisać",
+      "corrected": "pisać",
+      "word_type": [
+        "imperfective verb"
+      ],
+      "definitions": [
+        "To write. Perfective: napisać.",
+        "Usage note: Present tense forms use the stem pisz-: piszę (I write), piszesz (you write), pisze (he or she writes)."
+      ],
+      "examples": [
+        [
+          "Piszę długi list do kolegi.",
+          "I am writing a long letter to a friend."
+        ],
+        [
+          "Ona często pisze wiadomości do mamy.",
+          "She often writes messages to her mom."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 5.1,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: pisać\nWord Type: imperfective verb\nDefinitions:\na. To write. Perfective: napisać.\nb. Usage note: Present tense forms use the stem pisz-: piszę (I write), piszesz (you write), pisze (he or she writes).\nExamples:\n1. Piszę długi list do kolegi.\n(I am writing a long letter to a friend.)\n2. Ona często pisze wiadomości do mamy.\n(She often writes messages to her mom.)"
+    },
+    {
+      "language": "pl",
+      "word": "wziąć",
+      "corrected": "wziąć",
+      "word_type": [
+        "perfective verb"
+      ],
+      "definitions": [
+        "To take. Imperfective: brać.",
+        "Usage note: Irregular conjugation: future \"wezmę, weźmiesz\"; past \"wziąłem, wzięła\". Takes the accusative case."
+      ],
+      "examples": [
+        [
+          "Muszę wziąć parasol.",
+          "I have to take an umbrella."
+        ],
+        [
+          "Wezmę tę książkę.",
+          "I will take this book."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 5.3,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: wziąć\nWord Type: perfective verb\nDefinitions:\na. To take. Imperfective: brać.\nb. Usage note: Irregular conjugation: future \"wezmę, weźmiesz\"; past \"wziąłem, wzięła\". Takes the accusative case.\nExamples:\n1. Muszę wziąć parasol.\n(I have to take an umbrella.)\n2. Wezmę tę książkę.\n(I will take this book.)"
+    },
+    {
+      "language": "pl",
+      "word": "bać",
+      "corrected": "bać się",
+      "word_type": [
+        "imperfective verb"
+      ],
+      "definitions": [
+        "To be afraid; to fear.",
+        "Usage note: Takes the genitive case for the thing or person feared, or an infinitive verb."
+      ],
+      "examples": [
+        [
+          "Dziecko boi się ciemności.",
+          "The child is afraid of the dark."
+        ],
+        [
+          "Boję się dużego psa.",
+          "I am afraid of the big dog."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 4.4,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: bać się\nWord Type: imperfective verb\nDefinitions:\na. To be afraid; to fear.\nb. Usage note: Takes the genitive case for the thing or person feared, or an infinitive verb.\nExamples:\n1. Dziecko boi się ciemności.\n(The child is afraid of the dark.)\n2. Boję się dużego psa.\n(I am afraid of the big dog.)"
+    },
+    {
+      "language": "pl",
+      "word": "myć",
+      "corrected": "myć",
+      "word_type": [
+        "imperfective verb"
+      ],
+      "definitions": [
+        "To wash a body part, dishes, or a surface with water. Perfective: umyć.",
+        "Usage note: Use myć się to mean washing oneself, and prać for washing clothes."
+      ],
+      "examples": [
+        [
+          "Myję ręce przed obiadem.",
+          "I wash my hands before dinner."
+        ],
+        [
+          "Rano myję się ciepłą wodą.",
+          "In the morning I wash myself with warm water."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 6.4,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: myć\nWord Type: imperfective verb\nDefinitions:\na. To wash a body part, dishes, or a surface with water. Perfective: umyć.\nb. Usage note: Use myć się to mean washing oneself, and prać for washing clothes.\nExamples:\n1. Myję ręce przed obiadem.\n(I wash my hands before dinner.)\n2. Rano myję się ciepłą wodą.\n(In the morning I wash myself with warm water.)"
+    }
+  ]
+}

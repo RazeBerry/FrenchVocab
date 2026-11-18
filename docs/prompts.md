@@ -5,7 +5,7 @@ in `reports/` and is linked from the rule it supports.
 
 ## Prompt panel
 - `scripts/prompt_panel/` is the yardstick for the vocabulary generation
-  prompts: `panel.json` names fifty words with the sense count, first sense,
+  prompts: `panel.json` names sixty words with the sense count, first sense,
   word type or lemma a careful reader expects and the reason for each, `run_panel.py`
   sends them through the same template, provider call and parser the app
   uses and scores the result, and `results/` keeps every run, rejected
@@ -22,6 +22,12 @@ in `reports/` and is linked from the rule it supports.
   senses and forced future-tense examples from the old three-slot prompt.
   History: `reports/prompt_panel/2026-09-03_one_sense_contract.md` and
   `reports/prompt_panel/2026-09-24_audit_panel50.md`.
+- The Polish candidate serves an A1-A2 beginner, and its panel rows state what
+  a beginner needs. Its beginner rules (reader, senses, examples) live in
+  candidate fields that French and German leave empty, so their candidates
+  stay byte-identical to the shipped literals (`tests/test_prompt_panel.py`).
+  The scorer tokenizes Polish letters as letters and ignores the aspect
+  labels. Evidence: `reports/prompt_panel/2026-11-18_polish_first_measurement.md`.
 
 ## Generation contract
 - French and German word and expression generation share one measured

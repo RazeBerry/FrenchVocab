@@ -5,6 +5,8 @@ is the editorial rule: one sense by default, an attestation bar for any
 further sense, an explicit order, a ban on hedged definitions, and a reading
 diet of contemporary press and literary prose instead of film and comedy.
 The German template is the French one ported, not the old three-slot form.
+The Polish template serves a beginner: three fields that French and German
+leave empty narrow the reader, the senses and the examples for that learner.
 """
 
 _HEAD = """
@@ -16,7 +18,7 @@ Detected Input Type: {{detected_type}}  # one of: word | expression | sentence
 Before generating output, choose one lexical identity for the item: one headword
 or fixed expression with one part of speech. Then decide what a careful reader of
 contemporary {language} press and literary prose, who also hears everyday
-conversation, actually meets.
+conversation, actually meets.{reader_rule}
 
 Output exactly the following sections, in this order, with these labels. Do not include any extra sections or commentary.
 
@@ -80,7 +82,7 @@ Definitions:
   whole reading diet; a political, legal, police, or business sense does not
   automatically come first.
 - Mark register where relevant ({register_markers}). Avoid slash-separated
-  synonym stacks and parenthetical alternatives.
+  synonym stacks and parenthetical alternatives.{sense_rule}
 
 Examples:
 - If sentence: provide exactly three {language} paraphrases or variants of the
@@ -97,7 +99,7 @@ Examples:
   required prepositions, and reflexive pronouns, and it must match the sense it
   illustrates.
 - Render the English idiomatically at the same register as the {language}.
-  Avoid calques, clefts, unnecessary passives, and inflated wording.
+  Avoid calques, clefts, unnecessary passives, and inflated wording.{example_rule}
 
 Formatting rules for every example:
 1. First line: the {language} sentence.
@@ -140,6 +142,9 @@ FRENCH = _build(
     reflexive_examples='"souvenir" as a verb is "se souvenir"; "laver" stays "laver"',
     false_friends='"actuel" is not "actual", "éventuellement" is not "eventually"',
     register_markers="familier, soutenu, littéraire, vieilli, argot",
+    reader_rule="",
+    sense_rule="",
+    example_rule="",
     type_examples=(
         '- "manger" → verb\n- "malgré" → preposition\n- "quelqu\'un" → pronoun\n'
         '- "avoir faim" → expression\n- "Il pleuvra demain." → sentence'
@@ -168,10 +173,73 @@ GERMAN = _build(
     reflexive_examples='"schämen" is "sich schämen"; "waschen" stays "waschen"',
     false_friends='"eventuell" is not "eventually", "sensibel" is not "sensible"',
     register_markers="umgangssprachlich, gehoben, derb, veraltet",
+    reader_rule="",
+    sense_rule="",
+    example_rule="",
     type_examples=(
         '- "essen" → verb\n- "trotz" → preposition\n- "obwohl" → conjunction\n'
         '- "sich schämen" → reflexive verb\n- "gute Laune" → expression\n'
         '- "Morgen wird es regnen." → sentence'
+    ),
+)
+
+POLISH = _build(
+    persona="and patient teacher of Polish to English-speaking beginners (A1-A2)",
+    language="Polish",
+    headword_rule=(
+        "provide the canonical base form: verb infinitive, noun in the nominative\n"
+        "  singular (nominative plural for a noun with no singular), adjective in the\n"
+        "  masculine nominative singular, or fixed expression. If the input is an\n"
+        "  inflected form or is misspelled, the headword is the lemma and the spelling\n"
+        "  check says so. Keep the aspect of the input: a perfective form gives the\n"
+        "  perfective infinitive, never its imperfective partner, and the reverse.\n"
+        "  Restore missing Polish letters only when the bare spelling is not itself a\n"
+        "  Polish word: \"zrodlo\" becomes \"źródło\", but \"kat\" (executioner) stays \"kat\"."
+    ),
+    word_types=(
+        "masculine noun, feminine noun, neuter noun, plural noun, imperfective verb,\n"
+        "  perfective verb, biaspectual verb, adjective, adverb, pronoun, numeral,\n"
+        "  preposition, conjunction, particle, interjection, expression"
+    ),
+    type_rule=(
+        "\n- For a noun, choose the gender its agreement shows, not the one its ending\n"
+        "  suggests; choose plural noun only for a noun with no singular. For a verb,\n"
+        "  choose the aspect of the headword itself, and biaspectual verb only when one\n"
+        "  form serves both aspects. Never put \"się\" in the type."
+    ),
+    reflexive_name="reflexive",
+    reflexive_examples='"śmiać" is "śmiać się"; "golić" stays "golić"',
+    false_friends='"aktualny" is not "actual", "ewentualnie" is not "eventually"',
+    register_markers="potoczny, książkowy, oficjalny, przestarzały, wulgarny",
+    reader_rule=(
+        "\nThis learner is a beginner (A1-A2). Wherever these rules speak of that reader,\n"
+        "read a beginner who meets Polish in everyday life, a coursebook, or simple\n"
+        "texts; a sense or example that only press or literary prose would show fails\n"
+        "that test."
+    ),
+    sense_rule=(
+        "\n- For this beginner, give at most two senses, and a third entry only as the\n"
+        "  usage note. Write every sense in plain English a beginner understands.\n"
+        "- For a verb with an aspect partner, end sense \"a.\" with \"Perfective: <infinitive>.\"\n"
+        "  or \"Imperfective: <infinitive>.\", naming the partner of the other aspect. A\n"
+        "  later sense names a partner only when it differs from the one in sense \"a.\".\n"
+        "  A verb with no partner names none.\n"
+        "- When a usage note helps, give it the single most useful fact for a beginner:\n"
+        "  an irregular form, the case the word takes, or a common phrase."
+    ),
+    example_rule=(
+        "\n- Keep each example short and simple for a beginner: one clause where possible,\n"
+        "  everyday words, mostly present tense, and natural rather than forced. A\n"
+        "  perfective verb has no present tense, so use its past or its simple future.\n"
+        "  Check the case each verb and preposition takes, the genitive after negation,\n"
+        "  the agreement of adjectives and past-tense forms, and that the verb in the\n"
+        "  example keeps the headword's aspect."
+    ),
+    type_examples=(
+        '- "czytać" → imperfective verb\n- "kupić" → perfective verb\n'
+        '- "śmiać się" → imperfective verb\n- "kot" → masculine noun\n'
+        '- "drzwi" → plural noun\n- "mimo" → preposition\n'
+        '- "Jutro będzie padać." → sentence'
     ),
 )
 
@@ -203,6 +271,6 @@ or any other placeholder line.
 """
 
 # The candidate template for each panel language, keyed by language code.
-TEMPLATES = {"fr": FRENCH, "de": GERMAN}
+TEMPLATES = {"fr": FRENCH, "de": GERMAN, "pl": POLISH}
 
-__all__ = ["FRENCH", "GERMAN", "MERGE", "TEMPLATES"]
+__all__ = ["FRENCH", "GERMAN", "MERGE", "POLISH", "TEMPLATES"]

@@ -36,7 +36,7 @@ from vocab_builder.llm_client import DEFAULT_THINKING_LEVEL  # noqa: E402
 STOP = set(
     "the a an of to or in on for and with by is be as at from that this something "
     "someone one used often usually into out up its it his her their who which when "
-    "person thing".split()
+    "person thing perfective imperfective".split()
 )
 
 
@@ -58,7 +58,7 @@ def generate(client: Any, prompt: str, thinking: str = DEFAULT_THINKING_LEVEL) -
 
 
 def content_words(text: str) -> set[str]:
-    return {w for w in re.findall(r"[a-zà-ÿ]+", text.lower()) if w not in STOP and len(w) > 2}
+    return {w for w in re.findall(r"[^\W\d_]+", text.lower()) if w not in STOP and len(w) > 2}
 
 
 def is_usage_note(definition: str) -> bool:
