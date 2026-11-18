@@ -1,0 +1,466 @@
+{
+  "prompts": "baseline",
+  "thinking": "medium",
+  "model": "gemini-4-hydrogen",
+  "run_at": "2026-11-18T00:32:25+00:00",
+  "summary": {
+    "passed": 8,
+    "count_ok": 9,
+    "notes_ok": 10,
+    "first_ok": 9,
+    "first_clean": 10,
+    "required_ok": 9,
+    "nothing_invented": 10,
+    "corrected_ok": 10,
+    "type_ok": 10,
+    "parsed_ok": 10,
+    "words": 10,
+    "hedged_definitions": 0,
+    "overlapping_pairs": 0,
+    "total_senses": 18,
+    "usage_notes": 6,
+    "mean_seconds": 8.7
+  },
+  "results": [
+    {
+      "language": "fr",
+      "word": "trancher",
+      "corrected": "trancher",
+      "word_type": [
+        "verb"
+      ],
+      "definitions": [
+        "To decide or settle a question, dispute, or issue.",
+        "To slice or cut cleanly.",
+        "To contrast sharply, used with avec or sur."
+      ],
+      "examples": [
+        [
+          "Faute d'accord, la direction a fini par trancher en faveur du télétravail.",
+          "With no agreement in sight, management eventually decided in favor of remote work."
+        ],
+        [
+          "Il a pris un couteau bien aiguisé pour trancher le pain.",
+          "He took a sharp knife to slice the bread."
+        ],
+        [
+          "Son ton mesuré tranche avec la virulence des débats.",
+          "Her measured tone stands in sharp contrast to the hostility of the debate."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 10.9,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 3,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: trancher\nWord Type: verb\nDefinitions:\na. To decide or settle a question, dispute, or issue.\nb. To slice or cut cleanly.\nc. To contrast sharply, used with avec or sur.\nExamples:\n1. Faute d'accord, la direction a fini par trancher en faveur du télétravail.\n(With no agreement in sight, management eventually decided in favor of remote work.)\n2. Il a pris un couteau bien aiguisé pour trancher le pain.\n(He took a sharp knife to slice the bread.)\n3. Son ton mesuré tranche avec la virulence des débats.\n(Her measured tone stands in sharp contrast to the hostility of the debate.)"
+    },
+    {
+      "language": "de",
+      "word": "Forthaaren",
+      "corrected": "fortfahren",
+      "word_type": [
+        "separable verb"
+      ],
+      "definitions": [
+        "To continue or proceed with an activity or speech.",
+        "To depart or drive away."
+      ],
+      "examples": [
+        [
+          "Nach einer kurzen Pause fuhr die Rednerin mit ihrem Vortrag fort.",
+          "After a brief pause, the speaker continued with her lecture."
+        ],
+        [
+          "Die Gäste sind bereits am frühen Morgen fortgefahren.",
+          "The guests already drove off early in the morning."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 12.0,
+      "score": {
+        "count_ok": false,
+        "notes_ok": true,
+        "first_ok": false,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": false,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: Not an attested German word; using the nearest attested lemma \"fortfahren\".\nCorrectly Spelt Word: fortfahren\nWord Type: separable verb\nDefinitions:\na. To continue or proceed with an activity or speech.\nb. To depart or drive away.\nExamples:\n1. Nach einer kurzen Pause fuhr die Rednerin mit ihrem Vortrag fort.\n(After a brief pause, the speaker continued with her lecture.)\n2. Die Gäste sind bereits am frühen Morgen fortgefahren.\n(The guests already drove off early in the morning.)"
+    },
+    {
+      "language": "de",
+      "word": "ausmachen",
+      "corrected": "ausmachen",
+      "word_type": [
+        "separable verb"
+      ],
+      "definitions": [
+        "To make up, constitute, or account for a particular share, total, or quality.",
+        "To turn off or switch off a light, appliance, or fire (umgangssprachlich).",
+        "With a dative object: to matter to or bother someone."
+      ],
+      "examples": [
+        [
+          "Die Miete macht fast die Hälfte meines Einkommens aus.",
+          "Rent makes up nearly half of my income."
+        ],
+        [
+          "Vergiss bitte nicht, das Licht im Flur auszumachen.",
+          "Please don't forget to turn off the light in the hallway."
+        ],
+        [
+          "Es macht mir nichts aus, noch ein bisschen zu warten.",
+          "I don't mind waiting a little longer."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 8.9,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": false,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": false,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 3,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: ausmachen\nWord Type: separable verb\nDefinitions:\na. To make up, constitute, or account for a particular share, total, or quality.\nb. To turn off or switch off a light, appliance, or fire (umgangssprachlich).\nc. With a dative object: to matter to or bother someone.\nExamples:\n1. Die Miete macht fast die Hälfte meines Einkommens aus.\n(Rent makes up nearly half of my income.)\n2. Vergiss bitte nicht, das Licht im Flur auszumachen.\n(Please don't forget to turn off the light in the hallway.)\n3. Es macht mir nichts aus, noch ein bisschen zu warten.\n(I don't mind waiting a little longer.)"
+    },
+    {
+      "language": "de",
+      "word": "rudern",
+      "corrected": "rudern",
+      "word_type": [
+        "verb"
+      ],
+      "definitions": [
+        "To row a boat or to engage in rowing as a sport.",
+        "To flail or wave one's arms wildly, especially to keep one's balance.",
+        "Usage note: Forms the perfect tense with sein when indicating movement toward a destination, and with haben when focusing on the activity itself."
+      ],
+      "examples": [
+        [
+          "Am Sonntagmorgen sind wir gemeinsam über den stillen See gerudert.",
+          "On Sunday morning, we rowed across the calm lake together."
+        ],
+        [
+          "Als er auf dem Glatteis ausrutschte, ruderte er verzweifelt mit den Armen, um nicht hinzufallen.",
+          "When he slipped on the black ice, he flailed his arms desperately so as not to fall."
+        ],
+        [
+          "Sie haben den ganzen Nachmittag auf dem Fluss gerudert, bevor sie wieder anlegten.",
+          "They rowed on the river all afternoon before pulling back in."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 8.7,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: rudern\nWord Type: verb\nDefinitions:\na. To row a boat or to engage in rowing as a sport.\nb. To flail or wave one's arms wildly, especially to keep one's balance.\nc. Usage note: Forms the perfect tense with sein when indicating movement toward a destination, and with haben when focusing on the activity itself.\nExamples:\n1. Am Sonntagmorgen sind wir gemeinsam über den stillen See gerudert.\n(On Sunday morning, we rowed across the calm lake together.)\n2. Als er auf dem Glatteis ausrutschte, ruderte er verzweifelt mit den Armen, um nicht hinzufallen.\n(When he slipped on the black ice, he flailed his arms desperately so as not to fall.)\n3. Sie haben den ganzen Nachmittag auf dem Fluss gerudert, bevor sie wieder anlegten.\n(They rowed on the river all afternoon before pulling back in.)"
+    },
+    {
+      "language": "fr",
+      "word": "multiprise",
+      "corrected": "multiprise",
+      "word_type": [
+        "noun"
+      ],
+      "definitions": [
+        "Power strip, a device with several electrical sockets that connects to a single wall outlet."
+      ],
+      "examples": [
+        [
+          "J'ai dû acheter une multiprise pour brancher à la fois mon ordinateur, mon écran et ma lampe de bureau.",
+          "I had to buy a power strip to plug in my computer, my monitor, and my desk lamp at the same time."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 7.4,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 0
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: multiprise\nWord Type: noun\nDefinitions:\na. Power strip, a device with several electrical sockets that connects to a single wall outlet.\nExamples:\n1. J'ai dû acheter une multiprise pour brancher à la fois mon ordinateur, mon écran et ma lampe de bureau.\n(I had to buy a power strip to plug in my computer, my monitor, and my desk lamp at the same time.)"
+    },
+    {
+      "language": "fr",
+      "word": "gratter",
+      "corrected": "gratter",
+      "word_type": [
+        "verb"
+      ],
+      "definitions": [
+        "To scratch or scrape a surface, a wound, or a lottery ticket.",
+        "Familier: to gain or squeeze out a small amount of something, such as time, money, or votes.",
+        "Usage note: In everyday speech, \"gratter\" is commonly used to mean \"to itch\" or \"to feel scratchy,\" as in \"ça me gratte,\" whereas formal usage prefers \"démanger.\""
+      ],
+      "examples": [
+        [
+          "Il a passé dix minutes à gratter le givre sur son pare-brise avant de prendre la route.",
+          "He spent ten minutes scraping the frost off his windshield before hitting the road."
+        ],
+        [
+          "Les négociateurs espèrent encore gratter quelques millions d'euros dans le budget de l'an prochain.",
+          "The negotiators still hope to squeeze out a few million euros in next year's budget."
+        ],
+        [
+          "Ce pull en laine me gratte tellement le cou que je ne peux pas le supporter.",
+          "This wool sweater makes my neck itch so much that I can't stand it."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 12.9,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: gratter\nWord Type: verb\nDefinitions:\na. To scratch or scrape a surface, a wound, or a lottery ticket.\nb. Familier: to gain or squeeze out a small amount of something, such as time, money, or votes.\nc. Usage note: In everyday speech, \"gratter\" is commonly used to mean \"to itch\" or \"to feel scratchy,\" as in \"ça me gratte,\" whereas formal usage prefers \"démanger.\"\nExamples:\n1. Il a passé dix minutes à gratter le givre sur son pare-brise avant de prendre la route.\n(He spent ten minutes scraping the frost off his windshield before hitting the road.)\n2. Les négociateurs espèrent encore gratter quelques millions d'euros dans le budget de l'an prochain.\n(The negotiators still hope to squeeze out a few million euros in next year's budget.)\n3. Ce pull en laine me gratte tellement le cou que je ne peux pas le supporter.\n(This wool sweater makes my neck itch so much that I can't stand it.)"
+    },
+    {
+      "language": "fr",
+      "word": "nonobstant",
+      "corrected": "nonobstant",
+      "word_type": [
+        "preposition"
+      ],
+      "definitions": [
+        "(soutenu, juridique) Notwithstanding; despite.",
+        "Usage note: Formal or legal equivalent of malgré; unlike en dépit de, it is followed directly by a noun phrase without de."
+      ],
+      "examples": [
+        [
+          "Nonobstant les critiques de l'opposition, le gouvernement a maintenu sa réforme.",
+          "Notwithstanding the opposition's criticism, the government stood by its reform."
+        ],
+        [
+          "La décision reste valable, nonobstant tout recours ultérieur.",
+          "The decision remains valid, notwithstanding any subsequent appeal."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 5.3,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: nonobstant\nWord Type: preposition\nDefinitions:\na. (soutenu, juridique) Notwithstanding; despite.\nb. Usage note: Formal or legal equivalent of malgré; unlike en dépit de, it is followed directly by a noun phrase without de.\nExamples:\n1. Nonobstant les critiques de l'opposition, le gouvernement a maintenu sa réforme.\n(Notwithstanding the opposition's criticism, the government stood by its reform.)\n2. La décision reste valable, nonobstant tout recours ultérieur.\n(The decision remains valid, notwithstanding any subsequent appeal.)"
+    },
+    {
+      "language": "fr",
+      "word": "peignait",
+      "corrected": "peindre",
+      "word_type": [
+        "verb"
+      ],
+      "definitions": [
+        "To paint a surface, object, or artwork with paint.",
+        "To depict or portray a person, scene, or situation vividly in writing or art.",
+        "Usage note: Use the preposition \"en\" before the color when specifying the result of painting a surface, rather than a bare adjective as in English."
+      ],
+      "examples": [
+        [
+          "Mon grand-père peignait des paysages maritimes dans son atelier du grenier.",
+          "My grandfather used to paint seascapes in his attic studio."
+        ],
+        [
+          "Dans ce roman, l'autrice peignait avec finesse les tensions d'une petite ville de province.",
+          "In this novel, the author deftly portrayed the tensions of a small provincial town."
+        ],
+        [
+          "Nous avons décidé de peindre le salon en blanc pour rendre la pièce plus lumineuse.",
+          "We decided to paint the living room white to make the room brighter."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 6.3,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 2,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: peindre\nWord Type: verb\nDefinitions:\na. To paint a surface, object, or artwork with paint.\nb. To depict or portray a person, scene, or situation vividly in writing or art.\nc. Usage note: Use the preposition \"en\" before the color when specifying the result of painting a surface, rather than a bare adjective as in English.\nExamples:\n1. Mon grand-père peignait des paysages maritimes dans son atelier du grenier.\n(My grandfather used to paint seascapes in his attic studio.)\n2. Dans ce roman, l'autrice peignait avec finesse les tensions d'une petite ville de province.\n(In this novel, the author deftly portrayed the tensions of a small provincial town.)\n3. Nous avons décidé de peindre le salon en blanc pour rendre la pièce plus lumineuse.\n(We decided to paint the living room white to make the room brighter.)"
+    },
+    {
+      "language": "de",
+      "word": "beeilen",
+      "corrected": "sich beeilen",
+      "word_type": [
+        "reflexive verb"
+      ],
+      "definitions": [
+        "To hurry; to move or act quickly in order to finish sooner or avoid being late.",
+        "Usage note: Often takes mit + dative to specify the activity, or an infinitive clause with zu."
+      ],
+      "examples": [
+        [
+          "Wenn wir uns nicht beeilen, verpassen wir den letzten Zug.",
+          "If we don't hurry, we will miss the last train."
+        ],
+        [
+          "Sie beeilte sich mit dem Aufräumen, bevor die Gäste eintrafen.",
+          "She hurried with the tidying up before the guests arrived."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 8.7,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: sich beeilen\nWord Type: reflexive verb\nDefinitions:\na. To hurry; to move or act quickly in order to finish sooner or avoid being late.\nb. Usage note: Often takes mit + dative to specify the activity, or an infinitive clause with zu.\nExamples:\n1. Wenn wir uns nicht beeilen, verpassen wir den letzten Zug.\n(If we don't hurry, we will miss the last train.)\n2. Sie beeilte sich mit dem Aufräumen, bevor die Gäste eintrafen.\n(She hurried with the tidying up before the guests arrived.)"
+    },
+    {
+      "language": "de",
+      "word": "halt",
+      "corrected": "halt",
+      "word_type": [
+        "particle"
+      ],
+      "definitions": [
+        "Indicates that a situation or fact is unchangeable or obvious, often with a tone of resignation; umgangssprachlich, equivalent to just or simply.",
+        "Usage note: Very common in everyday speech and informal prose, especially in southern Germany, Austria, and Switzerland; in more formal writing or northern usage, eben is often preferred."
+      ],
+      "examples": [
+        [
+          "Der Zug hat Verspätung, da müssen wir halt warten.",
+          "The train is delayed, so we'll just have to wait."
+        ],
+        [
+          "Wenn dir das Buch nicht gefällt, liest du halt ein anderes.",
+          "If you don't like the book, just read another one."
+        ]
+      ],
+      "parsing_warnings": [],
+      "contract_issues": [],
+      "elapsed_seconds": 6.2,
+      "score": {
+        "count_ok": true,
+        "notes_ok": true,
+        "first_ok": true,
+        "first_clean": true,
+        "required_ok": true,
+        "nothing_invented": true,
+        "corrected_ok": true,
+        "type_ok": true,
+        "parsed_ok": true,
+        "passed": true,
+        "hedged_definitions": 0,
+        "overlapping_pairs": 0,
+        "sense_count": 1,
+        "usage_notes": 1
+      },
+      "raw": "Spelling Check: OK\nCorrectly Spelt Word: halt\nWord Type: particle\nDefinitions:\na. Indicates that a situation or fact is unchangeable or obvious, often with a tone of resignation; umgangssprachlich, equivalent to just or simply.\nb. Usage note: Very common in everyday speech and informal prose, especially in southern Germany, Austria, and Switzerland; in more formal writing or northern usage, eben is often preferred.\nExamples:\n1. Der Zug hat Verspätung, da müssen wir halt warten.\n(The train is delayed, so we'll just have to wait.)\n2. Wenn dir das Buch nicht gefällt, liest du halt ein anderes.\n(If you don't like the book, just read another one.)"
+    }
+  ]
+}
