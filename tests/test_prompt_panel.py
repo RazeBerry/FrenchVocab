@@ -8,7 +8,11 @@ from pathlib import Path
 import pytest
 
 import vocab_builder
-from vocab_builder.ai_prompts import AI_PROMPT_TEMPLATE, GERMAN_PROMPT_TEMPLATE
+from vocab_builder.ai_prompts import (
+    AI_PROMPT_TEMPLATE,
+    GERMAN_PROMPT_TEMPLATE,
+    POLISH_PROMPT_TEMPLATE,
+)
 from vocab_builder.ai_response_parser import parse_ai_response_text
 
 
@@ -42,17 +46,19 @@ Examples:
 """
 
 
-def test_every_panel_language_has_a_candidate_template():
-    templates = run_panel.load_templates("candidate")
+@pytest.mark.parametrize("prompt_set", ["baseline", "candidate"])
+def test_every_panel_language_has_a_template(prompt_set):
+    templates = run_panel.load_templates(prompt_set)
     assert {spec["language"] for spec in PANEL["words"]} <= set(templates)
 
 
-def test_french_and_german_candidates_are_the_shipped_prompts():
-    # The Polish-only fields are empty for French and German, so the candidate
-    # module still generates the literals that ai_prompts.py ships.
+def test_candidates_are_the_shipped_prompts():
+    # The beginner fields are empty for French and German, so the candidate
+    # module generates every literal that ai_prompts.py ships.
     templates = run_panel.load_templates("candidate")
     assert templates["fr"] == AI_PROMPT_TEMPLATE
     assert templates["de"] == GERMAN_PROMPT_TEMPLATE
+    assert templates["pl"] == POLISH_PROMPT_TEMPLATE
 
 
 def test_score_matches_polish_lemma_type_and_partner_with_diacritics():

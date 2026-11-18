@@ -17,7 +17,7 @@ invariants; if a rule is written here, move it to its owner.
 - `vocab_builder/cli/main.py` is the primary CLI entry point.
 - `vocab_builder/cli/` contains bootstrap flow, interactive menu/navigation helpers, the local private-API terminal adapter, and compatibility shims.
 - `vocab_builder/core/` contains application workflows (vocab ingestion, translators, auto translator, Anki export, LLM/provider lifecycle, history logging, menu/session UI helpers).
-- `vocab_builder/languages/` contains language registry, validators, prompts, and LaTeX/Anki configuration (`english.py`, `french.py`, `german.py`).
+- `vocab_builder/languages/` contains language registry, validators, prompts, and LaTeX/Anki configuration (`english.py`, `french.py`, `german.py`, `polish.py`).
 - `vocab_builder/` root modules (`models.py`, `anki_exporter.py`, `latex_repository.py`, `llm_client.py`, `ui_helper.py`) provide shared infrastructure.
 - `vocab_builder/compat.py` provides backward-compatible helpers for env vars, config paths, and keyring migration.
 - `vocab_builder/diagnostics/` contains ESC latency tracing tools.
@@ -37,7 +37,7 @@ invariants; if a rule is written here, move it to its owner.
 - `protocols.py` defines structural typing contracts used by menu/workflow modules.
 - `base.py` defines `LanguageConfig`, `TranslatorConfig`, `VocabTemplate`, and `AnkiConfig`.
 - `__init__.py` lazily registers/loads language configs and resolves aliases with `get_language_config(code)`.
-- `english.py`, `french.py`, and `german.py` define prompts, validators, learning-mode behavior, and Anki metadata.
+- `english.py`, `french.py`, `german.py`, and `polish.py` define prompts, validators, learning-mode behavior, and Anki metadata.
 - `latex_templates.py` builds the vocabulary and translation documents; `anki_shared_styles.py` builds the bilingual card and holds the card CSS; `anki_themes.py` holds per-language card themes.
 - `models.py` defines `WordEntry` and normalization helpers.
 - `anki_exporter.py` contains Anki deck export utilities.

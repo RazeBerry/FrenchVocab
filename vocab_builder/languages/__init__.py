@@ -29,8 +29,9 @@ def _ensure_configs_loaded() -> None:
     from .english import ENGLISH_CONFIG
     from .french import FRENCH_CONFIG
     from .german import GERMAN_CONFIG
+    from .polish import POLISH_CONFIG
 
-    for config in (ENGLISH_CONFIG, FRENCH_CONFIG, GERMAN_CONFIG):
+    for config in (ENGLISH_CONFIG, FRENCH_CONFIG, GERMAN_CONFIG, POLISH_CONFIG):
         _CONFIGS[config.code] = config
         for alias in config.aliases:
             _ALIASES[alias] = config.code

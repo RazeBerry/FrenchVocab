@@ -123,12 +123,13 @@ class CompositionConfig:
 
 
 # Composition grading for a bilingual language. ``$language`` names the target
-# language and ``$learner`` completes "composition coach for <learner>"; the
-# brace placeholders are filled per attempt by the composition coach.
+# language, ``$learner`` completes "composition coach for <learner>", and
+# ``$alternative`` qualifies the alternative phrasing each correction offers;
+# the brace placeholders are filled per attempt by the composition coach.
 _COMPOSITION_GRADING_PROMPT = Template("""
 You are a rigorous but warm $language composition coach for $learner.
 
-Grade one short $language composition. The learner was asked to use the target words below. Judge whether each target word is used idiomatically in context, not merely present. Give reasons for every correction and one stronger alternative phrasing. Keep the feedback concise and practical.
+Grade one short $language composition. The learner was asked to use the target words below. Judge whether each target word is used idiomatically in context, not merely present. Give reasons for every correction and one $alternative alternative phrasing. Keep the feedback concise and practical.
 
 Target words:
 {target_words}
@@ -150,7 +151,7 @@ English Gloss:
 Corrections:
 1. "<learner wording>" -> "<corrected wording>"
    Why: <brief reason>
-   Alternative: <stronger idiomatic phrasing>
+   Alternative: <$alternative idiomatic phrasing>
 
 Word Verdicts:
 - <target word>: <correct|incorrect|not_used>
@@ -166,7 +167,7 @@ If there are no corrections or unknown candidates, write "none" in that section.
 _REVERSE_COMPOSITION_GRADING_PROMPT = Template("""
 You are a rigorous but warm $language composition coach for $learner.
 
-Grade one short $language reverse-translation attempt. The learner saw an English sentence from their own vocabulary example and translated it into $language. Compare the attempt with the stored $language reference, but accept exact matches and idiomatic equivalent variants; the stored reference is not the only acceptable answer. Judge whether the sampled target word is produced idiomatically in context, including natural inflected or closely equivalent forms. Give reasons for every correction and one stronger alternative phrasing. Keep the feedback concise and practical.
+Grade one short $language reverse-translation attempt. The learner saw an English sentence from their own vocabulary example and translated it into $language. Compare the attempt with the stored $language reference, but accept exact matches and idiomatic equivalent variants; the stored reference is not the only acceptable answer. Judge whether the sampled target word is produced idiomatically in context, including natural inflected or closely equivalent forms. Give reasons for every correction and one $alternative alternative phrasing. Keep the feedback concise and practical.
 
 Target word:
 {target_word}
@@ -191,7 +192,7 @@ Corrected Text:
 Corrections:
 1. "<learner wording>" -> "<corrected wording>"
    Why: <brief reason>
-   Alternative: <stronger idiomatic phrasing>
+   Alternative: <$alternative idiomatic phrasing>
 
 Word Verdicts:
 - <target word>: <correct|incorrect|not_used>
@@ -205,20 +206,19 @@ If there are no corrections or unknown candidates, write "none" in that section.
 """.strip())
 
 
-def composition_config(language: str, learner: str) -> CompositionConfig:
+def composition_config(language: str, learner: str, alternative: str) -> CompositionConfig:
     """Return composition grading for a bilingual language.
 
     ``language`` is the display name ("French"). ``learner`` states the
     learner's level and goal, for example "an advanced learner aiming at DALF
-    C2 register awareness".
+    C2 register awareness". ``alternative`` is the adjective for the phrasing
+    the coach offers beside each correction: "stronger" stretches an advanced
+    learner, "simple" keeps a beginner's alternative within reach.
     """
+    fields = {"language": language, "learner": learner, "alternative": alternative}
     return CompositionConfig(
-        grading_prompt_template=_COMPOSITION_GRADING_PROMPT.substitute(
-            language=language, learner=learner
-        ),
-        reverse_grading_prompt_template=_REVERSE_COMPOSITION_GRADING_PROMPT.substitute(
-            language=language, learner=learner
-        ),
+        grading_prompt_template=_COMPOSITION_GRADING_PROMPT.substitute(fields),
+        reverse_grading_prompt_template=_REVERSE_COMPOSITION_GRADING_PROMPT.substitute(fields),
         ui_title=f"{language} Composition Practice",
     )
 

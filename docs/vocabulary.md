@@ -30,6 +30,12 @@ in `reports/` and is linked from the rule it supports.
   the key's first character is the glossary rail letter. The key is opaque: it
   is never displayed or parsed. French, German and English use
   `normalize_word_key` (lowercase, expand ß, umlauts, æ and œ, strip accents).
+  Polish uses `polish_headword_key`: it composes (NFC) and lowercases, then
+  keys each of ą ć ę ł ń ó ś ź ż as its base letter plus a character that sorts
+  after every letter, so diacritics carry identity (`sąd` and `sad` are two
+  entries), each Polish letter files after all of its base letter's words
+  (`kawa` before `kąt`, `zupa` before `źle` before `żaba`), and `Ł`, `Ś`, `Ż`
+  take the L, S and Z rail letters.
 - Merge text equality, the translation-pair key and the Anki tracker key
   (lowercased headword) are separate rules and do not use the headword key.
 
@@ -59,20 +65,54 @@ in `reports/` and is linked from the rule it supports.
 
 ## Languages
 - English is monolingual: it omits translation workflows and uses plain-English example paraphrases as active-recall cues.
+- Polish serves a beginner (A1-A2); French and German serve advanced learners.
+  A Polish entry's type is one of a closed list: masculine, feminine, neuter or
+  plural noun (plural only for a noun with no singular); imperfective,
+  perfective or biaspectual verb; adjective, adverb, pronoun, numeral,
+  preposition, conjunction, particle, interjection, expression. A verb is one
+  entry per lemma and keeps the input's aspect (`napisałem` gives `napisać`);
+  its sense a ends with `Perfective: <infinitive>.` or
+  `Imperfective: <infinitive>.`, a later sense names a partner only when it
+  differs, and a verb with no partner names none. `się` belongs to the
+  headword when the verb needs it (`bać się`), never to the type. Register
+  labels are Polish (`potoczny`, `książkowy`, `oficjalny`, `przestarzały`,
+  `wulgarny`), quotation marks are „…”, and the LaTeX examples heading is
+  `Przykłady`. The prompt rules behind these are in `docs/prompts.md`.
 
 ## Adding a new language
-1. Create `vocab_builder/languages/<lang>.py` with a `LanguageConfig` (copy `french.py` or `german.py`); `learning_mode` selects bilingual versus monolingual behavior.
-2. Register it through `vocab_builder/languages/__init__.py`.
-3. Build the vocab and translator documents with `vocab_document(<babel>, <examples heading>)`
-   and `translation_document(<macro>, <first label>, <second label>)` from `latex_templates.py`;
-   they are written once, when a file is created, and never rewrite an existing file. Translator
-   config and filename fields are optional (`None`) for monolingual languages.
-4. Provide the Anki config and optional auto-translator prompt tokens. A bilingual
-   language builds its card with `bilingual_card_templates(<headword field>)` from
-   `anki_shared_styles.py`. The export tracker records the card's template hash,
-   `AnkiConfig.version_id`, which the config derives from its card templates and
-   CSS; changing an existing language's card or CSS makes its next export include
-   every note.
-5. A bilingual language takes composition grading from
-   `composition_config(<display name>, <learner>)` in `base.py`; `<learner>`
-   states the level the coach grades for. French and German grade at C2.
+Every per-language difference is data in one `LanguageConfig`; shared code
+never branches on a language code.
+1. Create `vocab_builder/languages/<lang>.py` with a `LanguageConfig` (copy
+   `polish.py` for a bilingual language, `english.py` for a monolingual one)
+   and add it to the loop in `vocab_builder/languages/__init__.py`. Choices,
+   corrections and registry-driven tests then include it.
+2. Supply `headword_key`: `normalize_word_key` when folding accents is right
+   for the language, otherwise a key of its own (see Headword key).
+3. Ship the vocabulary prompt in `ai_prompts.py`, generated from
+   `scripts/prompt_panel/candidate_prompts.py` after the panel measured it
+   (`docs/prompts.md`), and add the language's rows to `panel.json`.
+4. Build the vocab and translator documents with
+   `vocab_document(<babel>, <examples heading>)` and
+   `translation_document(<macro>, <first label>, <second label>)` from
+   `latex_templates.py`; they are written once, when a file is created, and
+   never rewrite an existing file. A monolingual language sets the translator
+   configs and filenames to `None`.
+5. A bilingual language writes its directional and auto-translate prompts on
+   the fidelity floor in `docs/prompts.md` and names its direction tokens
+   (`english_to_<language>`, `<language>_to_english`).
+6. A bilingual language builds its Anki card with
+   `bilingual_card_templates(<headword field>)` from `anki_shared_styles.py`.
+   The export tracker records the card's template hash,
+   `AnkiConfig.version_id`, which the config derives from its card templates
+   and CSS; changing an existing language's card or CSS makes its next export
+   include every note.
+7. A bilingual language takes composition grading from
+   `composition_config(<display name>, <learner>, <alternative>)` in
+   `base.py`: `<learner>` states the level the coach grades for and
+   `<alternative>` qualifies the phrasing offered beside each correction.
+   French and German grade at C2 with a "stronger" alternative; Polish grades
+   at A2 with a "simple" one.
+8. Supply `ui_strings` only for a label the fallbacks cannot build from
+   `display_name` and the translator labels.
+9. The phone serves only the codes in `vocabbuilder-mobile --languages` and
+   needs a hue and type badges (`docs/mobile_map.md`).

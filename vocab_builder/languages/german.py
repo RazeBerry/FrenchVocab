@@ -148,7 +148,9 @@ GERMAN_CONFIG = LanguageConfig(
     ),
     headword_key=normalize_word_key,
     composition=composition_config(
-        "German", "an advanced learner aiming at Goethe C2 register awareness"
+        "German",
+        "an advanced learner aiming at Goethe C2 register awareness",
+        alternative="stronger",
     ),
     aliases=("de-de", "german"),
     auto_prompt_template=GERMAN_AUTO_TRANSLATOR_PROMPT,

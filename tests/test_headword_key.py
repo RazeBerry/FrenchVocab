@@ -52,3 +52,23 @@ def test_alphabetize_and_insert_follow_the_language_key(tmp_path, monkeypatch):
     )
     assert report.count("added") == 1
     assert _headwords(tex_path) == ["Alpha", "Delta", "Echo", "Kilo", "Bravo"]
+
+
+def test_polish_alphabetize_files_each_polish_letter_after_its_base(tmp_path, monkeypatch):
+    """Polish order: a before ą, l before ł, z before ź before ż, and a
+    diacritic letter's words after every plain-letter word ("kawa", "kąt")."""
+    monkeypatch.setenv("GEMINI_API_KEY", "AIza" + "x" * 36)
+    expected = ["Cud", "Ćma", "Kawa", "Kąt", "Los", "Łoś", "Sad", "Sąd", "Zupa", "Źle", "Żaba"]
+    shuffled = ["Żaba", "Sąd", "Kawa", "Łoś", "Cud", "Źle", "Sad", "Zupa", "Kąt", "Ćma", "Los"]
+    tex_path = tmp_path / "PolishVocab.tex"
+    entries = "\n\n".join(ENTRY.format(word=word) for word in shuffled)
+    tex_path.write_text(
+        "\\documentclass{article}\n\\begin{document}\n\\begin{itemize}[leftmargin=*]\n"
+        f"{entries}\n\\end{{itemize}}\n\\end{{document}}\n",
+        encoding="utf-8",
+    )
+    builder = VocabBuilder(str(tex_path), provider="gemini", verbose=False, language="pl")
+
+    builder.alphabetize_entries()
+
+    assert _headwords(tex_path) == expected

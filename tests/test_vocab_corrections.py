@@ -30,29 +30,34 @@ def digest(path: Path) -> str | None:
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
 
 
-def fixture(tmp_path: Path, *, words: tuple[str, ...] = ("Chat", "Chien", "Ânerie")) -> dict:
-    config = get_language_config("fr")
+def fixture(
+    tmp_path: Path, *, words: tuple[str, ...] = ("Chat", "Chien", "Ânerie"), language: str = "fr",
+) -> dict:
+    config = get_language_config(language)
     vocab = tmp_path / config.vocab_filename
     blocks = [VocabRepository.format_latex_entry(
         row["word"], row["type"], row["definitions"],
         [tuple(pair) for pair in row["examples"]], config.vocab.entry_command,
     ) for row in (entry(word) for word in words)]
     vocab.write_text("\\begin{document}\n" + "\n\n".join(blocks) + "\n\\end{document}\n", encoding="utf-8")
-    tracker = tmp_path / "exported_words_fr.json"
+    tracker = tmp_path / f"exported_words_{language}.json"
     tracker.write_text(json.dumps({
         "words": [word.lower() for word in words],
         "entry_order": [word.lower() for word in words],
         "deck_version": "v1", "last_export": {"deck_name": "Test"}, "extra": "kept",
     }) + "\n", encoding="utf-8")
-    identity = identity_path(tracker, "fr")
-    history = tmp_path / "history" / "fr_translations.jsonl"
-    return {"root": tmp_path, "vocab": vocab, "tracker": tracker, "identity": identity, "history": history}
+    identity = identity_path(tracker, language)
+    history = tmp_path / "history" / f"{language}_translations.jsonl"
+    return {
+        "root": tmp_path, "language": language, "vocab": vocab, "tracker": tracker,
+        "identity": identity, "history": history,
+    }
 
 
 def patch_for(paths: dict, rows: list[dict], patch_id: str = "fr-test-a") -> Path:
     patch = paths["root"] / "patch.json"
     patch.write_text(json.dumps({
-        "version": 1, "language": "fr", "patch_id": patch_id,
+        "version": 1, "language": paths["language"], "patch_id": patch_id,
         "base": {
             "vocab_sha256": digest(paths["vocab"]),
             "tracker_sha256": digest(paths["tracker"]),
@@ -75,7 +80,9 @@ def correction(before: dict, after: dict, *, retire: list[dict] | None = None, k
 
 
 def run(paths: dict, patch: Path, *, apply: bool = False) -> dict:
-    return run_corrections(language="fr", data_dir=paths["root"], patch_path=patch, apply=apply)
+    return run_corrections(
+        language=paths["language"], data_dir=paths["root"], patch_path=patch, apply=apply
+    )
 
 
 def parsed_words(paths: dict) -> list[str]:
@@ -207,6 +214,22 @@ def test_collision_ignoring_accents_refuses(tmp_path):
         run(paths, patch, apply=True)
     assert paths["vocab"].read_bytes() == before
 
+
+
+def test_polish_correction_keeps_diacritics_as_identity(tmp_path):
+    """Under the Polish key "sąd" (court) and "sad" (orchard) are two words:
+    a rename to "SAD" beside a live "Sad" collides, a rename to "Sąd" does not,
+    and the renamed entry files right after "Sad"."""
+    paths = fixture(tmp_path, words=("Kot", "Sad", "Zupa"), language="pl")
+    patch = patch_for(paths, [correction(entry("Kot"), entry("SAD"))])
+    with pytest.raises(CorrectionError, match="collides"):
+        run(paths, patch, apply=True)
+
+    patch = patch_for(paths, [correction(entry("Kot"), entry("Sąd", "A court"))])
+    report = run(paths, patch, apply=True)
+
+    assert report["status"] == "applied"
+    assert parsed_words(paths) == ["Sad", "Sąd", "Zupa"]
 
 def test_correct_history_once_and_acquisition_unchanged(tmp_path):
     paths = fixture(tmp_path)

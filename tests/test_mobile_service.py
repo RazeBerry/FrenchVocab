@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import timedelta
 import importlib
+import itertools
 from importlib.resources import files
 import json
 import re
@@ -1254,6 +1255,7 @@ def test_anki_export_builds_a_downloadable_deck_for_every_language(tmp_path, mon
         "en": ("serendipity", "noun", "Finding something good without looking for it."),
         "fr": ("chrysanthème", "noun", "A flower associated with autumn in France."),
         "de": ("Kühlschrank", "noun", "A refrigerator."),
+        "pl": ("żółw", "masculine noun", "Turtle or tortoise."),
     }
     for code, service in services.items():
         seed_entries(service, [seeds[code]])
@@ -1303,3 +1305,235 @@ def test_anki_export_builds_a_downloadable_deck_for_every_language(tmp_path, mon
         assert seeds[code][0][0].upper() + seeds[code][0][1:] in headwords, code
         assert service.builder.language_config.anki.default_deck_name in decks, code
         assert after["pending_count"] == 0, code
+
+
+# Polish: the headword key keeps diacritics as identity and files each Polish
+# letter right after its base letter. Every test below goes through the ASGI
+# routes the phone calls, on a real VocabBuilder.
+
+POLISH_ORDER = [
+    "Cud", "Ćma", "Kawa", "Kąt", "Los", "Łoś", "Sad", "Sąd", "Zupa", "Źle", "Żaba",
+]
+
+
+def polish_response(word: str, gloss: str, word_type: str = "masculine noun") -> str:
+    return f"""Spelling Check: OK
+Correctly Spelt Word: {word}
+Word Type: {word_type}
+Definitions:
+a. {gloss}
+Examples:
+1. To jest {word}.
+(This is {gloss.rstrip(".").lower()}.)
+"""
+
+
+def polish_service(tmp_path, monkeypatch):
+    service = build_service(tmp_path, monkeypatch, language="pl")
+    service._token_factory = (f"preview-token-{n}" for n in itertools.count()).__next__
+    return service
+
+
+def capture_all(app, services, captures):
+    """Preview and save each (language, typed text, AI response) through the
+    routes; return the save response, or the preview response that refused."""
+
+    async def exercise_app():
+        results = []
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            for language, text, response in captures:
+                services[language].builder.client.response = response
+                preview = await client.post(
+                    f"/api/preview?language={language}", json={"text": text}
+                )
+                if preview.status_code != 200:
+                    results.append(preview)
+                    continue
+                results.append(
+                    await client.post(
+                        f"/api/save?language={language}",
+                        json={"token": preview.json()["token"]},
+                    )
+                )
+        return results
+
+    import asyncio
+
+    return asyncio.run(exercise_app())
+
+
+def polish_headwords(tmp_path) -> list[str]:
+    content = (tmp_path / "PolishVocab.tex").read_text(encoding="utf-8")
+    # Anchored at line start: the template's comment names \entry{word} too.
+    return re.findall(r"^\s*\\entry\{([^}]*)\}", content, re.MULTILINE)
+
+
+def test_polish_diacritics_carry_identity_through_preview_and_save(tmp_path, monkeypatch):
+    """"sąd" (court) is a new entry beside "sad" (orchard); "SĄD" and a
+    decomposed "sąd" are the same entry. French still folds accents."""
+    polish = polish_service(tmp_path / "pl", monkeypatch)
+    french = build_service(tmp_path / "fr", monkeypatch, language="fr")
+    french._token_factory = (f"preview-token-{n}" for n in itertools.count()).__next__
+    services = {"fr": french, "pl": polish}
+    app = create_app(MobileVocabCatalog(services, default_language="fr"))
+    court = polish_response("sąd", "Court.")
+
+    orchard, court_saved, capitals, decomposed, cote, cote_again = capture_all(
+        app,
+        services,
+        [
+            ("pl", "sad", polish_response("sad", "Orchard.")),
+            ("pl", "sąd", court),
+            ("pl", "SĄD", court),
+            ("pl", "sa\u0328d", court),
+            ("fr", "côte", ai_response_for("côte", "Coast.")),
+            ("fr", "cote", ai_response_for("côte", "Coast.")),
+        ],
+    )
+
+    assert orchard.status_code == 200, orchard.text
+    assert court_saved.status_code == 200, court_saved.text
+    for refused in (capitals, decomposed):
+        assert refused.status_code == 409
+        assert refused.json()["error"]["existing_word"] == "Sąd"
+    assert cote.status_code == 200, cote.text
+    assert cote_again.status_code == 409
+    assert cote_again.json()["error"]["existing_word"] == "Côte"
+    assert polish_headwords(tmp_path / "pl") == ["Sad", "Sąd"]
+
+
+def test_polish_saves_insert_in_polish_alphabetical_order(tmp_path, monkeypatch):
+    service = polish_service(tmp_path, monkeypatch)
+    shuffled = ["sąd", "kawa", "żaba", "cud", "łoś", "zupa", "ćma", "los", "źle", "kąt", "sad"]
+
+    responses = capture_all(
+        create_app(service),
+        {"pl": service},
+        [("pl", word, polish_response(word, "Gloss.")) for word in shuffled],
+    )
+
+    assert [response.status_code for response in responses] == [200] * len(shuffled)
+    assert polish_headwords(tmp_path) == POLISH_ORDER
+
+
+def test_polish_entry_round_trips_through_save_and_reload(tmp_path, monkeypatch):
+    """Polish letters, „…” quotes and the aspect partner survive the LaTeX file."""
+    service = polish_service(tmp_path, monkeypatch)
+    response = """Spelling Check: OK
+Correctly Spelt Word: wziąć
+Word Type: perfective verb
+Definitions:
+a. To take. Imperfective: brać.
+b. Usage note: Irregular future: wezmę, weźmiesz.
+Examples:
+1. Wezmę parasol, bo pada.
+(I'll take an umbrella because it's raining.)
+2. Powiedziała: „Weźmiesz klucze?”
+(She said, "Will you take the keys?")
+"""
+
+    (saved,) = capture_all(create_app(service), {"pl": service}, [("pl", "wziąć", response)])
+    reloaded = VocabBuilder(
+        latex_file=str(tmp_path / "PolishVocab.tex"),
+        provider="gemini",
+        language="pl",
+        client=FakeClient(),
+        interactive=False,
+    )
+    entry = reloaded.word_entries[reloaded.check_duplicate("WZIĄĆ")]
+
+    assert saved.status_code == 200, saved.text
+    assert entry["word"] == "Wziąć"
+    assert entry["type"] == "perfective verb"
+    assert entry["definitions_list"] == [
+        "To take. Imperfective: brać.",
+        "Usage note: Irregular future: wezmę, weźmiesz.",
+    ]
+    assert entry["examples_list"] == [
+        ("Wezmę parasol, bo pada.", "I'll take an umbrella because it's raining."),
+        ("Powiedziała: „Weźmiesz klucze?”", 'She said, "Will you take the keys?"'),
+    ]
+
+
+def test_decomposed_polish_input_is_previewed_and_keyed_as_composed(tmp_path, monkeypatch):
+    service = polish_service(tmp_path, monkeypatch)
+    service.builder.client.response = polish_response("żaba", "Frog.", "feminine noun")
+
+    preview = service.preview("z\u0307aba")
+    service.save(preview.token)
+
+    assert preview.original_input == "żaba"
+    # The key composes too, so text that skipped input sanitizing still
+    # finds the entry instead of folding to the plain "zaba".
+    assert service.builder.check_duplicate("Z\u0307aba") is not None
+    assert service.builder.check_duplicate("zaba") is None
+
+
+def test_polish_auto_translation_routes_and_saves_both_directions(tmp_path, monkeypatch):
+    service = polish_service(tmp_path, monkeypatch)
+    app = create_app(service)
+    detected = {
+        "Kot śpi.": "Direction: polish_to_english\nTranslation:\nThe cat is asleep.\n\nNotes:\nnone",
+        'He said "yes".': "Direction: english_to_polish\nTranslation:\nPowiedział „tak”.\n\nNotes:\nnone",
+    }
+
+    async def exercise_app():
+        results = {}
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            for source, response in detected.items():
+                service.builder.client.response = response
+                preview = await client.post(
+                    "/api/translations/preview", json={"direction": "auto", "text": source}
+                )
+                saved = await client.post(
+                    "/api/translations/save", json={"token": preview.json()["token"]}
+                )
+                results[source] = (preview, saved)
+            for direction in ("target_to_eng", "eng_to_target"):
+                results[direction] = await client.get(
+                    f"/api/translations/pairs?direction={direction}"
+                )
+        return results
+
+    import asyncio
+
+    results = asyncio.run(exercise_app())
+
+    polish_preview, polish_saved = results["Kot śpi."]
+    english_preview, english_saved = results['He said "yes".']
+    assert polish_preview.json()["direction"] == "target_to_eng"
+    assert english_preview.json()["direction"] == "eng_to_target"
+    assert polish_saved.status_code == english_saved.status_code == 200
+    assert results["target_to_eng"].json()["items"] == [
+        {"source": "Kot śpi.", "target": "The cat is asleep."}
+    ]
+    assert results["eng_to_target"].json()["items"] == [
+        {"source": 'He said "yes".', "target": "Powiedział „tak”."}
+    ]
+    assert r"\pleng{Kot śpi.}{The cat is asleep.}" in (
+        tmp_path / "PolishToEnglish.tex"
+    ).read_text(encoding="utf-8")
+    assert r"\engpl{" in (tmp_path / "EnglishToPolish.tex").read_text(encoding="utf-8")
+
+
+def test_polish_composition_debt_matches_verdicts_by_the_polish_key(tmp_path, monkeypatch):
+    """A verdict for "SĄD" credits "Sąd" and not "Sad"."""
+    service = polish_service(tmp_path, monkeypatch)
+    seed_entries(service, [("sad", "masculine noun", "Orchard."), ("sąd", "masculine noun", "Court.")])
+    history = tmp_path / "history" / "pl_compositions.jsonl"
+    history.parent.mkdir(parents=True, exist_ok=True)
+    history.write_text(
+        json.dumps({"ts": "2026-11-18T10:00:00Z", "word_verdicts": {"SĄD": "correct"}}) + "\n",
+        encoding="utf-8",
+    )
+
+    practice = get_api(create_app(service), "/api/practice").json()
+    states = service.builder.get_composition_coach().scheduler.production_states()
+
+    assert practice["debt_count"] == 1
+    assert {state.entry.word: state.latest_verdict for state in states} == {
+        "Sad": None,
+        "Sąd": "correct",
+    }

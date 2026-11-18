@@ -5,7 +5,7 @@ An AI-assisted command line companion for growing bilingual or monolingual vocab
 ---
 
 ## What You Get
-- **Multi-language vocab builder** -- swap languages with `--language` (English `en`, French `fr`, and German `de`) and keep each glossary in its own LaTeX file.
+- **Multi-language vocab builder** -- swap languages with `--language` (English `en`, French `fr`, German `de`, and Polish `pl`, the last pitched at a beginner) and keep each glossary in its own LaTeX file.
 - **Native-English vocabulary mode** -- learn uncommon English words through concise definitions, contextual examples, plain-English recall cues, and usage coaching without irrelevant translation menus.
 - **Rich CLI UX** -- colour panels, guided prompts, and smart duplicate detection make the terminal feel welcoming.
 - **Bidirectional translators** -- jump between English->Target and Target->English flows with sentence-aware routing.
@@ -133,7 +133,7 @@ Unset the environment variable to disable tracing once you have collected enough
 ## Everyday CLI Actions
 - `vocabbuilder --language en` -- collect uncommon English words, expressions, and usage examples.
 - `vocabbuilder --language de` -- add new vocab entries (default menu option 1).
-- In bilingual French and German modes, translator flows capture multi-line input and preview results before saving.
+- In bilingual French, German, and Polish modes, translator flows capture multi-line input and preview results before saving.
 - English usage practice includes both use-these-words exercises and recall from plain-English cues.
 - Anki tools support incremental, full, and selected-word exports plus reconciliation and optional composition-mistake decks.
 - View and search saved vocabulary from the Browse vocabulary menu.

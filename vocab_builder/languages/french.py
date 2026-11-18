@@ -158,7 +158,9 @@ FRENCH_CONFIG = LanguageConfig(
     ),
     headword_key=normalize_word_key,
     composition=composition_config(
-        "French", "an advanced learner aiming at DALF C2 register awareness"
+        "French",
+        "an advanced learner aiming at DALF C2 register awareness",
+        alternative="stronger",
     ),
     aliases=("fr-fr", "france"),
     auto_prompt_template=FRENCH_AUTO_TRANSLATOR_PROMPT,

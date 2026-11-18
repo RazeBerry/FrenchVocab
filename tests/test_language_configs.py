@@ -1,3 +1,4 @@
+import hashlib
 import tempfile
 from pathlib import Path
 
@@ -109,6 +110,7 @@ def test_spawned_empty_latex_templates_include_placeholder_item(language_code):
         ("fr", "french,english", "Examples"),
         ("de", "ngerman,english", "Beispiele"),
         ("en", "english", "Examples"),
+        ("pl", "polish,english", "Przykłady"),
     ],
 )
 def test_vocab_document_loads_the_languages_babel_and_heading(
@@ -164,6 +166,7 @@ def test_bilingual_card_shows_the_headword_field(language_code):
     [
         ("fr", "an advanced learner aiming at DALF C2 register awareness"),
         ("de", "an advanced learner aiming at Goethe C2 register awareness"),
+        ("pl", "a beginner (A2) learner writing about everyday life"),
     ],
 )
 def test_composition_coach_grades_at_the_learners_level(language_code, learner):
@@ -175,6 +178,54 @@ def test_composition_coach_grades_at_the_learners_level(language_code, learner):
     assert cfg.composition.grading_prompt_template.startswith(persona)
     assert cfg.composition.reverse_grading_prompt_template.startswith(persona)
     assert cfg.composition.ui_title == f"{cfg.display_name} Composition Practice"
+
+
+@pytest.mark.parametrize(
+    ("language_code", "field", "sha256"),
+    [
+        ("fr", "grading_prompt_template", "e2b298ca7ba85c67302dd9a11f2ae92fc8219a8bff9bf6ba9e0173053148ea23"),
+        ("fr", "reverse_grading_prompt_template", "ff321d9b6646de4fb30e2cf9fb4c967e9d454f61923368fc0aa34d1639400198"),
+        ("de", "grading_prompt_template", "08ca72418e28d5a27292fd30b2cd15364359318bcbee3e9730143aaea0223087"),
+        ("de", "reverse_grading_prompt_template", "b5708fdd2d440b121748bb88f0794fa30c0010b17d571cf0c3d8ec67cabe3ba0"),
+    ],
+)
+def test_advanced_composition_prompts_are_unchanged(language_code, field, sha256):
+    """The French and German coaches send these exact prompts; the builder that
+    serves Polish must not move a byte of them."""
+    prompt = getattr(get_language_config(language_code).composition, field)
+    assert hashlib.sha256(prompt.encode("utf-8")).hexdigest() == sha256
+
+
+def test_beginner_composition_coach_offers_a_simple_alternative():
+    composition = get_language_config("pl").composition
+    for prompt in (
+        composition.grading_prompt_template,
+        composition.reverse_grading_prompt_template,
+    ):
+        assert "one simple alternative phrasing" in prompt
+        assert "Alternative: <simple idiomatic phrasing>" in prompt
+        assert "stronger" not in prompt
+
+
+def test_polish_translation_prompts_carry_polish_guidance():
+    cfg = get_language_config("pl")
+    into_polish = cfg.eng_to_target.prompt_template
+    from_polish = cfg.target_to_eng.prompt_template
+
+    assert "Infer ty or Pan/Pani only from evidence" in into_polish
+    assert "only from evidence in the source" in into_polish
+    assert "Do not render English articles mechanically with ten or jakiś" in into_polish
+    assert "aspect by its discourse function" in into_polish
+    assert "„…”" in into_polish
+    assert "do not apply a fixed perfective-to-simple-past" in from_polish
+    assert "<english_to_polish|polish_to_english|ambiguous>" in cfg.auto_prompt_template
+
+
+def test_polish_validator_accepts_polish_quotation_marks():
+    validate = get_language_config("pl").input_validator
+
+    assert validate("Powiedział „tak”.", True)
+    assert validate("źdźbło", False)
 
 
 @pytest.mark.parametrize("language_code", ALL_LANGUAGES)

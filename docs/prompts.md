@@ -22,10 +22,15 @@ in `reports/` and is linked from the rule it supports.
   senses and forced future-tense examples from the old three-slot prompt.
   History: `reports/prompt_panel/2026-09-03_one_sense_contract.md` and
   `reports/prompt_panel/2026-09-24_audit_panel50.md`.
-- The Polish candidate serves an A1-A2 beginner, and its panel rows state what
-  a beginner needs. Its beginner rules (reader, senses, examples) live in
-  candidate fields that French and German leave empty, so their candidates
-  stay byte-identical to the shipped literals (`tests/test_prompt_panel.py`).
+- The Polish prompt serves an A1-A2 beginner, and its panel rows state what
+  a beginner needs. Its beginner rules live in three candidate fields that
+  French and German leave empty: `reader_rule` (the reader is a beginner who
+  meets Polish in everyday life, a coursebook or simple texts), `sense_rule`
+  (at most two senses plus a usage note, plain English, the aspect partner,
+  the most useful beginner fact in the note) and `example_rule` (short
+  everyday examples, mostly present tense, with the grammar checks). Every
+  candidate stays byte-identical to its shipped literal
+  (`tests/test_prompt_panel.py`).
   The scorer tokenizes Polish letters as letters and ignores the aspect
   labels. Evidence: `reports/prompt_panel/2026-11-18_polish_first_measurement.md`.
 
@@ -45,9 +50,18 @@ in `reports/` and is linked from the rule it supports.
   its pronoun only when the lemma requires it. Types include pronoun,
   determiner, preposition, conjunction and interjection (German adds
   reflexive verb, particle and numeral). Only sentence analysis
-  retains its explicit three-part structure. Both templates are literals in
+  retains its explicit three-part structure. Every template is a literal in
   `ai_prompts.py` generated from `scripts/prompt_panel/candidate_prompts.py`
-  after the panel measured them.
+  after the panel measured it.
+- Polish generation keeps that contract for a beginner reader, with at most
+  two senses plus one usage note. Its types are masculine noun, feminine
+  noun, neuter noun, plural noun, imperfective verb, perfective verb,
+  biaspectual verb, adjective, adverb, pronoun, numeral, preposition,
+  conjunction, particle, interjection and expression; a noun's gender follows
+  its agreement, and `się` is never part of a type. The headword keeps the
+  input's aspect, a verb's sense a names its aspect partner, and missing
+  Polish letters are restored only when the bare spelling is not itself a
+  word (`kat` stays `kat`). The entry conventions are in `docs/vocabulary.md`.
 - A merge look-up sends the held entry. `vocabulary_prompt` is the one place a
   look-up prompt is built (CLI workflow, `VocabBuilder.query_ai`, mobile
   service); given the held repository record it appends `MERGE_ADDENDUM`, which
@@ -59,12 +73,16 @@ in `reports/` and is linked from the rule it supports.
   the response in hand is a fresh entry.
 
 ## Translation
-- French and German directional translation prompts share the same fidelity
-  floor while retaining language-specific idiom guidance: preserve agency,
+- French, German and Polish directional translation prompts share the same
+  fidelity floor while retaining language-specific idiom guidance: preserve agency,
   logical relations, quantifiers, modality, historical distance, structural
   labels, and specialist terminology; never modernize period prose, broadly
-  domesticate cultural references, or silently alter names and facts. These
-  prompts return translation text only. Do not add a Notes field unless the
+  domesticate cultural references, or silently alter names and facts. Into
+  Polish, ty or Pan/Pani and a speaker's or addressee's gender come only from
+  evidence, English articles are never rendered mechanically as ten or jakiś,
+  aspect follows discourse function, and quotations take „…”; out of Polish,
+  no fixed aspect-to-tense rule applies. These prompts return translation
+  text only. Do not add a Notes field unless the
   directional translation data model and UI are changed to retain and display
   it instead of stripping it before persistence.
 - Auto translation may return an explicit `ambiguous` direction for words,
