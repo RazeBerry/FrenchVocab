@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict
 
 from vocab_builder.ai_prompts import AI_PROMPT_TEMPLATE
+from vocab_builder.models import normalize_word_key
 from .latex_templates import (
     # Main vocabulary templates
     INITIAL_TEX_CONTENT,
@@ -243,6 +244,7 @@ FRENCH_CONFIG = LanguageConfig(
         card_css=FRENCH_CARD_CSS,
         version_id=FRENCH_CARD_VERSION,
     ),
+    headword_key=normalize_word_key,
     composition=CompositionConfig(
         grading_prompt_template=FRENCH_COMPOSITION_GRADING_PROMPT,
         reverse_grading_prompt_template=FRENCH_REVERSE_COMPOSITION_GRADING_PROMPT,

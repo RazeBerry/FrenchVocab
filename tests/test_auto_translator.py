@@ -6,6 +6,7 @@ from vocab_builder.languages.base import (
     AnkiCardTemplate,
 )
 from vocab_builder.core.auto_translator import AutoTranslator
+from vocab_builder.models import normalize_word_key
 from rich.console import Console
 
 
@@ -75,6 +76,7 @@ def _language_config(prompt_text: str) -> LanguageConfig:
         target_to_eng=translator_cfg,
         vocab=vocab_template,
         anki=anki_cfg,
+        headword_key=normalize_word_key,
         aliases=(),
         auto_prompt_template=prompt_text,
         auto_prompt_variable="source_text",

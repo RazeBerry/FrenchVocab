@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import timedelta
 import importlib
 from importlib.resources import files
@@ -20,7 +21,7 @@ from vocab_builder.core.vocab import VocabBuilder
 from vocab_builder.mobile.app import create_app
 from vocab_builder.mobile.catalog import MobileVocabCatalog
 from vocab_builder.languages import available_language_codes, get_language_config
-from vocab_builder.models import WordEntry
+from vocab_builder.models import WordEntry, normalize_word_key
 from vocab_builder.mobile.service import (
     AIUnavailableError,
     DuplicateEntryError,
@@ -932,6 +933,40 @@ Examples:
 1. Voici {word} dans une phrase.
    [Here is {word} in a sentence.]
 """
+
+
+def test_library_index_orders_and_files_rows_by_the_language_key(tmp_path, monkeypatch):
+    """The glossary asks the language for its key, so a key that reverses the
+    word orders the index by last letter and files each row there too."""
+    monkeypatch.setenv("VOCABBUILDER_FORCE_SYNC_LOAD", "1")
+    monkeypatch.setenv("VOCABBUILDER_CONFIG_DIR", str(tmp_path / "config"))
+    monkeypatch.setenv("VOCABBUILDER_HISTORY_DIR", str(tmp_path / "history"))
+    builder = VocabBuilder(
+        latex_file=str(tmp_path / "FrenchVocab.tex"),
+        provider="gemini",
+        language_config=replace(
+            get_language_config("fr"),
+            headword_key=lambda word: normalize_word_key(word)[::-1],
+        ),
+        client=FakeClient(),
+        interactive=False,
+    )
+    service = MobileVocabService(builder, token_factory=lambda: "preview-token-123")
+    seed_entries(
+        service,
+        [("Bravo", "noun", "B."), ("Echo", "noun", "E."), ("Delta", "noun", "D.")],
+    )
+
+    payload = get_api(create_app(service), "/api/library/index").json()
+
+    # Keys: atled, etnacaga (the sample entry), ohce, ovarb.
+    assert [(item["word"], item["letter"]) for item in payload["items"]] == [
+        ("Delta", "A"),
+        ("agaçante", "E"),
+        ("Echo", "O"),
+        ("Bravo", "O"),
+    ]
+    assert payload["letters"] == {"A": 1, "E": 1, "O": 2}
 
 
 def test_library_index_ships_slim_rows_sorted_by_the_collection_key(

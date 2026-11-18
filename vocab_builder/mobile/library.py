@@ -232,10 +232,10 @@ def _matching_gloss(entry: dict[str, Any], needle: str) -> Optional[str]:
 def _letter_bucket(normalized_word: str) -> str:
     """File a word under the initial of the key the collection is sorted by.
 
-    Taking the letter from the same normalized key that orders the index is
-    what keeps a bucket contiguous: the key already folds accents and expands
-    the ligatures that would otherwise scatter a word away from its heading
-    ("OEuvre" sorts among the O's, so it is counted there).
+    Taking the letter from the same language-owned headword key that orders
+    the index is what keeps a bucket contiguous: whatever the language folds
+    or expands in its key (French "OEuvre" sorts among the O's) is counted
+    under the heading it sorts beside.
     """
     initial = normalized_word[:1]
     return initial.upper() if initial.isascii() and initial.isalpha() else "#"

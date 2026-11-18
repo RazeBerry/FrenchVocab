@@ -166,6 +166,9 @@ class LanguageConfig:
     target_to_eng: TranslatorConfig | None
     vocab: VocabTemplate
     anki: AnkiConfig
+    # The headword's identity, alphabetical order and rail letter; the key is
+    # opaque and never displayed (docs/vocabulary.md).
+    headword_key: Callable[[str], str]
     composition: CompositionConfig | None = None
     aliases: Tuple[str, ...] = ()
     auto_prompt_template: str | None = None

@@ -7,6 +7,7 @@ from vocab_builder.core.composition_scheduler import (
     composition_set_size,
     composition_words_per_attempt,
 )
+from vocab_builder.models import normalize_word_key
 
 
 class _Repo:
@@ -24,6 +25,10 @@ class _Repo:
 
     def ensure_entries_loaded(self):
         return None
+
+    @staticmethod
+    def normalize_word(word):
+        return normalize_word_key(word)
 
 
 def _write_history(path: Path, records):
@@ -87,6 +92,24 @@ def test_scheduler_orders_produced_words_by_stalest_success(tmp_path):
 
     assert scheduler.debt_count() == 0
     assert [state.entry.word for state in scheduler.ordered_states()] == ["beta", "alpha"]
+
+
+def test_scheduler_matches_history_by_the_repository_key(tmp_path):
+    """A verdict for "cafe" credits "Café" only if the collection's key says
+    they are one headword; a key that keeps accents leaves "Café" in debt."""
+
+    class _AccentKeepingRepo(_Repo):
+        normalize_word = staticmethod(str.casefold)
+
+    history = tmp_path / "fr_compositions.jsonl"
+    _write_history(
+        history,
+        [{"ts": "2026-06-12T10:00:00Z", "word_verdicts": {"cafe": "correct"}}],
+    )
+    words = [("Café", "noun", "coffee")]
+
+    assert CompositionScheduler(_Repo(tmp_path, words), [history]).debt_count() == 0
+    assert CompositionScheduler(_AccentKeepingRepo(tmp_path, words), [history]).debt_count() == 1
 
 
 def test_debt_count_cache_invalidates_when_history_file_changes(tmp_path):

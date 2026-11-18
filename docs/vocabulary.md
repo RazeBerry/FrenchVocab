@@ -20,6 +20,19 @@ in `reports/` and is linked from the rule it supports.
   pair of parentheses and the reader removes exactly one, so "(fig.) he likes
   (it)" survives.
 
+## Headword key
+- Each language owns its headword key: `LanguageConfig.headword_key` is a
+  required field with no default. Every identity, order and rail-letter use
+  calls the config's key (usually through the repository's or builder's
+  `normalize_word`), never `models.normalize_word_key`. Two headwords are the same
+  entry exactly when their keys are equal; key order is the collection's
+  alphabetical order (insertion, `alphabetize_entries`, the glossary index);
+  the key's first character is the glossary rail letter. The key is opaque: it
+  is never displayed or parsed. French, German and English use
+  `normalize_word_key` (lowercase, expand ß, umlauts, æ and œ, strip accents).
+- Merge text equality, the translation-pair key and the Anki tracker key
+  (lowercased headword) are separate rules and do not use the headword key.
+
 ## Capture workflow
 - `word_entry_workflow.py` orchestrates end-to-end word capture and save behavior, including explicit saved/routed/skipped outcomes so failed routing or merge paths never masquerade as successful saves.
 
@@ -37,9 +50,9 @@ in `reports/` and is linked from the rule it supports.
   If interrupted between those writes, inspect the bundle before retrying;
   a rerun can finish missing history when all three rewritten files match its
   recorded post-write hashes. Do not run it against repository snapshots.
-  A corrected headword may not land on another live entry even up to
-  accents, because the app finds duplicates by the accent-free key; such a
-  case is a merge and must name the other entry in `retire`.
+  A corrected headword may not land on another live entry under the
+  language's headword key, because the app finds duplicates by that key; such
+  a case is a merge and must name the other entry in `retire`.
 - Correction history uses action `correct`. It records provenance but is not
   an acquisition or save: Anki order reconstruction and recent-save ledgers
   filter it out. The phone ledger includes only `new`, `force`, and `merge`.

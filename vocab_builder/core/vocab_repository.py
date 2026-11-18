@@ -11,7 +11,7 @@ Extracted from VocabBuilder to handle:
 import re
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from vocab_builder.core.bulk_add import BulkAddReport, DuplicatePolicy
 from vocab_builder.core.file_safety import atomic_write_text, file_lock, refuse_to_recreate_lost_file
@@ -47,15 +47,17 @@ def display_headword(word: str, word_type: str) -> str:
     return word[0].upper() + word[1:]
 
 
-def choose_insert_position(content: str, entry_cmd: str, new_word: str) -> int:
-    """Use the collection's alphabetical insertion rule without repository state."""
-    target = normalize_word_key(new_word)
+def choose_insert_position(
+    content: str, entry_cmd: str, new_word: str, *, key: Callable[[str], str]
+) -> int:
+    """Use the collection's alphabetical insertion rule, ordered by the language's headword key."""
+    target = key(new_word)
     last_end = None
     saw_entries = False
     for groups, start, end in iter_entry_groups(content, entry_cmd, num_groups=4):
         saw_entries = True
         last_end = end
-        if target < normalize_word_key(unescape_latex(groups[0].strip())):
+        if target < key(unescape_latex(groups[0].strip())):
             return start
     if not saw_entries:
         return VocabRepository._fallback_insert_position_no_entries(content)
@@ -319,10 +321,9 @@ class VocabRepository:
     # Normalization & Lookup
     # -------------------------------------------------------------------------
 
-    @staticmethod
-    def normalize_word(word: str) -> str:
-        """Normalize a word by converting to lowercase and removing accents."""
-        return normalize_word_key(word)
+    def normalize_word(self, word: str) -> str:
+        """Return the language's headword key: the entry's identity and sort order."""
+        return self.language_config.headword_key(word)
 
     def check_duplicate(self, word: str) -> Optional[str]:
         """Check if a word already exists (returns existing key if duplicate)."""
@@ -441,7 +442,9 @@ class VocabRepository:
             return False
 
     def _choose_insert_position(self, content: str, entry_cmd: str, new_word: str) -> int:
-        return choose_insert_position(content, entry_cmd, new_word)
+        return choose_insert_position(
+            content, entry_cmd, new_word, key=self.language_config.headword_key
+        )
 
     def _contains_word(self, content: str, entry_cmd: str, word: str) -> bool:
         normalized = self.normalize_word(word)

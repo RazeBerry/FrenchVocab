@@ -636,7 +636,7 @@ class WordEntryWorkflow:
         )
 
         warning_text = (
-            f"Duplicate Warning:\nWord '{word}' (normalized: '{normalized_word}') "
+            f"Duplicate Warning:\nWord '{word}' "
             f"already exists in the dictionary as '{actual_existing_word}'."
         )
         self.ui.panel(warning_text, title=" Duplicate Detected", border_style="yellow3")

@@ -9,7 +9,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from vocab_builder.core.anki_identity import identity_path, identity_text, load_identity, save_identity
 from vocab_builder.core.file_safety import atomic_copy_file, atomic_write_text, file_lock
@@ -17,7 +17,7 @@ from vocab_builder.core.history_logger import TranslationLogger
 from vocab_builder.core.vocab_repository import VocabRepository, choose_insert_position
 from vocab_builder.languages import available_language_codes, get_language_config
 from vocab_builder.latex_repository import LatexRepository, find_entry_bounds, parse_all_entries
-from vocab_builder.models import WordEntry, normalize_word_key
+from vocab_builder.models import WordEntry
 
 
 class CorrectionError(ValueError):
@@ -175,13 +175,14 @@ def _unified(before: str, after: str, label: str) -> str:
 def _render(
     content: str, tracker: dict[str, Any], aliases: dict[str, str],
     corrections: list[dict[str, Any]], entry_cmd: str, namespace: str,
+    headword_key: Callable[[str], str],
 ) -> tuple[str, dict[str, Any], dict[str, str], list[dict[str, Any]], list[dict[str, str]]]:
     original = _index(content, entry_cmd)
-    # The app finds duplicates by the accent-free key, so a corrected headword
-    # that matches another live entry only up to accents is still a collision.
+    # The app finds duplicates by the language's headword key, so a corrected
+    # headword whose key matches another live entry is still a collision.
     duplicate_keys: dict[str, set[str]] = {}
     for key, (payload, _block, _start, _end) in original.items():
-        duplicate_keys.setdefault(normalize_word_key(payload["word"]), set()).add(key)
+        duplicate_keys.setdefault(headword_key(payload["word"]), set()).add(key)
     touched: set[str] = set()
     targets: set[str] = set()
     for row in corrections:
@@ -193,7 +194,7 @@ def _render(
         for item, key in zip(old, keys):
             if key not in original or original[key][0] != item:
                 raise CorrectionError(f"{row['id']} before/retire mismatch: {item['word']}")
-        target = normalize_word_key(row["after"]["word"])
+        target = headword_key(row["after"]["word"])
         if target in targets or duplicate_keys.get(target, set()) - set(keys):
             raise CorrectionError(f"{row['id']} collides with live headword: {row['after']['word']}")
         targets.add(target)
@@ -234,7 +235,9 @@ def _render(
                 spans.append(bounds)
             for start, end in sorted(spans, reverse=True):
                 content = content[:start] + content[end:]
-            position = choose_insert_position(content, entry_cmd, row["after"]["word"])
+            position = choose_insert_position(
+                content, entry_cmd, row["after"]["word"], key=headword_key
+            )
             content = content[:position] + new_block + "\n\n" + content[position:]
         diffs.append({
             "id": row["id"], "status": "validated",
@@ -434,7 +437,8 @@ def run_corrections(
         if not entry_cmd.startswith("\\"):
             entry_cmd = "\\" + entry_cmd
         rendered, next_tracker, next_aliases, rows, retired = _render(
-            content, tracker, aliases, corrections, entry_cmd, config.anki.deck_namespace
+            content, tracker, aliases, corrections, entry_cmd, config.anki.deck_namespace,
+            config.headword_key,
         )
         tracker_text = json.dumps(next_tracker, ensure_ascii=False, indent=2)
         if blobs["tracker_sha256"].endswith(b"\n"):

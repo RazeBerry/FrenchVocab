@@ -5,10 +5,9 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Optional, Sequence
+from typing import Any, Callable, Iterable, Mapping, Optional, Sequence
 
 from vocab_builder.compat import get_env
-from vocab_builder.models import normalize_word_key
 
 VERDICT_CORRECT = "correct"
 VERDICT_INCORRECT = "incorrect"
@@ -154,11 +153,12 @@ class CompositionScheduler:
     def production_states(self) -> list[ProductionState]:
         entries = _entries_from_repo(self.vocab_repo)
         history = _read_history_records(self.history_paths)
-        derived = _derive_history_by_word_key(_history_events(history))
+        headword_key = self.vocab_repo.normalize_word
+        derived = _derive_history_by_word_key(_history_events(history, headword_key))
 
         states: list[ProductionState] = []
         for entry in entries:
-            normalized = normalize_word_key(entry.word)
+            normalized = headword_key(entry.word)
             word_history = derived.get(normalized, _DerivedWordHistory())
 
             states.append(
@@ -336,7 +336,9 @@ def _read_history_records(paths: Sequence[Path]) -> list[dict[str, Any]]:
     return records
 
 
-def _history_events(records: Sequence[Mapping[str, Any]]) -> list[_HistoryEvent]:
+def _history_events(
+    records: Sequence[Mapping[str, Any]], headword_key: Callable[[str], str]
+) -> list[_HistoryEvent]:
     sortable: list[tuple[str, int, Mapping[str, Any]]] = []
     for index, record in enumerate(records):
         ts = str(record.get("ts") or record.get("timestamp") or "")
@@ -353,7 +355,7 @@ def _history_events(records: Sequence[Mapping[str, Any]]) -> list[_HistoryEvent]
             normalized_verdict = _normalize_verdict(verdict)
             if normalized_verdict is None:
                 continue
-            key = normalize_word_key(str(word))
+            key = headword_key(str(word))
             if key:
                 verdicts_by_key[key] = normalized_verdict
         if verdicts_by_key:

@@ -38,7 +38,3 @@ class WordEntry:
     type: str
     definitions: List[str]
     examples: List[Tuple[str, str]]  # list of (fr, en)
-
-    @property
-    def key(self) -> str:
-        return normalize_word_key(self.word)

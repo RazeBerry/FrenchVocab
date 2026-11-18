@@ -1,6 +1,5 @@
 import os
 import string
-import unicodedata
 import warnings
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from pathlib import Path
@@ -33,7 +32,6 @@ from .session_ui import (
     show_post_translation_menu,
     show_translation_menu,
 )
-from vocab_builder.models import normalize_word_key
 from vocab_builder.ui_helper import UIHelper, read_line
 from vocab_builder.core.providers.manager import (
     ProviderManager,
@@ -69,8 +67,7 @@ class _TestDoubleVocabRepoAdapter:
         pass  # Test doubles set word_entries directly
 
     def normalize_word(self, word: str) -> str:
-        # Keep adapter behavior aligned with production normalization.
-        return normalize_word_key(word)
+        return self._builder.normalize_word(word)
 
     def get_all_latex_entries(self) -> Set[str]:
         return set(self.word_entries.keys())
@@ -795,12 +792,8 @@ class VocabBuilder(VocabCaptureMixin, VocabRuntimeMixin, VocabMergeMixin, VocabD
         return
 
     def normalize_word(self, word: str) -> str:
-        """Normalize a given word by converting it to lowercase and removing accents."""
-        if hasattr(self, "_vocab_repo"):
-            return self._vocab_repo.normalize_word(word)
-        # Fallback for test doubles
-        normalized = unicodedata.normalize("NFD", word.lower())
-        return "".join(c for c in normalized if unicodedata.category(c) != "Mn")
+        """Return the language's headword key: the entry's identity and sort order."""
+        return self.language_config.headword_key(word)
 
     def latex_to_anki_format(self, text: str) -> str:
         """Delegate to the shared LaTeX→HTML conversion helper."""

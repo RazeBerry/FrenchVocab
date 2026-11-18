@@ -24,10 +24,10 @@ vocabbuilder-mobile --language fr --latex-file ./FrenchVocab.tex
   to know where each letter begins and the paged endpoint cannot say. Slim rows
   keep French near 60 KB against several hundred for full entries; the detail a
   row omits is loaded from `/api/library/entry` when the row opens.
-- A letter bucket is taken from the same normalized key that orders the index,
-  never from a separate diacritic pass. The key expands ligatures, so `Œuvre`
-  sorts among the O's; a bucket from bare NFD would have counted it under `#`
-  and contradicted the order the rows arrive in.
+- A letter bucket is the first character of the language's headword key, the
+  same key that orders the index, never a separate diacritic pass. The French
+  key expands ligatures, so `Œuvre` sorts among the O's; a bucket from bare NFD
+  would have counted it under `#` and contradicted the order the rows arrive in.
 - Acquisition order comes from `AnkiExportManager.acquisition_positions()`, so
   the glossary and the deck agree on what "newest" means. Do not re-derive an
   order from history in a read model. Each row carries its rank as `added`

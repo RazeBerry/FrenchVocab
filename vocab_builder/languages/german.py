@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Dict
 
 from vocab_builder.ai_prompts import GERMAN_PROMPT_TEMPLATE
+from vocab_builder.models import normalize_word_key
 from .base import (
     CompositionConfig,
     LanguageConfig,
@@ -270,6 +271,7 @@ GERMAN_CONFIG = LanguageConfig(
         card_css=GERMAN_CARD_CSS,
         version_id=GERMAN_CARD_VERSION,
     ),
+    headword_key=normalize_word_key,
     composition=CompositionConfig(
         grading_prompt_template=GERMAN_COMPOSITION_GRADING_PROMPT,
         reverse_grading_prompt_template=GERMAN_REVERSE_COMPOSITION_GRADING_PROMPT,

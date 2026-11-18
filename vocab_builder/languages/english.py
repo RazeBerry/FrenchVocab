@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Dict
 
+from vocab_builder.models import normalize_word_key
 from .anki_shared_styles import compute_template_hash, get_anki_css
 from .base import (
     AnkiCardTemplate,
@@ -213,6 +214,7 @@ ENGLISH_CONFIG = LanguageConfig(
         card_css=ENGLISH_CARD_CSS,
         version_id=ENGLISH_CARD_VERSION,
     ),
+    headword_key=normalize_word_key,
     composition=CompositionConfig(
         grading_prompt_template=ENGLISH_COMPOSITION_GRADING_PROMPT,
         reverse_grading_prompt_template=ENGLISH_RECALL_GRADING_PROMPT,
